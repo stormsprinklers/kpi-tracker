@@ -118,6 +118,118 @@ export async function getEmployeesAllPages() {
   return allEmployees;
 }
 
+export async function getCustomers(params?: { per_page?: number; page?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.per_page) searchParams.set("per_page", String(params.per_page));
+  if (params?.page) searchParams.set("page", String(params.page));
+  const query = searchParams.toString();
+  const url = `${HCP_API_BASE}/customers${query ? `?${query}` : ""}`;
+  const res = await hcpFetch(url);
+  if (!res.ok) {
+    throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function getCustomersAllPages() {
+  const perPage = 50;
+  const all: unknown[] = [];
+  let page = 1;
+  let hasMore = true;
+  while (hasMore) {
+    const data = await getCustomers({ per_page: perPage, page });
+    const list = Array.isArray(data) ? data : (data as { customers?: unknown[] }).customers ?? [];
+    all.push(...list);
+    hasMore = list.length === perPage;
+    page++;
+  }
+  return all;
+}
+
+export async function getInvoices(params?: { per_page?: number; page?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.per_page) searchParams.set("per_page", String(params.per_page));
+  if (params?.page) searchParams.set("page", String(params.page));
+  const query = searchParams.toString();
+  const url = `${HCP_API_BASE}/invoices${query ? `?${query}` : ""}`;
+  const res = await hcpFetch(url);
+  if (!res.ok) {
+    throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function getInvoicesAllPages() {
+  const perPage = 50;
+  const all: unknown[] = [];
+  let page = 1;
+  let hasMore = true;
+  while (hasMore) {
+    const data = await getInvoices({ per_page: perPage, page });
+    const list = Array.isArray(data) ? data : (data as { invoices?: unknown[] }).invoices ?? [];
+    all.push(...list);
+    hasMore = list.length === perPage;
+    page++;
+  }
+  return all;
+}
+
+export async function getEstimates(params?: { per_page?: number; page?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.per_page) searchParams.set("per_page", String(params.per_page));
+  if (params?.page) searchParams.set("page", String(params.page));
+  const query = searchParams.toString();
+  const url = `${HCP_API_BASE}/estimates${query ? `?${query}` : ""}`;
+  const res = await hcpFetch(url);
+  if (!res.ok) {
+    throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function getEstimatesAllPages() {
+  const perPage = 50;
+  const all: unknown[] = [];
+  let page = 1;
+  let hasMore = true;
+  while (hasMore) {
+    const data = await getEstimates({ per_page: perPage, page });
+    const list = Array.isArray(data) ? data : (data as { estimates?: unknown[] }).estimates ?? [];
+    all.push(...list);
+    hasMore = list.length === perPage;
+    page++;
+  }
+  return all;
+}
+
+export async function getAppointments(params?: { per_page?: number; page?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params?.per_page) searchParams.set("per_page", String(params.per_page));
+  if (params?.page) searchParams.set("page", String(params.page));
+  const query = searchParams.toString();
+  const url = `${HCP_API_BASE}/appointments${query ? `?${query}` : ""}`;
+  const res = await hcpFetch(url);
+  if (!res.ok) {
+    throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function getAppointmentsAllPages() {
+  const perPage = 50;
+  const all: unknown[] = [];
+  let page = 1;
+  let hasMore = true;
+  while (hasMore) {
+    const data = await getAppointments({ per_page: perPage, page });
+    const list = Array.isArray(data) ? data : (data as { appointments?: unknown[] }).appointments ?? [];
+    all.push(...list);
+    hasMore = list.length === perPage;
+    page++;
+  }
+  return all;
+}
+
 export function isConfigured(): boolean {
   return !!process.env.HOUSECALLPRO_ACCESS_TOKEN;
 }

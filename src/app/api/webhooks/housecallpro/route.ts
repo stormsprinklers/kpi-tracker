@@ -78,7 +78,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  console.log("[HCP Webhook] Verified event:", (payload as { event?: string })?.event ?? payload);
+  const event = (payload as { event?: string })?.event;
+  console.log("[HCP Webhook] Verified event:", event ?? payload);
+
+  try {
+    const { persistWebhookEvent } = await import("@/lib/sync/webhookPersist");
+    await persistWebhookEvent(event ?? "unknown", (payload ?? {}) as Record<string, unknown>);
+  } catch (err) {
+    console.error("[HCP Webhook] Persist error:", err);
+    // Still return 200 so HCP doesn't retry; we'll catch up on next full sync
+  }
 
   return NextResponse.json({ ok: true });
 }

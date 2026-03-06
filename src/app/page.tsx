@@ -1,4 +1,5 @@
 import { WebhookUrlCard } from "@/components/WebhookUrlCard";
+import { SyncStatusSection } from "@/components/SyncStatusSection";
 import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
 
 function getWebhookUrl(): string {
@@ -60,7 +61,12 @@ export default function Home() {
 
         <WebhookUrlCard webhookUrl={webhookUrl} />
 
-        {connected && <TechnicianRevenueSection />}
+        {connected && (
+          <>
+            <SyncStatusSection />
+            <TechnicianRevenueSection />
+          </>
+        )}
 
         <section>
           <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">

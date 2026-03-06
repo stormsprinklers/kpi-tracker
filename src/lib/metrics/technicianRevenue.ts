@@ -1,4 +1,5 @@
-import { getJobsAllPages, getJobInvoices, getEmployeesAllPages, getPros } from "../housecallpro";
+import { getJobsAllPages, getJobInvoices, getEmployeesAllPages, getPros, getCompany } from "../housecallpro";
+import { getJobsFromDb, getEmployeesFromDb, getInvoicesFromDb } from "../db/queries";
 
 export interface TechnicianRevenue {
   technicianId: string;
@@ -78,9 +79,18 @@ function buildNameMap(
 
 export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
   const nameMap = new Map<string, string>();
+  let companyId = "default";
 
   try {
-    const employeesList = await getEmployeesAllPages();
+    const company = (await getCompany()) as { id?: string };
+    companyId = company?.id ?? "default";
+  } catch {
+    // Fall through to API
+  }
+
+  // Prefer DB for employees
+  try {
+    const employeesList = await getEmployeesFromDb(companyId);
     const empMap = buildNameMap(
       employeesList,
       ["id", "employee_id", "pro_id"],
@@ -88,7 +98,21 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
     );
     empMap.forEach((v, k) => nameMap.set(k, v));
   } catch {
-    // Employees endpoint may not exist
+    /* skip */
+  }
+
+  if (nameMap.size === 0) {
+    try {
+      const employeesList = await getEmployeesAllPages();
+      const empMap = buildNameMap(
+        employeesList,
+        ["id", "employee_id", "pro_id"],
+        [["name", "display_name"], ["first_name", "last_name"]]
+      );
+      empMap.forEach((v, k) => nameMap.set(k, v));
+    } catch {
+      /* skip */
+    }
   }
 
   if (nameMap.size === 0) {
@@ -102,35 +126,56 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
       );
       proMap.forEach((v, k) => nameMap.set(k, v));
     } catch {
-      // Pros endpoint may not exist; we'll use IDs as fallback
+      /* skip */
     }
   }
 
   const revenueByTech = new Map<string, number>();
 
-  const jobs = await getJobsAllPages();
+  // Prefer DB for jobs; fall back to API if empty
+  let jobs: unknown[] = [];
+  try {
+    jobs = await getJobsFromDb(companyId);
+  } catch {
+    /* skip */
+  }
+  if (jobs.length === 0) {
+    try {
+      jobs = await getJobsAllPages();
+    } catch {
+      /* skip */
+    }
+  }
 
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
     const techIds = getTechnicianIds(j);
     if (techIds.length === 0) continue;
 
-    // Only count revenue for paid/completed jobs
     const isPaid = isPaidOrCompleted(j);
     let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
     if (paidAmount <= 0 && isPaid && j.id) {
       try {
-        const invoices = await getJobInvoices(String(j.id));
-        const invList = Array.isArray(invoices) ? invoices : invoices?.invoices ?? invoices?.data ?? [];
-        for (const inv of invList) {
+        const invoices = await getInvoicesFromDb(companyId, String(j.id));
+        for (const inv of invoices) {
           paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
         }
       } catch {
         /* skip */
       }
+      if (paidAmount <= 0) {
+        try {
+          const invoices = await getJobInvoices(String(j.id));
+          const invList = Array.isArray(invoices) ? invoices : invoices?.invoices ?? invoices?.data ?? [];
+          for (const inv of invList) {
+            paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
+          }
+        } catch {
+          /* skip */
+        }
+      }
     }
 
-    // Attribute revenue (or 0) so we show all technicians with assigned jobs
     const amountPerTech = paidAmount / techIds.length;
     for (const techId of techIds) {
       const current = revenueByTech.get(techId) ?? 0;
