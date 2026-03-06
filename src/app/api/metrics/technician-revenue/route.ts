@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getTechnicianRevenue } from "@/lib/metrics/technicianRevenue";
 import { isConfigured } from "@/lib/housecallpro";
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!isConfigured()) {
     return NextResponse.json(
       { error: "Housecall Pro not configured" },
@@ -10,8 +10,13 @@ export async function GET() {
     );
   }
 
+  const { searchParams } = new URL(request.url);
+  const startDate = searchParams.get("startDate") ?? undefined;
+  const endDate = searchParams.get("endDate") ?? undefined;
+  const filters = (startDate || endDate) ? { startDate, endDate } : undefined;
+
   try {
-    const result = await getTechnicianRevenue();
+    const result = await getTechnicianRevenue(filters);
     return NextResponse.json(result);
   } catch (error) {
     console.error("[Technician Revenue] Error:", error);

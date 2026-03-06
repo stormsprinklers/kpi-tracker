@@ -3,6 +3,8 @@ import { sql } from "@vercel/postgres";
 export interface SyncFilters {
   workStatus?: string;
   limit?: number;
+  startDate?: string; // ISO date YYYY-MM-DD
+  endDate?: string;   // ISO date YYYY-MM-DD
 }
 
 export async function getJobsFromDb(

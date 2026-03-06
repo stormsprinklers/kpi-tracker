@@ -12,18 +12,39 @@ export interface TechnicianRevenueResult {
   totalRevenue: number;
 }
 
+export interface TechnicianRevenueFilters {
+  startDate?: string; // ISO date YYYY-MM-DD
+  endDate?: string;   // ISO date YYYY-MM-DD
+}
+
+const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
+
+function isOfficeStaff(role: unknown): boolean {
+  const r = (role ?? "").toString().toLowerCase().replace(/\s+/g, " ");
+  return OFFICE_STAFF_ROLES.some((o) => r === o || (r.includes("office") && r.includes("staff")));
+}
+
 // HCP API uses assigned_employees (array). Fallback to assigned_pro, pro_id, etc.
+// Excludes office staff (role "office staff" etc.)
 function getTechnicianIds(job: Record<string, unknown>): string[] {
-  const assigned = job.assigned_employees ?? job.assigned_pro ?? job.pro_id ?? job.pro ?? job.assigned_employee ?? job.employee_id ?? job.assigned_pro_id;
-  if (Array.isArray(assigned) && assigned.length > 0) {
-    return assigned
-      .map((a) => (typeof a === "object" && a && "id" in a ? String((a as { id: unknown }).id) : typeof a === "string" ? a : null))
-      .filter((id): id is string => !!id);
+  const assigned = job.assigned_employees ?? job.assigned_pro ?? job.assigned_employee;
+  const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
+  const ids: string[] = [];
+  for (const a of items) {
+    if (typeof a === "string") {
+      ids.push(a);
+      continue;
+    }
+    if (a && typeof a === "object" && "id" in a) {
+      const r = a as Record<string, unknown>;
+      if (isOfficeStaff(r.role ?? r.employee_type ?? r.type)) continue;
+      ids.push(String(r.id));
+    }
   }
-  if (typeof assigned === "string") return [assigned];
-  if (assigned && typeof assigned === "object" && "id" in assigned) {
-    return [String((assigned as { id: unknown }).id)];
-  }
+  if (ids.length > 0) return ids;
+  const fallback = job.pro_id ?? job.pro ?? job.employee_id ?? job.assigned_pro_id;
+  if (typeof fallback === "string") return [fallback];
+  if (fallback && typeof fallback === "object" && "id" in fallback) return [String((fallback as { id: unknown }).id)];
   return [];
 }
 
@@ -146,8 +167,32 @@ function mergeNamesFromJob(nameMap: Map<string, string>, job: Record<string, unk
   }
 }
 
-export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
+/** Extract job date for filtering. Uses completed_at, scheduled_start, or created_at. */
+function getJobDate(job: Record<string, unknown>): Date | null {
+  const wt = job.work_timestamps as Record<string, unknown> | undefined;
+  const sched = job.schedule as Record<string, unknown> | undefined;
+  const completed = wt?.completed_at ?? wt?.completed;
+  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
+  const created = job.created_at ?? job.createdAt;
+  const dateStr = (completed ?? scheduled ?? created) as string | undefined;
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDate?: string): boolean {
+  if (!startDate && !endDate) return true;
+  const jobDate = getJobDate(job);
+  if (!jobDate) return true; // include if no date
+  const jobDay = jobDate.toISOString().slice(0, 10);
+  if (startDate && jobDay < startDate) return false;
+  if (endDate && jobDay > endDate) return false;
+  return true;
+}
+
+export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): Promise<TechnicianRevenueResult> {
   const nameMap = new Map<string, string>();
+  const officeStaffIds = new Set<string>();
   let companyId = "default";
 
   try {
@@ -157,7 +202,7 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
     // Fall through to API
   }
 
-  // Build employee name map (from DB first, then API)
+  // Build employee name map and office staff IDs (from DB first, then API)
   try {
     const employeesList = await getEmployeesFromDb(companyId);
     const empMap = buildNameMap(
@@ -166,6 +211,10 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
       [["name", "display_name"], ["first_name", "last_name"]]
     );
     empMap.forEach((v, k) => nameMap.set(k, v));
+    for (const emp of employeesList as Record<string, unknown>[]) {
+      const id = emp?.id ?? emp?.employee_id ?? emp?.pro_id;
+      if (id && isOfficeStaff(emp?.role ?? emp?.employee_type ?? emp?.type)) officeStaffIds.add(String(id));
+    }
   } catch {
     /* skip */
   }
@@ -179,12 +228,16 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
         [["name", "display_name"], ["first_name", "last_name"]]
       );
       empMap.forEach((v, k) => nameMap.set(k, v));
+      for (const emp of employeesList as Record<string, unknown>[]) {
+        const id = emp?.id ?? emp?.employee_id ?? emp?.pro_id;
+        if (id && isOfficeStaff(emp?.role ?? emp?.employee_type ?? emp?.type)) officeStaffIds.add(String(id));
+      }
     } catch {
       /* skip */
     }
   }
 
-  // Always merge pros into name map (jobs use assigned_pro with pro_xxx IDs; former pros may not be in employees)
+  // Always merge pros into name map and office staff IDs
   try {
     const prosList = await getProsFromDb(companyId);
     const proMap = buildNameMap(
@@ -193,6 +246,10 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
       [["name", "display_name"], ["first_name", "last_name"]]
     );
     proMap.forEach((v, k) => nameMap.set(k, v));
+    for (const p of prosList as Record<string, unknown>[]) {
+      const id = p?.id ?? p?.pro_id;
+      if (id && isOfficeStaff(p?.role ?? p?.employee_type ?? p?.type)) officeStaffIds.add(String(id));
+    }
   } catch {
     /* skip */
   }
@@ -205,6 +262,10 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
       [["name", "display_name"], ["first_name", "last_name"]]
     );
     proMap.forEach((v, k) => nameMap.set(k, v));
+    for (const p of prosList as Record<string, unknown>[]) {
+      const id = p?.id ?? p?.pro_id;
+      if (id && isOfficeStaff(p?.role ?? p?.employee_type ?? p?.type)) officeStaffIds.add(String(id));
+    }
   } catch {
     /* skip */
   }
@@ -241,10 +302,13 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
     });
   }
 
+  const { startDate, endDate } = filters ?? {};
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
+    if (!jobInDateRange(j, startDate, endDate)) continue;
     mergeNamesFromJob(nameMap, j);
-    const techIds = getTechnicianIds(j);
+    let techIds = getTechnicianIds(j);
+    techIds = techIds.filter((id) => !officeStaffIds.has(id));
     if (techIds.length === 0) continue;
 
     const isPaid = isPaidOrCompleted(j);
