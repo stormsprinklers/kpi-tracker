@@ -16,7 +16,7 @@ function getHeaders(): HeadersInit {
   // #endregion
   return {
     Accept: "application/json",
-    Authorization: token,
+    Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   };
 }
