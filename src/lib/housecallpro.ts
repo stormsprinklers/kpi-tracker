@@ -1,4 +1,4 @@
-const HCP_API_BASE = "https://api.housecallpro.com/v1";
+const HCP_API_BASE = "https://api.housecallpro.com";
 
 function getHeaders(): HeadersInit {
   const token = process.env.HOUSECALLPRO_ACCESS_TOKEN;
@@ -6,7 +6,8 @@ function getHeaders(): HeadersInit {
     throw new Error("HOUSECALLPRO_ACCESS_TOKEN is not set");
   }
   return {
-    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+    Authorization: token,
     "Content-Type": "application/json",
   };
 }
