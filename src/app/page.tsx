@@ -1,4 +1,5 @@
 import { WebhookUrlCard } from "@/components/WebhookUrlCard";
+import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
 
 function getWebhookUrl(): string {
   const baseUrl = process.env.VERCEL_URL
@@ -50,6 +51,8 @@ export default function Home() {
         </section>
 
         <WebhookUrlCard webhookUrl={webhookUrl} />
+
+        {connected && <TechnicianRevenueSection />}
 
         <section>
           <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">
