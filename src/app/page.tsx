@@ -18,13 +18,21 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
-      <header className="border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-950">
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-          KPI Tracker
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Home services metrics and insights
-        </p>
+      <header className="flex items-start justify-between border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <div>
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+            KPI Tracker
+          </h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Home services metrics and insights
+          </p>
+        </div>
+        <a
+          href="/debug"
+          className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        >
+          Developer Console
+        </a>
       </header>
 
       <main className="flex flex-1 flex-col gap-6 p-6">
