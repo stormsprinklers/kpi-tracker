@@ -11,32 +11,28 @@ export interface TechnicianRevenueResult {
   totalRevenue: number;
 }
 
-// Flexible field extraction - Jobs may use assigned_pro, pro_id, assigned_employee, employee_id, etc.
-function getTechnicianId(job: Record<string, unknown>): string | null {
-  const assigned =
-    job.assigned_pro ??
-    job.pro_id ??
-    job.pro ??
-    job.assigned_employee ??
-    job.employee_id ??
-    job.assigned_pro_id;
-  if (typeof assigned === "string") return assigned;
-  if (assigned && typeof assigned === "object" && "id" in assigned) {
-    return String((assigned as { id: unknown }).id);
+// HCP API uses assigned_employees (array). Fallback to assigned_pro, pro_id, etc.
+function getTechnicianIds(job: Record<string, unknown>): string[] {
+  const assigned = job.assigned_employees ?? job.assigned_pro ?? job.pro_id ?? job.pro ?? job.assigned_employee ?? job.employee_id ?? job.assigned_pro_id;
+  if (Array.isArray(assigned) && assigned.length > 0) {
+    return assigned
+      .map((a) => (typeof a === "object" && a && "id" in a ? String((a as { id: unknown }).id) : typeof a === "string" ? a : null))
+      .filter((id): id is string => !!id);
   }
-  return null;
+  if (typeof assigned === "string") return [assigned];
+  if (assigned && typeof assigned === "object" && "id" in assigned) {
+    return [String((assigned as { id: unknown }).id)];
+  }
+  return [];
 }
 
 function getPaidAmountFromJob(job: Record<string, unknown>): number {
-  const val =
-    job.amount_paid ??
-    job.total_paid ??
-    job.total ??
-    job.paid_amount ??
-    job.revenue;
-  if (typeof val === "number" && !Number.isNaN(val)) return val;
-  if (typeof val === "string") return parseFloat(val) || 0;
-  return 0;
+  // HCP uses total_amount, outstanding_balance. Paid = total_amount - outstanding_balance
+  const total = job.total_amount ?? job.amount_paid ?? job.total_paid ?? job.total ?? job.paid_amount ?? job.revenue;
+  const outstanding = job.outstanding_balance ?? 0;
+  const totalNum = typeof total === "number" && !Number.isNaN(total) ? total : typeof total === "string" ? parseFloat(total) || 0 : 0;
+  const outNum = typeof outstanding === "number" && !Number.isNaN(outstanding) ? outstanding : typeof outstanding === "string" ? parseFloat(outstanding) || 0 : 0;
+  return Math.max(0, totalNum - outNum) || totalNum;
 }
 
 function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
@@ -51,12 +47,13 @@ function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
 }
 
 function isPaidOrCompleted(job: Record<string, unknown>): boolean {
-  const status = (job.status ?? job.job_status ?? "").toString().toLowerCase();
+  const status = (job.status ?? job.job_status ?? job.work_status ?? "").toString().toLowerCase();
   return (
     status === "paid" ||
     status === "completed" ||
     status === "complete" ||
-    status === "closed"
+    status === "closed" ||
+    status === "done"
   );
 }
 
@@ -117,15 +114,13 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
 
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
-    // Include paid/completed jobs; also check invoices for jobs without job-level amount
-    if (!isPaidOrCompleted(j)) continue;
+    const techIds = getTechnicianIds(j);
+    if (techIds.length === 0) continue;
 
-    const techId = getTechnicianId(j);
-    if (!techId) continue;
-
-    let paidAmount = getPaidAmountFromJob(j);
-
-    if (paidAmount <= 0 && j.id) {
+    // Only count revenue for paid/completed jobs
+    const isPaid = isPaidOrCompleted(j);
+    let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
+    if (paidAmount <= 0 && isPaid && j.id) {
       try {
         const invoices = await getJobInvoices(String(j.id));
         const invList = Array.isArray(invoices) ? invoices : invoices?.invoices ?? invoices?.data ?? [];
@@ -133,13 +128,15 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
           paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
         }
       } catch {
-        // Skip if invoices fail
+        /* skip */
       }
     }
 
-    if (paidAmount > 0) {
+    // Attribute revenue (or 0) so we show all technicians with assigned jobs
+    const amountPerTech = paidAmount / techIds.length;
+    for (const techId of techIds) {
       const current = revenueByTech.get(techId) ?? 0;
-      revenueByTech.set(techId, current + paidAmount);
+      revenueByTech.set(techId, current + amountPerTech);
     }
   }
 

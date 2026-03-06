@@ -1,19 +1,10 @@
 const HCP_API_BASE = "https://api.housecallpro.com";
 
-// #region agent log
-const _log = (loc: string, msg: string, data: Record<string, unknown>) => {
-  fetch('http://127.0.0.1:7243/ingest/ec73c2c4-960e-421d-9c0c-e5e744669b90', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: loc, message: msg, data, timestamp: Date.now() }) }).catch(() => {});
-};
-// #endregion
-
 function getHeaders(): HeadersInit {
   const token = process.env.HOUSECALLPRO_ACCESS_TOKEN;
   if (!token) {
     throw new Error("HOUSECALLPRO_ACCESS_TOKEN is not set");
   }
-  // #region agent log
-  _log('housecallpro.ts:getHeaders', 'Auth config', { tokenLength: token.length, authFormat: 'raw', headerNames: ['Accept', 'Authorization', 'Content-Type'] });
-  // #endregion
   return {
     Accept: "application/json",
     Authorization: `Bearer ${token}`,
