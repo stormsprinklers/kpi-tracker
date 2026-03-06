@@ -30,11 +30,16 @@ function extractCustomerHcpId(job: Record<string, unknown>): string | null {
 }
 
 function extractJobHcpId(record: Record<string, unknown>): string | null {
-  const job = record.job ?? record.job_id;
+  const job = record.job ?? record.job_id ?? record.service_request ?? record.request;
   if (job && typeof job === "object" && "id" in job) {
     return String((job as { id: unknown }).id);
   }
-  return (record.job_id ?? record.job_hcp_id) as string | null ?? null;
+  const scalar =
+    record.job_id ??
+    record.job_hcp_id ??
+    record.request_id ??
+    record.service_request_id;
+  return scalar != null ? String(scalar) : null;
 }
 
 export interface SyncResult {

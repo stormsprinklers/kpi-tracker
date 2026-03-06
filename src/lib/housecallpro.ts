@@ -18,18 +18,41 @@ async function hcpFetch(url: string): Promise<Response> {
   return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
-/** Fetch all pages by following next_page_url (HCP API pagination). */
+/** Get next page URL from response - HCP may use different keys. */
+function getNextPageUrl(data: Record<string, unknown>): string | null {
+  const keys = ["next_page_url", "nextPageUrl", "next_page", "next"];
+  for (const k of keys) {
+    const v = data[k];
+    if (v && typeof v === "string") return v;
+  }
+  const meta = data.meta as Record<string, unknown> | undefined;
+  if (meta) {
+    for (const k of keys) {
+      const v = meta[k];
+      if (v && typeof v === "string") return v;
+    }
+  }
+  return null;
+}
+
+/** Fetch all pages by following next_page_url, with page-based fallback. */
 async function fetchAllPages(
   initialUrl: string,
   itemsKey: string,
-  extraParams?: Record<string, string>
+  extraParams?: Record<string, string>,
+  options?: { pageSizeParam?: string }
 ): Promise<unknown[]> {
   const all: unknown[] = [];
-  let url: string | null = initialUrl;
-  if (extraParams && Object.keys(extraParams).length > 0) {
-    const params = new URLSearchParams(extraParams);
-    url = `${initialUrl}${initialUrl.includes("?") ? "&" : "?"}${params.toString()}`;
-  }
+  const perPage = 100;
+  let page = 1;
+  const pageSizeKey = options?.pageSizeParam ?? "per_page";
+  const baseParams = new URLSearchParams(extraParams ?? {});
+  baseParams.set(pageSizeKey, String(perPage));
+  baseParams.set("page", "1");
+  const [basePath] = initialUrl.split("?");
+  const sep = initialUrl.includes("?") ? "&" : "?";
+  let url: string | null = `${basePath}${sep}${baseParams.toString()}`;
+
   while (url) {
     const res = await hcpFetch(url);
     if (!res.ok) {
@@ -38,8 +61,17 @@ async function fetchAllPages(
     const data = (await res.json()) as Record<string, unknown>;
     const list = (Array.isArray(data) ? data : (data[itemsKey] as unknown[])) ?? [];
     all.push(...list);
-    const next = data.next_page_url;
-    url = next && typeof next === "string" ? next : null;
+
+    let next = getNextPageUrl(data);
+    if (!next && list.length > 0) {
+      page++;
+      baseParams.set("page", String(page));
+      const sep = initialUrl.includes("?") ? "&" : "?";
+      next = `${initialUrl.split("?")[0]}${sep}${baseParams.toString()}`;
+    } else if (!next) {
+      next = null;
+    }
+    url = next;
   }
   return all;
 }
@@ -108,7 +140,12 @@ export async function getEmployees(params?: {
 }
 
 export async function getEmployeesAllPages() {
-  return fetchAllPages(`${HCP_API_BASE}/employees`, "employees");
+  return fetchAllPages(
+    `${HCP_API_BASE}/employees`,
+    "employees",
+    undefined,
+    { pageSizeParam: "page_size" }
+  );
 }
 
 export async function getCustomers(params?: { per_page?: number; page?: number }) {

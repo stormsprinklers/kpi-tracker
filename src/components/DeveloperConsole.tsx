@@ -17,6 +17,7 @@ type LogEntry = {
 const QUICK_ACTIONS = [
   { label: "HCP Auth Test (diagnose 401)", path: "/api/debug/hcp-auth-test" },
   { label: "HCP Sample (Jobs, Employees, Invoices)", path: "/api/debug/hcp-sample" },
+  { label: "HCP Raw Pagination (diagnose 10-only)", path: "/api/debug/hcp-raw-pagination" },
   { label: "Technician Revenue", path: "/api/metrics/technician-revenue" },
   { label: "Webhook Status (GET)", path: "/api/webhooks/housecallpro" },
 ];
