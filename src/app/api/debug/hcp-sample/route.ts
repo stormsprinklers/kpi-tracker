@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getJobs, getJobInvoices, getPros } from "@/lib/housecallpro";
+import { getJobs, getJobInvoices, getEmployees, getPros } from "@/lib/housecallpro";
 import { isConfigured } from "@/lib/housecallpro";
 
 /**
@@ -16,12 +16,13 @@ export async function GET() {
   }
 
   try {
-    const [jobsRes, prosRes] = await Promise.all([
+    const [jobsRes, employeesRes, prosRes] = await Promise.all([
       getJobs({ per_page: 2, page: 1 }),
+      getEmployees().catch(() => ({ error: "Employees endpoint not available" })),
       getPros().catch(() => ({ error: "Pros endpoint not available" })),
     ]);
 
-    const jobs = Array.isArray(jobsRes) ? jobsRes : jobsRes?.jobs ?? jobsRes;
+    const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes as { jobs?: unknown[] })?.jobs ?? jobsRes;
     const jobList = Array.isArray(jobs) ? jobs.slice(0, 2) : [];
 
     const jobWithInvoices =
@@ -34,8 +35,9 @@ export async function GET() {
     return NextResponse.json({
       jobs_sample: jobList,
       job_invoices_sample: jobWithInvoices,
+      employees_sample: employeesRes,
       pros_sample: prosRes,
-      note: "Use this to confirm field names: assigned_pro, pro_id, amount_paid, total, etc.",
+      note: "Use this to confirm field names: assigned_employee, employee_id, assigned_pro, amount_paid, total, etc.",
     });
   } catch (error) {
     console.error("[HCP Debug] Error:", error);

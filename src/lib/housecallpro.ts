@@ -83,6 +83,16 @@ export async function getPros() {
   return res.json();
 }
 
+export async function getEmployees() {
+  const res = await fetch(`${HCP_API_BASE}/employees`, {
+    headers: getHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export function isConfigured(): boolean {
   return !!process.env.HOUSECALLPRO_ACCESS_TOKEN;
 }

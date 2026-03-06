@@ -1,4 +1,4 @@
-import { getJobsAllPages, getJobInvoices, getPros } from "../housecallpro";
+import { getJobsAllPages, getJobInvoices, getEmployees, getPros } from "../housecallpro";
 
 export interface TechnicianRevenue {
   technicianId: string;
@@ -11,12 +11,18 @@ export interface TechnicianRevenueResult {
   totalRevenue: number;
 }
 
-// Flexible field extraction for API response discovery
+// Flexible field extraction - Jobs may use assigned_pro, pro_id, assigned_employee, employee_id, etc.
 function getTechnicianId(job: Record<string, unknown>): string | null {
-  const pro = job.assigned_pro ?? job.pro_id ?? job.pro;
-  if (typeof pro === "string") return pro;
-  if (pro && typeof pro === "object" && "id" in pro) {
-    return String((pro as { id: unknown }).id);
+  const assigned =
+    job.assigned_pro ??
+    job.pro_id ??
+    job.pro ??
+    job.assigned_employee ??
+    job.employee_id ??
+    job.assigned_pro_id;
+  if (typeof assigned === "string") return assigned;
+  if (assigned && typeof assigned === "object" && "id" in assigned) {
+    return String((assigned as { id: unknown }).id);
   }
   return null;
 }
@@ -54,22 +60,55 @@ function isPaidOrCompleted(job: Record<string, unknown>): boolean {
   );
 }
 
+function buildNameMap(
+  items: unknown[],
+  idFields: string[],
+  nameFields: string[][]
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const item of items) {
+    const r = item as Record<string, unknown>;
+    const id = idFields.map((f) => r[f]).find(Boolean);
+    if (!id) continue;
+    const idStr = String(id);
+    const part1 = nameFields.flatMap((fields) => fields.map((f) => r[f])).find(Boolean);
+    const part2 = [r.first_name, r.last_name].filter(Boolean).join(" ");
+    const name = (part1 ?? part2 ?? "Unknown") as string;
+    map.set(idStr, String(name));
+  }
+  return map;
+}
+
 export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
-  const prosMap = new Map<string, string>();
+  const nameMap = new Map<string, string>();
 
   try {
-    const prosRes = await getPros();
-    const prosList = Array.isArray(prosRes) ? prosRes : prosRes?.pros ?? prosRes?.data ?? [];
-    for (const p of prosList) {
-      const pro = p as Record<string, unknown>;
-      const id = String(pro.id ?? pro.pro_id ?? "");
-      const part1 = [pro.name, pro.display_name].filter(Boolean)[0];
-      const part2 = [pro.first_name, pro.last_name].filter(Boolean).join(" ");
-      const name = (part1 ?? part2 ?? "Unknown") as string;
-      if (id) prosMap.set(id, String(name));
-    }
+    const employeesRes = await getEmployees();
+    const employeesList =
+      Array.isArray(employeesRes) ? employeesRes : employeesRes?.employees ?? employeesRes?.data ?? [];
+    const empMap = buildNameMap(
+      employeesList,
+      ["id", "employee_id", "pro_id"],
+      [["name", "display_name"], ["first_name", "last_name"]]
+    );
+    empMap.forEach((v, k) => nameMap.set(k, v));
   } catch {
-    // Pros endpoint may not exist; we'll use IDs as fallback
+    // Employees endpoint may not exist
+  }
+
+  if (nameMap.size === 0) {
+    try {
+      const prosRes = await getPros();
+      const prosList = Array.isArray(prosRes) ? prosRes : prosRes?.pros ?? prosRes?.data ?? [];
+      const proMap = buildNameMap(
+        prosList,
+        ["id", "pro_id"],
+        [["name", "display_name"], ["first_name", "last_name"]]
+      );
+      proMap.forEach((v, k) => nameMap.set(k, v));
+    } catch {
+      // Pros endpoint may not exist; we'll use IDs as fallback
+    }
   }
 
   const revenueByTech = new Map<string, number>();
@@ -107,7 +146,7 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
   const technicians: TechnicianRevenue[] = Array.from(revenueByTech.entries())
     .map(([id, totalRevenue]) => ({
       technicianId: id,
-      technicianName: prosMap.get(id) ?? `Technician ${id}`,
+      technicianName: nameMap.get(id) ?? `Technician ${id}`,
       totalRevenue,
     }))
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
