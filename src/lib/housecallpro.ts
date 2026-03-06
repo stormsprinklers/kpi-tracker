@@ -14,21 +14,12 @@ function getHeaders(): HeadersInit {
 
 async function hcpFetch(url: string): Promise<Response> {
   const res = await fetch(url, { headers: getHeaders() });
-  // #region agent log
   const body = await res.text();
-  if (!res.ok) {
-    _log('housecallpro.ts:hcpFetch', 'HCP API error response', { url, status: res.status, statusText: res.statusText, bodyPreview: body.slice(0, 500), hypothesisId: 'H1_H3_H4' });
-  }
-  // #endregion
   return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
 export async function getCompany() {
-  const url = `${HCP_API_BASE}/company`;
-  // #region agent log
-  _log('housecallpro.ts:getCompany', 'Request', { url, hypothesisId: 'H5' });
-  // #endregion
-  const res = await hcpFetch(url);
+  const res = await hcpFetch(`${HCP_API_BASE}/company`);
   if (!res.ok) {
     throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
   }
