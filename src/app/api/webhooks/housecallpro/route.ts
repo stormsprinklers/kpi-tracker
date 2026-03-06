@@ -21,15 +21,16 @@ export async function OPTIONS() {
   });
 }
 
-function verifySignature(
-  payload: string,
-  signature: string | null,
+function verifyHcpSignature(
+  body: string,
+  timestamp: string,
+  signature: string,
   secret: string
 ): boolean {
-  if (!signature || !secret) return false;
+  const signedPayload = `${timestamp}.${body}`;
   const expected = crypto
     .createHmac("sha256", secret)
-    .update(payload)
+    .update(signedPayload)
     .digest("hex");
   const sigBuf = Buffer.from(signature, "hex");
   const expectedBuf = Buffer.from(expected, "hex");
@@ -38,8 +39,24 @@ function verifySignature(
 }
 
 export async function POST(request: Request) {
-  const signature = request.headers.get("x-housecall-signature");
+  const rawBody = await request.text();
+  const signature = request.headers.get("api-signature");
+  const timestamp = request.headers.get("api-timestamp");
   const secret = process.env.HOUSECALLPRO_WEBHOOK_SECRET;
+
+  // Initial HCP setup/test: no signing secret yet, so accept unsigned requests
+  if (!signature || !timestamp) {
+    console.log("[HCP Webhook] Unsigned setup/test request accepted");
+    if (rawBody) {
+      try {
+        const body = JSON.parse(rawBody);
+        console.log("[HCP Webhook] Setup payload:", body?.event ?? body);
+      } catch {
+        console.log("[HCP Webhook] Raw body:", rawBody);
+      }
+    }
+    return NextResponse.json({ ok: true, setup: true });
+  }
 
   if (!secret) {
     console.error("[HCP Webhook] HOUSECALLPRO_WEBHOOK_SECRET is not set");
@@ -49,22 +66,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = await request.text();
-
-  if (!verifySignature(body, signature, secret)) {
+  if (!verifyHcpSignature(rawBody, timestamp, signature, secret)) {
     console.warn("[HCP Webhook] Invalid signature");
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let payload: unknown;
   try {
-    payload = JSON.parse(body);
+    payload = rawBody ? JSON.parse(rawBody) : null;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  // Log event for now (replace with persistence later)
-  console.log("[HCP Webhook] Received event:", payload);
+  console.log("[HCP Webhook] Verified event:", (payload as { event?: string })?.event ?? payload);
 
-  return NextResponse.json({ received: true }, { status: 200 });
+  return NextResponse.json({ ok: true });
 }
