@@ -22,28 +22,38 @@ export async function GET() {
     });
   }
 
-  try {
-    const res = await fetch("https://api.housecallpro.com/company", {
-      headers: {
-        Accept: "application/json",
-        Authorization: token,
-        "Content-Type": "application/json",
-      },
-    });
+  const url = "https://api.housecallpro.com/company";
+  const baseHeaders = { Accept: "application/json", "Content-Type": "application/json" };
 
-    const body = await res.text();
-    let parsedBody: unknown = body;
+  try {
+    // Try raw token (current format)
+    const resRaw = await fetch(url, {
+      headers: { ...baseHeaders, Authorization: token },
+    });
+    const bodyRaw = await resRaw.text();
+    let parsedRaw: unknown = bodyRaw;
     try {
-      parsedBody = body ? JSON.parse(body) : null;
+      parsedRaw = bodyRaw ? JSON.parse(bodyRaw) : null;
+    } catch {
+      /* keep as string */
+    }
+
+    // Try Bearer token (alternative format)
+    const resBearer = await fetch(url, {
+      headers: { ...baseHeaders, Authorization: `Bearer ${token}` },
+    });
+    const bodyBearer = await resBearer.text();
+    let parsedBearer: unknown = bodyBearer;
+    try {
+      parsedBearer = bodyBearer ? JSON.parse(bodyBearer) : null;
     } catch {
       /* keep as string */
     }
 
     return NextResponse.json({
       ...diagnostic,
-      status: res.status,
-      statusText: res.statusText,
-      responseBody: parsedBody,
+      raw: { status: resRaw.status, statusText: resRaw.statusText, responseBody: parsedRaw },
+      bearer: { status: resBearer.status, statusText: resBearer.statusText, responseBody: parsedBearer },
     });
   } catch (err) {
     return NextResponse.json({
