@@ -18,6 +18,32 @@ async function hcpFetch(url: string): Promise<Response> {
   return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
+/** Fetch all pages by following next_page_url (HCP API pagination). */
+async function fetchAllPages(
+  initialUrl: string,
+  itemsKey: string,
+  extraParams?: Record<string, string>
+): Promise<unknown[]> {
+  const all: unknown[] = [];
+  let url: string | null = initialUrl;
+  if (extraParams && Object.keys(extraParams).length > 0) {
+    const params = new URLSearchParams(extraParams);
+    url = `${initialUrl}${initialUrl.includes("?") ? "&" : "?"}${params.toString()}`;
+  }
+  while (url) {
+    const res = await hcpFetch(url);
+    if (!res.ok) {
+      throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
+    }
+    const data = (await res.json()) as Record<string, unknown>;
+    const list = (Array.isArray(data) ? data : (data[itemsKey] as unknown[])) ?? [];
+    all.push(...list);
+    const next = data.next_page_url;
+    url = next && typeof next === "string" ? next : null;
+  }
+  return all;
+}
+
 export async function getCompany() {
   const res = await hcpFetch(`${HCP_API_BASE}/company`);
   if (!res.ok) {
@@ -52,28 +78,9 @@ export async function getJobInvoices(jobId: string) {
   return res.json();
 }
 
-export async function getJobsAllPages(params?: {
-  per_page?: number;
-  status?: string;
-}) {
-  const perPage = params?.per_page ?? 50;
-  const allJobs: unknown[] = [];
-  let page = 1;
-  let hasMore = true;
-
-  while (hasMore) {
-    const data = await getJobs({
-      per_page: perPage,
-      page,
-      status: params?.status,
-    });
-    const jobs = Array.isArray(data) ? data : (data as { jobs?: unknown[] }).jobs ?? [];
-    allJobs.push(...jobs);
-    hasMore = jobs.length === perPage;
-    page++;
-  }
-
-  return allJobs;
+export async function getJobsAllPages(params?: { status?: string }) {
+  const extra = params?.status ? { status: params.status } : undefined;
+  return fetchAllPages(`${HCP_API_BASE}/jobs`, "jobs", extra);
 }
 
 export async function getPros() {
@@ -101,21 +108,7 @@ export async function getEmployees(params?: {
 }
 
 export async function getEmployeesAllPages() {
-  const pageSize = 50;
-  const allEmployees: unknown[] = [];
-  let page = 1;
-  let hasMore = true;
-
-  while (hasMore) {
-    const data = await getEmployees({ page, page_size: pageSize });
-    const list = Array.isArray(data) ? data : (data as { employees?: unknown[] }).employees ?? [];
-    allEmployees.push(...list);
-    const totalPages = (data as { total_pages?: number })?.total_pages ?? 1;
-    hasMore = list.length === pageSize && page < totalPages;
-    page++;
-  }
-
-  return allEmployees;
+  return fetchAllPages(`${HCP_API_BASE}/employees`, "employees");
 }
 
 export async function getCustomers(params?: { per_page?: number; page?: number }) {
@@ -132,18 +125,7 @@ export async function getCustomers(params?: { per_page?: number; page?: number }
 }
 
 export async function getCustomersAllPages() {
-  const perPage = 50;
-  const all: unknown[] = [];
-  let page = 1;
-  let hasMore = true;
-  while (hasMore) {
-    const data = await getCustomers({ per_page: perPage, page });
-    const list = Array.isArray(data) ? data : (data as { customers?: unknown[] }).customers ?? [];
-    all.push(...list);
-    hasMore = list.length === perPage;
-    page++;
-  }
-  return all;
+  return fetchAllPages(`${HCP_API_BASE}/customers`, "customers");
 }
 
 export async function getInvoices(params?: { per_page?: number; page?: number }) {
@@ -160,18 +142,7 @@ export async function getInvoices(params?: { per_page?: number; page?: number })
 }
 
 export async function getInvoicesAllPages() {
-  const perPage = 50;
-  const all: unknown[] = [];
-  let page = 1;
-  let hasMore = true;
-  while (hasMore) {
-    const data = await getInvoices({ per_page: perPage, page });
-    const list = Array.isArray(data) ? data : (data as { invoices?: unknown[] }).invoices ?? [];
-    all.push(...list);
-    hasMore = list.length === perPage;
-    page++;
-  }
-  return all;
+  return fetchAllPages(`${HCP_API_BASE}/invoices`, "invoices");
 }
 
 export async function getEstimates(params?: { per_page?: number; page?: number }) {
@@ -188,18 +159,7 @@ export async function getEstimates(params?: { per_page?: number; page?: number }
 }
 
 export async function getEstimatesAllPages() {
-  const perPage = 50;
-  const all: unknown[] = [];
-  let page = 1;
-  let hasMore = true;
-  while (hasMore) {
-    const data = await getEstimates({ per_page: perPage, page });
-    const list = Array.isArray(data) ? data : (data as { estimates?: unknown[] }).estimates ?? [];
-    all.push(...list);
-    hasMore = list.length === perPage;
-    page++;
-  }
-  return all;
+  return fetchAllPages(`${HCP_API_BASE}/estimates`, "estimates");
 }
 
 export async function getAppointments(params?: { per_page?: number; page?: number }) {
@@ -216,18 +176,7 @@ export async function getAppointments(params?: { per_page?: number; page?: numbe
 }
 
 export async function getAppointmentsAllPages() {
-  const perPage = 50;
-  const all: unknown[] = [];
-  let page = 1;
-  let hasMore = true;
-  while (hasMore) {
-    const data = await getAppointments({ per_page: perPage, page });
-    const list = Array.isArray(data) ? data : (data as { appointments?: unknown[] }).appointments ?? [];
-    all.push(...list);
-    hasMore = list.length === perPage;
-    page++;
-  }
-  return all;
+  return fetchAllPages(`${HCP_API_BASE}/appointments`, "appointments");
 }
 
 export function isConfigured(): boolean {
