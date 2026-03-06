@@ -38,17 +38,7 @@ export async function GET() {
       estimates_top_level_keys: Object.keys(estimatesData),
       estimates_next_page_url: estimatesData.next_page_url,
       first_estimate_keys: firstEstimate ? Object.keys(firstEstimate as object) : null,
-      first_estimate_sample: firstEstimate
-        ? {
-            id: (firstEstimate as Record<string, unknown>).id,
-            job_id: (firstEstimate as Record<string, unknown>).job_id,
-            job: (firstEstimate as Record<string, unknown>).job,
-            request_id: (firstEstimate as Record<string, unknown>).request_id,
-            service_request_id: (firstEstimate as Record<string, unknown>).service_request_id,
-            service_request: (firstEstimate as Record<string, unknown>).service_request,
-            request: (firstEstimate as Record<string, unknown>).request,
-          }
-        : null,
+      first_estimate_full: firstEstimate ?? null,
     });
   } catch (error) {
     return NextResponse.json(
