@@ -31,8 +31,8 @@ function getTechnicianIds(job: Record<string, unknown>): string[] {
 function toDollars(value: unknown): number {
   const n = typeof value === "number" && !Number.isNaN(value) ? value : typeof value === "string" ? parseFloat(value) || 0 : 0;
   if (n <= 0) return 0;
-  // Defensive: values > 1M are almost certainly cents (e.g. $25M displayed = 25M cents stored)
-  if (Number.isInteger(n) && n > 1_000_000) return n / 100;
+  // Defensive: integers > 3k are likely cents (HCP format; $30+ as integer = cents)
+  if (Number.isInteger(n) && n > 3000) return n / 100;
   return n;
 }
 
@@ -63,6 +63,8 @@ function getPaidAmountFromJob(job: Record<string, unknown>): number {
     const cents = job.amount_cents ?? job.total_cents ?? totals?.amount_cents;
     if (typeof cents === "number" && cents > 0) totalNum = cents / 100;
   }
+  // Last-resort: HCP amounts are cents; values > 10000 are almost certainly cents (no single job is $10k+ in raw units)
+  if (Number.isInteger(totalNum) && totalNum > 3000) totalNum = totalNum / 100;
   const outNum = toDollars(outstanding);
   return Math.max(0, totalNum - outNum) || totalNum;
 }
@@ -81,7 +83,7 @@ function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
   const n = typeof val === "number" && !Number.isNaN(val) ? val : typeof val === "string" ? parseFloat(val) || 0 : 0;
   if (n <= 0) return 0;
   // Defensive: large integers likely cents (HCP format)
-  if (Number.isInteger(n) && n > 1_000_000) return n / 100;
+  if (Number.isInteger(n) && n > 3000) return n / 100;
   return n;
 }
 

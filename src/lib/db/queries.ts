@@ -18,19 +18,31 @@ export async function getJobsFromDb(
   return (result.rows ?? []).map((r) => {
     const row = r as { raw: Record<string, unknown>; total_amount?: number | string | null; outstanding_balance?: number | string | null };
     const job = { ...row.raw } as Record<string, unknown>;
-    // Use columns when present (stored in dollars)
+    const toNum = (v: unknown): number | null =>
+      typeof v === "number" && !Number.isNaN(v) ? v : typeof v === "string" ? (parseFloat(v) || null) : null;
+    const rawTotal = toNum(row.raw?.total_amount) ?? toNum(row.raw?.subtotal);
+    const rawOut = toNum(row.raw?.outstanding_balance) ?? toNum(row.raw?.balance_due) ?? toNum(row.raw?.amount_due);
     if (row.total_amount != null) {
-      job.total_amount = typeof row.total_amount === "string" ? parseFloat(row.total_amount) : row.total_amount;
-    } else if (row.raw?.total_amount != null || row.raw?.subtotal != null) {
-      // Fallback: extract from raw (HCP uses cents) and convert to dollars
-      const cents = typeof row.raw?.total_amount === "number" ? row.raw.total_amount : typeof row.raw?.subtotal === "number" ? row.raw.subtotal : parseFloat(String(row.raw?.total_amount ?? row.raw?.subtotal ?? 0)) || 0;
-      job.total_amount = cents / 100;
+      const colVal = typeof row.total_amount === "string" ? parseFloat(row.total_amount) : Number(row.total_amount);
+      const isCents =
+        (rawTotal != null && Math.abs(colVal - rawTotal) < 0.01) ||
+        (Number.isInteger(colVal) && colVal > 3000);
+      job.total_amount = isCents ? colVal / 100 : colVal;
+    } else if (rawTotal != null) {
+      job.total_amount = rawTotal / 100;
+    } else if (typeof job.total_amount === "number" && job.total_amount > 3000) {
+      job.total_amount = job.total_amount / 100;
     }
     if (row.outstanding_balance != null) {
-      job.outstanding_balance = typeof row.outstanding_balance === "string" ? parseFloat(row.outstanding_balance) : row.outstanding_balance;
-    } else if (row.raw?.outstanding_balance != null || row.raw?.balance_due != null || row.raw?.amount_due != null) {
-      const cents = typeof row.raw?.outstanding_balance === "number" ? row.raw.outstanding_balance : typeof row.raw?.balance_due === "number" ? row.raw.balance_due : typeof row.raw?.amount_due === "number" ? row.raw.amount_due : parseFloat(String(row.raw?.outstanding_balance ?? row.raw?.balance_due ?? row.raw?.amount_due ?? 0)) || 0;
-      job.outstanding_balance = cents / 100;
+      const colVal = typeof row.outstanding_balance === "string" ? parseFloat(row.outstanding_balance) : Number(row.outstanding_balance);
+      const isCents =
+        (rawOut != null && Math.abs(colVal - rawOut) < 0.01) ||
+        (Number.isInteger(colVal) && colVal > 3000);
+      job.outstanding_balance = isCents ? colVal / 100 : colVal;
+    } else if (rawOut != null) {
+      job.outstanding_balance = rawOut / 100;
+    } else if (typeof job.outstanding_balance === "number" && job.outstanding_balance > 3000) {
+      job.outstanding_balance = job.outstanding_balance / 100;
     } else {
       job.outstanding_balance = 0;
     }
