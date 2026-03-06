@@ -57,6 +57,13 @@ export async function initSchema(): Promise<void> {
       outstanding_balance = COALESCE((raw->>'outstanding_balance')::numeric, (raw->>'balance_due')::numeric, (raw->>'amount_due')::numeric, 0) / 100
     WHERE total_amount IS NULL AND (raw ? 'total_amount' OR raw ? 'subtotal')
   `;
+  -- Fix rows where cents were stored as dollars (column matches raw before we added /100)
+  await sql`
+    UPDATE jobs
+    SET total_amount = total_amount / 100, outstanding_balance = outstanding_balance / 100
+    WHERE total_amount IS NOT NULL
+      AND (total_amount = (raw->>'total_amount')::numeric OR total_amount = (raw->>'subtotal')::numeric)
+  `;
   await sql`
     CREATE TABLE IF NOT EXISTS invoices (
       id SERIAL PRIMARY KEY,

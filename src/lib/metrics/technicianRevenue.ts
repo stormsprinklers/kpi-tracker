@@ -27,6 +27,15 @@ function getTechnicianIds(job: Record<string, unknown>): string[] {
   return [];
 }
 
+/** HCP sends amounts in cents. Convert to dollars when value looks like cents (defensive for bad data). */
+function toDollars(value: unknown): number {
+  const n = typeof value === "number" && !Number.isNaN(value) ? value : typeof value === "string" ? parseFloat(value) || 0 : 0;
+  if (n <= 0) return 0;
+  // Defensive: values > 1M are almost certainly cents (e.g. $25M displayed = 25M cents stored)
+  if (Number.isInteger(n) && n > 1_000_000) return n / 100;
+  return n;
+}
+
 function getPaidAmountFromJob(job: Record<string, unknown>): number {
   // HCP may use various field names; also check nested totals/financial
   const totals = job.totals as Record<string, unknown> | undefined;
@@ -49,12 +58,12 @@ function getPaidAmountFromJob(job: Record<string, unknown>): number {
     totals?.outstanding_balance ??
     financial?.outstanding_balance ??
     0;
-  let totalNum = typeof total === "number" && !Number.isNaN(total) ? total : typeof total === "string" ? parseFloat(total) || 0 : 0;
+  let totalNum = toDollars(total);
   if (totalNum <= 0) {
     const cents = job.amount_cents ?? job.total_cents ?? totals?.amount_cents;
     if (typeof cents === "number" && cents > 0) totalNum = cents / 100;
   }
-  const outNum = typeof outstanding === "number" && !Number.isNaN(outstanding) ? outstanding : typeof outstanding === "string" ? parseFloat(outstanding) || 0 : 0;
+  const outNum = toDollars(outstanding);
   return Math.max(0, totalNum - outNum) || totalNum;
 }
 
@@ -66,11 +75,14 @@ function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
     inv.paid_total ??
     inv.amount ??
     (inv as Record<string, unknown>).total_amount;
-  if (typeof val === "number" && !Number.isNaN(val)) return val;
-  if (typeof val === "string") return parseFloat(val) || 0;
+  // HCP invoices: prefer amount_cents when present (explicit cents)
   const cents = (inv as Record<string, unknown>).amount_cents ?? (inv as Record<string, unknown>).paid_cents;
   if (typeof cents === "number" && cents > 0) return cents / 100;
-  return 0;
+  const n = typeof val === "number" && !Number.isNaN(val) ? val : typeof val === "string" ? parseFloat(val) || 0 : 0;
+  if (n <= 0) return 0;
+  // Defensive: large integers likely cents (HCP format)
+  if (Number.isInteger(n) && n > 1_000_000) return n / 100;
+  return n;
 }
 
 function isPaidOrCompleted(job: Record<string, unknown>): boolean {
@@ -104,6 +116,32 @@ function buildNameMap(
     map.set(idStr, String(name));
   }
   return map;
+}
+
+/** Extract name from assigned employee/pro object. HCP embeds first_name, last_name, name, etc. */
+function getNameFromAssigned(r: Record<string, unknown>): string | null {
+  const name = r.name ?? r.display_name;
+  if (name && typeof name === "string") return name.trim() || null;
+  const first = r.first_name ?? r.given_name;
+  const last = r.last_name ?? r.family_name;
+  const full = [first, last].filter(Boolean).map(String).join(" ").trim();
+  return full || null;
+}
+
+/** Merge names from job's assigned_employees/assigned_pro into nameMap (for former employees not in pros/employees). */
+function mergeNamesFromJob(nameMap: Map<string, string>, job: Record<string, unknown>): void {
+  const assigned = job.assigned_employees ?? job.assigned_pro ?? job.assigned_employee;
+  const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    const id = r.id ?? r.pro_id ?? r.employee_id;
+    if (!id) continue;
+    const idStr = String(id);
+    if (nameMap.has(idStr)) continue;
+    const name = getNameFromAssigned(r);
+    if (name) nameMap.set(idStr, name);
+  }
 }
 
 export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
@@ -173,6 +211,7 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
 
   // Prefer DB for jobs; fall back to API if empty
   let jobs: unknown[] = [];
+  let jobsFromApi = false;
   try {
     jobs = await getJobsFromDb(companyId);
   } catch {
@@ -181,13 +220,28 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
   if (jobs.length === 0) {
     try {
       jobs = await getJobsAllPages();
+      jobsFromApi = true;
     } catch {
       /* skip */
     }
   }
 
+  // HCP API returns amounts in cents; normalize to dollars when using API data
+  if (jobsFromApi) {
+    jobs = (jobs as Record<string, unknown>[]).map((j) => {
+      const copy = { ...j };
+      const totalCents = j.total_amount ?? j.subtotal ?? j.total;
+      const outCents = j.outstanding_balance ?? j.balance_due ?? j.amount_due ?? 0;
+      if (typeof totalCents === "number" && !Number.isNaN(totalCents)) copy.total_amount = totalCents / 100;
+      if (typeof outCents === "number" && !Number.isNaN(outCents)) copy.outstanding_balance = outCents / 100;
+      else copy.outstanding_balance = 0;
+      return copy;
+    });
+  }
+
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
+    mergeNamesFromJob(nameMap, j);
     const techIds = getTechnicianIds(j);
     if (techIds.length === 0) continue;
 
@@ -226,7 +280,7 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
   const technicians: TechnicianRevenue[] = Array.from(revenueByTech.entries())
     .map(([id, totalRevenue]) => ({
       technicianId: id,
-      technicianName: nameMap.get(id) ?? `Technician ${id}`,
+      technicianName: nameMap.get(id) ?? (id.startsWith("pro_") || id.startsWith("emp_") ? "Former technician" : `Technician ${id}`),
       totalRevenue,
     }))
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
