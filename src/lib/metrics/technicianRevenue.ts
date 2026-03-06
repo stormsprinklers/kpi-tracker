@@ -1,4 +1,4 @@
-import { getJobsAllPages, getJobInvoices, getEmployees, getPros } from "../housecallpro";
+import { getJobsAllPages, getJobInvoices, getEmployeesAllPages, getPros } from "../housecallpro";
 
 export interface TechnicianRevenue {
   technicianId: string;
@@ -80,9 +80,7 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
   const nameMap = new Map<string, string>();
 
   try {
-    const employeesRes = await getEmployees();
-    const employeesList =
-      Array.isArray(employeesRes) ? employeesRes : employeesRes?.employees ?? employeesRes?.data ?? [];
+    const employeesList = await getEmployeesAllPages();
     const empMap = buildNameMap(
       employeesList,
       ["id", "employee_id", "pro_id"],

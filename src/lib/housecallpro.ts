@@ -84,12 +84,38 @@ export async function getPros() {
   return res.json();
 }
 
-export async function getEmployees() {
-  const res = await hcpFetch(`${HCP_API_BASE}/employees`);
+export async function getEmployees(params?: {
+  page?: number;
+  page_size?: number;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params?.page) searchParams.set("page", String(params.page));
+  if (params?.page_size) searchParams.set("page_size", String(params.page_size));
+  const query = searchParams.toString();
+  const url = `${HCP_API_BASE}/employees${query ? `?${query}` : ""}`;
+  const res = await hcpFetch(url);
   if (!res.ok) {
     throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+export async function getEmployeesAllPages() {
+  const pageSize = 50;
+  const allEmployees: unknown[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const data = await getEmployees({ page, page_size: pageSize });
+    const list = Array.isArray(data) ? data : (data as { employees?: unknown[] }).employees ?? [];
+    allEmployees.push(...list);
+    const totalPages = (data as { total_pages?: number })?.total_pages ?? 1;
+    hasMore = list.length === pageSize && page < totalPages;
+    page++;
+  }
+
+  return allEmployees;
 }
 
 export function isConfigured(): boolean {
