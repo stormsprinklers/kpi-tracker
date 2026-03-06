@@ -10,12 +10,18 @@ export async function getJobsFromDb(
   filters?: SyncFilters
 ): Promise<Record<string, unknown>[]> {
   const result = await sql`
-    SELECT raw FROM jobs
+    SELECT raw, total_amount, outstanding_balance FROM jobs
     WHERE company_id = ${companyId}
     ORDER BY (raw->>'updated_at') DESC
     LIMIT ${filters?.limit ?? 10000}
   `;
-  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+  return (result.rows ?? []).map((r) => {
+    const row = r as { raw: Record<string, unknown>; total_amount?: number | string | null; outstanding_balance?: number | string | null };
+    const job = { ...row.raw } as Record<string, unknown>;
+    if (row.total_amount != null) job.total_amount = typeof row.total_amount === "string" ? parseFloat(row.total_amount) : row.total_amount;
+    if (row.outstanding_balance != null) job.outstanding_balance = typeof row.outstanding_balance === "string" ? parseFloat(row.outstanding_balance) : row.outstanding_balance;
+    return job;
+  });
 }
 
 export async function getCustomersFromDb(
@@ -61,6 +67,16 @@ export async function getEmployeesFromDb(
 ): Promise<Record<string, unknown>[]> {
   const result = await sql`
     SELECT raw FROM employees
+    WHERE company_id = ${companyId}
+  `;
+  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+}
+
+export async function getProsFromDb(
+  companyId: string
+): Promise<Record<string, unknown>[]> {
+  const result = await sql`
+    SELECT raw FROM pros
     WHERE company_id = ${companyId}
   `;
   return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);

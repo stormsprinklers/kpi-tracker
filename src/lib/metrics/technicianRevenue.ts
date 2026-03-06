@@ -1,5 +1,5 @@
 import { getJobsAllPages, getJobInvoices, getEmployeesAllPages, getPros, getCompany } from "../housecallpro";
-import { getJobsFromDb, getEmployeesFromDb, getInvoicesFromDb } from "../db/queries";
+import { getJobsFromDb, getEmployeesFromDb, getInvoicesFromDb, getProsFromDb } from "../db/queries";
 
 export interface TechnicianRevenue {
   technicianId: string;
@@ -28,10 +28,32 @@ function getTechnicianIds(job: Record<string, unknown>): string[] {
 }
 
 function getPaidAmountFromJob(job: Record<string, unknown>): number {
-  // HCP uses total_amount, outstanding_balance. Paid = total_amount - outstanding_balance
-  const total = job.total_amount ?? job.amount_paid ?? job.total_paid ?? job.total ?? job.paid_amount ?? job.revenue;
-  const outstanding = job.outstanding_balance ?? 0;
-  const totalNum = typeof total === "number" && !Number.isNaN(total) ? total : typeof total === "string" ? parseFloat(total) || 0 : 0;
+  // HCP may use various field names; also check nested totals/financial
+  const totals = job.totals as Record<string, unknown> | undefined;
+  const financial = job.financial as Record<string, unknown> | undefined;
+  const total =
+    job.total_amount ??
+    job.amount_paid ??
+    job.total_paid ??
+    job.total ??
+    job.paid_amount ??
+    job.revenue ??
+    totals?.total_amount ??
+    totals?.total ??
+    financial?.total_amount ??
+    financial?.paid_amount;
+  const outstanding =
+    job.outstanding_balance ??
+    job.balance_due ??
+    job.amount_due ??
+    totals?.outstanding_balance ??
+    financial?.outstanding_balance ??
+    0;
+  let totalNum = typeof total === "number" && !Number.isNaN(total) ? total : typeof total === "string" ? parseFloat(total) || 0 : 0;
+  if (totalNum <= 0) {
+    const cents = job.amount_cents ?? job.total_cents ?? totals?.amount_cents;
+    if (typeof cents === "number" && cents > 0) totalNum = cents / 100;
+  }
   const outNum = typeof outstanding === "number" && !Number.isNaN(outstanding) ? outstanding : typeof outstanding === "string" ? parseFloat(outstanding) || 0 : 0;
   return Math.max(0, totalNum - outNum) || totalNum;
 }
@@ -41,20 +63,27 @@ function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
     inv.paid_amount ??
     inv.amount_paid ??
     inv.total ??
-    inv.paid_total;
+    inv.paid_total ??
+    inv.amount ??
+    (inv as Record<string, unknown>).total_amount;
   if (typeof val === "number" && !Number.isNaN(val)) return val;
   if (typeof val === "string") return parseFloat(val) || 0;
+  const cents = (inv as Record<string, unknown>).amount_cents ?? (inv as Record<string, unknown>).paid_cents;
+  if (typeof cents === "number" && cents > 0) return cents / 100;
   return 0;
 }
 
 function isPaidOrCompleted(job: Record<string, unknown>): boolean {
-  const status = (job.status ?? job.job_status ?? job.work_status ?? "").toString().toLowerCase();
+  const status = (job.status ?? job.job_status ?? job.work_status ?? job.state ?? "").toString().toLowerCase();
   return (
     status === "paid" ||
     status === "completed" ||
     status === "complete" ||
     status === "closed" ||
-    status === "done"
+    status === "done" ||
+    status === "paid_in_full" ||
+    status === "invoiced" ||
+    status === "finished"
   );
 }
 
@@ -88,7 +117,7 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
     // Fall through to API
   }
 
-  // Prefer DB for employees
+  // Build employee name map (from DB first, then API)
   try {
     const employeesList = await getEmployeesFromDb(companyId);
     const empMap = buildNameMap(
@@ -115,19 +144,29 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
     }
   }
 
-  if (nameMap.size === 0) {
-    try {
-      const prosRes = await getPros();
-      const prosList = Array.isArray(prosRes) ? prosRes : prosRes?.pros ?? prosRes?.data ?? [];
-      const proMap = buildNameMap(
-        prosList,
-        ["id", "pro_id"],
-        [["name", "display_name"], ["first_name", "last_name"]]
-      );
-      proMap.forEach((v, k) => nameMap.set(k, v));
-    } catch {
-      /* skip */
-    }
+  // Always merge pros into name map (jobs use assigned_pro with pro_xxx IDs; former pros may not be in employees)
+  try {
+    const prosList = await getProsFromDb(companyId);
+    const proMap = buildNameMap(
+      prosList,
+      ["id", "pro_id"],
+      [["name", "display_name"], ["first_name", "last_name"]]
+    );
+    proMap.forEach((v, k) => nameMap.set(k, v));
+  } catch {
+    /* skip */
+  }
+  try {
+    const prosRes = await getPros();
+    const prosList = Array.isArray(prosRes) ? prosRes : (prosRes as { pros?: unknown[] })?.pros ?? (prosRes as { data?: unknown[] })?.data ?? [];
+    const proMap = buildNameMap(
+      prosList,
+      ["id", "pro_id"],
+      [["name", "display_name"], ["first_name", "last_name"]]
+    );
+    proMap.forEach((v, k) => nameMap.set(k, v));
+  } catch {
+    /* skip */
   }
 
   const revenueByTech = new Map<string, number>();
@@ -154,7 +193,8 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
 
     const isPaid = isPaidOrCompleted(j);
     let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
-    if (paidAmount <= 0 && isPaid && j.id) {
+    // Fall back to invoices when job amount is 0 (HCP may use different status/amount fields)
+    if (paidAmount <= 0 && j.id) {
       try {
         const invoices = await getInvoicesFromDb(companyId, String(j.id));
         for (const inv of invoices) {
@@ -166,7 +206,7 @@ export async function getTechnicianRevenue(): Promise<TechnicianRevenueResult> {
       if (paidAmount <= 0) {
         try {
           const invoices = await getJobInvoices(String(j.id));
-          const invList = Array.isArray(invoices) ? invoices : invoices?.invoices ?? invoices?.data ?? [];
+          const invList = Array.isArray(invoices) ? invoices : (invoices as { invoices?: unknown[] })?.invoices ?? (invoices as { data?: unknown[] })?.data ?? [];
           for (const inv of invList) {
             paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
           }

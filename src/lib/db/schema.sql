@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   hcp_id TEXT NOT NULL,
   company_id TEXT NOT NULL,
   customer_hcp_id TEXT,
+  total_amount NUMERIC,
+  outstanding_balance NUMERIC,
   raw JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(hcp_id, company_id)

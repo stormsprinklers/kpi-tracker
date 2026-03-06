@@ -14,6 +14,16 @@ function extractCustomerHcpId(job: Record<string, unknown>): string | null {
   return (job.customer_id ?? job.customer_hcp_id) as string | null ?? null;
 }
 
+function extractAmount(record: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = record[k];
+    if (v == null) continue;
+    const n = typeof v === "number" && !Number.isNaN(v) ? v : typeof v === "string" ? parseFloat(v) : NaN;
+    if (!Number.isNaN(n)) return n;
+  }
+  return null;
+}
+
 function extractJobHcpId(record: Record<string, unknown>): string | null {
   const job = record.job ?? record.job_id ?? record.service_request ?? record.request;
   if (job && typeof job === "object" && "id" in job) {
@@ -43,12 +53,16 @@ export async function persistWebhookEvent(
     const hcpId = extractId(record);
     if (!hcpId) return;
     const customerHcpId = extractCustomerHcpId(record);
+    const totalAmount = extractAmount(record, "total_amount", "total", "amount");
+    const outstandingBalance = extractAmount(record, "outstanding_balance", "balance_due", "amount_due");
     const raw = JSON.stringify(record);
     await sql`
-      INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, raw, updated_at)
-      VALUES (${hcpId}, ${companyId}, ${customerHcpId}, ${raw}::jsonb, NOW())
+      INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
+      VALUES (${hcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${raw}::jsonb, NOW())
       ON CONFLICT (hcp_id, company_id) DO UPDATE SET
         customer_hcp_id = EXCLUDED.customer_hcp_id,
+        total_amount = EXCLUDED.total_amount,
+        outstanding_balance = EXCLUDED.outstanding_balance,
         raw = EXCLUDED.raw,
         updated_at = NOW()
     `;

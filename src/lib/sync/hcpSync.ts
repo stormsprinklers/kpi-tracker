@@ -6,6 +6,7 @@ import {
   getEstimatesAllPages,
   getAppointmentsAllPages,
   getEmployeesAllPages,
+  getPros,
 } from "../housecallpro";
 import { sql } from "@vercel/postgres";
 import { initSchema } from "../db";
@@ -27,6 +28,16 @@ function extractCustomerHcpId(job: Record<string, unknown>): string | null {
     return String((customer as { id: unknown }).id);
   }
   return (job.customer_id ?? job.customer_hcp_id) as string | null ?? null;
+}
+
+function extractAmount(record: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = record[k];
+    if (v == null) continue;
+    const n = typeof v === "number" && !Number.isNaN(v) ? v : typeof v === "string" ? parseFloat(v) : NaN;
+    if (!Number.isNaN(n)) return n;
+  }
+  return null;
 }
 
 function extractJobHcpId(record: Record<string, unknown>): string | null {
@@ -59,6 +70,7 @@ export async function runFullSync(): Promise<SyncResult> {
     estimates: 0,
     appointments: 0,
     employees: 0,
+    pros: 0,
   };
 
   try {
@@ -93,11 +105,15 @@ export async function runFullSync(): Promise<SyncResult> {
       const hcpId = extractId(r);
       if (!hcpId) continue;
       const customerHcpId = extractCustomerHcpId(r);
+      const totalAmount = extractAmount(r, "total_amount", "total", "amount");
+      const outstandingBalance = extractAmount(r, "outstanding_balance", "balance_due", "amount_due");
       await sql`
-        INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, raw, updated_at)
-        VALUES (${hcpId}, ${companyId}, ${customerHcpId}, ${JSON.stringify(r)}::jsonb, NOW())
+        INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
+        VALUES (${hcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${JSON.stringify(r)}::jsonb, NOW())
         ON CONFLICT (hcp_id, company_id) DO UPDATE SET
           customer_hcp_id = EXCLUDED.customer_hcp_id,
+          total_amount = EXCLUDED.total_amount,
+          outstanding_balance = EXCLUDED.outstanding_balance,
           raw = EXCLUDED.raw,
           updated_at = NOW()
       `;
@@ -176,7 +192,24 @@ export async function runFullSync(): Promise<SyncResult> {
       entitiesSynced.employees++;
     }
 
-    const entityTypes = ["customers", "jobs", "invoices", "estimates", "appointments", "employees"];
+    const prosRes = await getPros().catch(() => ({ pros: [] as unknown[] }));
+    const prosList = Array.isArray(prosRes) ? prosRes : (prosRes as { pros?: unknown[] }).pros ?? (prosRes as { data?: unknown[] }).data ?? [];
+    await delay(DELAY_MS);
+    for (const p of prosList) {
+      const r = p as Record<string, unknown>;
+      const hcpId = extractId(r);
+      if (!hcpId) continue;
+      await sql`
+        INSERT INTO pros (hcp_id, company_id, raw, updated_at)
+        VALUES (${hcpId}, ${companyId}, ${JSON.stringify(r)}::jsonb, NOW())
+        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
+          raw = EXCLUDED.raw,
+          updated_at = NOW()
+      `;
+      entitiesSynced.pros++;
+    }
+
+    const entityTypes = ["customers", "jobs", "invoices", "estimates", "appointments", "employees", "pros"];
     for (const entityType of entityTypes) {
       await sql`
         INSERT INTO sync_state (company_id, entity_type, last_sync_at)
