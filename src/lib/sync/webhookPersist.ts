@@ -24,6 +24,12 @@ function extractAmount(record: Record<string, unknown>, ...keys: string[]): numb
   return null;
 }
 
+/** HCP returns amounts in cents. Convert to dollars for revenue columns. */
+function extractAmountInDollars(record: Record<string, unknown>, ...keys: string[]): number | null {
+  const cents = extractAmount(record, ...keys);
+  return cents != null ? cents / 100 : null;
+}
+
 function extractJobHcpId(record: Record<string, unknown>): string | null {
   const job = record.job ?? record.job_id ?? record.service_request ?? record.request;
   if (job && typeof job === "object" && "id" in job) {
@@ -53,8 +59,8 @@ export async function persistWebhookEvent(
     const hcpId = extractId(record);
     if (!hcpId) return;
     const customerHcpId = extractCustomerHcpId(record);
-    const totalAmount = extractAmount(record, "total_amount", "total", "amount");
-    const outstandingBalance = extractAmount(record, "outstanding_balance", "balance_due", "amount_due");
+    const totalAmount = extractAmountInDollars(record, "total_amount", "subtotal", "total", "amount");
+    const outstandingBalance = extractAmountInDollars(record, "outstanding_balance", "balance_due", "amount_due");
     const raw = JSON.stringify(record);
     await sql`
       INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)

@@ -51,6 +51,13 @@ export async function initSchema(): Promise<void> {
     END $$
   `;
   await sql`
+    UPDATE jobs
+    SET
+      total_amount = COALESCE((raw->>'total_amount')::numeric, (raw->>'subtotal')::numeric) / 100,
+      outstanding_balance = COALESCE((raw->>'outstanding_balance')::numeric, (raw->>'balance_due')::numeric, (raw->>'amount_due')::numeric, 0) / 100
+    WHERE total_amount IS NULL AND (raw ? 'total_amount' OR raw ? 'subtotal')
+  `;
+  await sql`
     CREATE TABLE IF NOT EXISTS invoices (
       id SERIAL PRIMARY KEY,
       hcp_id TEXT NOT NULL,

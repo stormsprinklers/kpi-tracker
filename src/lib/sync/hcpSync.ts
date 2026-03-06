@@ -40,6 +40,12 @@ function extractAmount(record: Record<string, unknown>, ...keys: string[]): numb
   return null;
 }
 
+/** HCP returns amounts in cents. Convert to dollars for revenue columns. */
+function extractAmountInDollars(record: Record<string, unknown>, ...keys: string[]): number | null {
+  const cents = extractAmount(record, ...keys);
+  return cents != null ? cents / 100 : null;
+}
+
 function extractJobHcpId(record: Record<string, unknown>): string | null {
   const job = record.job ?? record.job_id ?? record.service_request ?? record.request;
   if (job && typeof job === "object" && "id" in job) {
@@ -105,8 +111,8 @@ export async function runFullSync(): Promise<SyncResult> {
       const hcpId = extractId(r);
       if (!hcpId) continue;
       const customerHcpId = extractCustomerHcpId(r);
-      const totalAmount = extractAmount(r, "total_amount", "total", "amount");
-      const outstandingBalance = extractAmount(r, "outstanding_balance", "balance_due", "amount_due");
+      const totalAmount = extractAmountInDollars(r, "total_amount", "subtotal", "total", "amount");
+      const outstandingBalance = extractAmountInDollars(r, "outstanding_balance", "balance_due", "amount_due");
       await sql`
         INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
         VALUES (${hcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${JSON.stringify(r)}::jsonb, NOW())
