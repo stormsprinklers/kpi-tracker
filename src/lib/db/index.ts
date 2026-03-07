@@ -171,4 +171,20 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_time_entries_org_employee_date
     ON time_entries (organization_id, hcp_employee_id, entry_date)
   `;
+
+  // Technician profiles (photos) - technician or admin can upload
+  await sql`
+    CREATE TABLE IF NOT EXISTS technician_profiles (
+      id SERIAL PRIMARY KEY,
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      hcp_employee_id TEXT NOT NULL,
+      photo_url TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(organization_id, hcp_employee_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_technician_profiles_org_employee
+    ON technician_profiles (organization_id, hcp_employee_id)
+  `;
 }

@@ -287,23 +287,13 @@ export function SettingsPageClient({
               className="mt-1 block w-full max-w-md rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
             />
           </div>
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={hcpLoading}
-              className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              {hcpLoading ? "Saving..." : "Save"}
-            </button>
-            <button
-              type="button"
-              onClick={handleSync}
-              disabled={syncLoading}
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              {syncLoading ? "Syncing..." : "Trigger sync"}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={hcpLoading}
+            className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            {hcpLoading ? "Saving..." : "Save"}
+          </button>
         </form>
         {hcpError && (
           <p className="mt-2 text-sm text-red-600 dark:text-red-400">

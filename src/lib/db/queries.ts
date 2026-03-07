@@ -162,6 +162,40 @@ export async function getLastSyncAt(
   return row ? new Date((row as { last_sync_at: string }).last_sync_at) : null;
 }
 
+/** Get technician photo URLs by organization and HCP employee IDs. Returns map of hcp_employee_id -> photo_url. */
+export async function getTechnicianPhotos(
+  organizationId: string,
+  technicianIds: string[]
+): Promise<Record<string, string>> {
+  if (technicianIds.length === 0) return {};
+  const idSet = new Set(technicianIds);
+  const result = await sql`
+    SELECT hcp_employee_id, photo_url FROM technician_profiles
+    WHERE organization_id = ${organizationId}
+    AND photo_url IS NOT NULL AND photo_url != ''
+  `;
+  const map: Record<string, string> = {};
+  for (const row of result.rows ?? []) {
+    const r = row as { hcp_employee_id: string; photo_url: string };
+    if (idSet.has(r.hcp_employee_id) && r.photo_url) map[r.hcp_employee_id] = r.photo_url;
+  }
+  return map;
+}
+
+/** Upsert technician photo URL. Used after upload. */
+export async function upsertTechnicianPhoto(
+  organizationId: string,
+  hcpEmployeeId: string,
+  photoUrl: string
+): Promise<void> {
+  await sql`
+    INSERT INTO technician_profiles (organization_id, hcp_employee_id, photo_url, updated_at)
+    VALUES (${organizationId}, ${hcpEmployeeId}, ${photoUrl}, NOW())
+    ON CONFLICT (organization_id, hcp_employee_id)
+    DO UPDATE SET photo_url = ${photoUrl}, updated_at = NOW()
+  `;
+}
+
 // Auth queries
 export async function getOrganizationsCount(): Promise<number> {
   const result = await sql`SELECT COUNT(*)::int as count FROM organizations`;
