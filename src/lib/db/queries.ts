@@ -298,7 +298,7 @@ export async function getTimeEntriesByEmployee(
   const start = startDate ?? "1900-01-01";
   const end = endDate ?? "2099-12-31";
   const result = await sql`
-    SELECT id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours, job_hcp_id, notes, created_at, updated_at
+    SELECT id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours::double precision as hours, job_hcp_id, notes, created_at, updated_at
     FROM time_entries
     WHERE organization_id = ${organizationId} AND hcp_employee_id = ${hcpEmployeeId}
     AND entry_date >= ${start}::date AND entry_date <= ${end}::date
@@ -317,7 +317,7 @@ export async function getTimeEntriesByOrganization(
   const start = startDate ?? "1900-01-01";
   const end = endDate ?? "2099-12-31";
   const result = await sql`
-    SELECT id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours, job_hcp_id, notes, created_at, updated_at
+    SELECT id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours::double precision as hours, job_hcp_id, notes, created_at, updated_at
     FROM time_entries
     WHERE organization_id = ${organizationId}
     AND entry_date >= ${start}::date AND entry_date <= ${end}::date
@@ -340,7 +340,7 @@ export async function createTimeEntry(params: {
   const result = await sql`
     INSERT INTO time_entries (organization_id, hcp_employee_id, entry_date, start_time, end_time, hours, job_hcp_id, notes, updated_at)
     VALUES (${params.organization_id}, ${params.hcp_employee_id}, ${params.entry_date}::date, ${params.start_time ?? null}, ${params.end_time ?? null}, ${params.hours ?? null}, ${params.job_hcp_id ?? null}, ${params.notes ?? null}, NOW())
-    RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours, job_hcp_id, notes, created_at, updated_at
+    RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours::double precision as hours, job_hcp_id, notes, created_at, updated_at
   `;
   return result.rows?.[0] as TimeEntry;
 }
@@ -362,7 +362,7 @@ export async function updateTimeEntry(
       notes = COALESCE(${params.notes ?? null}, notes),
       updated_at = NOW()
     WHERE id = ${id} AND organization_id = ${organizationId} AND hcp_employee_id = ${hcpEmployeeId}
-    RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours, job_hcp_id, notes, created_at, updated_at
+    RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours::double precision as hours, job_hcp_id, notes, created_at, updated_at
   `;
   return (result.rows?.[0] as TimeEntry) ?? null;
 }
@@ -392,7 +392,7 @@ export async function updateTimeEntryForAdmin(
       notes = COALESCE(${params.notes ?? null}, notes),
       updated_at = NOW()
     WHERE id = ${id} AND organization_id = ${organizationId}
-    RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours, job_hcp_id, notes, created_at, updated_at
+    RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours::double precision as hours, job_hcp_id, notes, created_at, updated_at
   `;
   return (result.rows?.[0] as TimeEntry) ?? null;
 }

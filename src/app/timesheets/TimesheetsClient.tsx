@@ -50,7 +50,13 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
     const map = new Map<string, number>();
     for (const e of entries) {
       const empId = e.hcp_employee_id ?? "unknown";
-      const h = typeof e.hours === "number" && !Number.isNaN(e.hours) ? e.hours : 0;
+      const raw = e.hours;
+      const h =
+        typeof raw === "number" && !Number.isNaN(raw)
+          ? raw
+          : typeof raw === "string"
+            ? parseFloat(raw) || 0
+            : 0;
       map.set(empId, (map.get(empId) ?? 0) + h);
     }
     return map;
