@@ -2,11 +2,20 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+type KeyMetricsRange = "7d" | "30d" | "all";
+
 interface KeyMetrics {
-  jobsThisWeek: number;
-  revenueThisWeek: number;
+  jobCount: number;
+  revenue: number;
   avgJobValue: number | null;
+  conversionRate: number | null;
 }
+
+const RANGE_LABELS: Record<KeyMetricsRange, string> = {
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+  all: "All time",
+};
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -18,6 +27,7 @@ function formatCurrency(value: number): string {
 }
 
 export function KeyMetricsSection({ connected }: { connected: boolean }) {
+  const [range, setRange] = useState<KeyMetricsRange>("7d");
   const [metrics, setMetrics] = useState<KeyMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +37,7 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/metrics/key-metrics");
+      const res = await fetch(`/api/metrics/key-metrics?range=${range}`);
       if (!res.ok) throw new Error("Failed to load metrics");
       const data = await res.json();
       setMetrics(data);
@@ -36,7 +46,7 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [connected]);
+  }, [connected, range]);
 
   useEffect(() => {
     fetchMetrics();
@@ -48,9 +58,9 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
         <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">
           Key Metrics
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Jobs This Week</h3>
+            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Jobs</h3>
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect Housecall Pro to sync</p>
           </div>
@@ -64,6 +74,11 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect Housecall Pro to sync</p>
           </div>
+          <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Conversion Rate</h3>
+            <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect Housecall Pro to sync</p>
+          </div>
         </div>
       </section>
     );
@@ -71,12 +86,30 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
 
   return (
     <section>
-      <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">
-        Key Metrics
-      </h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+          Key Metrics
+        </h2>
+        <div className="flex rounded border border-zinc-300 dark:border-zinc-600">
+          {(Object.keys(RANGE_LABELS) as KeyMetricsRange[]).map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRange(r)}
+              className={`px-3 py-1.5 text-sm ${
+                range === r
+                  ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-50"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              }`}
+            >
+              {RANGE_LABELS[r]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Jobs This Week</h3>
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Jobs</h3>
           {loading ? (
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>
           ) : error ? (
@@ -84,9 +117,9 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
           ) : (
             <>
               <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                {metrics?.jobsThisWeek ?? "—"}
+                {metrics?.jobCount ?? "—"}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Last 7 days</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{RANGE_LABELS[range]}</p>
             </>
           )}
         </div>
@@ -99,9 +132,9 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
           ) : (
             <>
               <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                {metrics != null ? formatCurrency(metrics.revenueThisWeek) : "—"}
+                {metrics != null ? formatCurrency(metrics.revenue) : "—"}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Last 7 days</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{RANGE_LABELS[range]}</p>
             </>
           )}
         </div>
@@ -116,7 +149,22 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
               <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                 {metrics?.avgJobValue != null ? formatCurrency(metrics.avgJobValue) : "—"}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Last 7 days</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{RANGE_LABELS[range]}</p>
+            </>
+          )}
+        </div>
+        <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Conversion Rate</h3>
+          {loading ? (
+            <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>
+          ) : error ? (
+            <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+          ) : (
+            <>
+              <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                {metrics?.conversionRate != null ? `${metrics.conversionRate.toFixed(1)}%` : "—"}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{RANGE_LABELS[range]}</p>
             </>
           )}
         </div>

@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getKeyMetrics } from "@/lib/metrics/keyMetrics";
+import { getKeyMetrics, type KeyMetricsRange } from "@/lib/metrics/keyMetrics";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const rangeParam = searchParams.get("range") ?? "7d";
+  const range = (rangeParam === "30d" || rangeParam === "all" ? rangeParam : "7d") as "7d" | "30d" | "all";
+
   try {
-    const metrics = await getKeyMetrics(session.user.organizationId);
+    const metrics = await getKeyMetrics(session.user.organizationId, range);
     return NextResponse.json(metrics);
   } catch (error) {
     console.error("[Key Metrics] Error:", error);

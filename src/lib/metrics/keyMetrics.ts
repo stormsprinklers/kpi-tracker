@@ -1,10 +1,13 @@
 import { getHcpClient } from "../housecallpro";
-import { getJobsFromDb, getInvoicesFromDb } from "../db/queries";
+import { getJobsFromDb, getInvoicesFromDb, getEstimatesFromDb } from "../db/queries";
+
+export type KeyMetricsRange = "7d" | "30d" | "all";
 
 export interface KeyMetrics {
-  jobsThisWeek: number;
-  revenueThisWeek: number;
+  jobCount: number;
+  revenue: number;
   avgJobValue: number | null;
+  conversionRate: number | null;
 }
 
 function toDollars(value: unknown): number {
@@ -87,14 +90,58 @@ function getJobDate(job: Record<string, unknown>): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function jobInDateRange(job: Record<string, unknown>, startDate: string, endDate: string): boolean {
+function jobInDateRange(job: Record<string, unknown>, startDate: string | null, endDate: string | null): boolean {
+  if (!startDate || !endDate) return true;
   const jobDate = getJobDate(job);
   if (!jobDate) return true;
   const jobDay = jobDate.toISOString().slice(0, 10);
   return jobDay >= startDate && jobDay <= endDate;
 }
 
-export async function getKeyMetrics(organizationId: string): Promise<KeyMetrics> {
+function getEstimateDate(estimate: Record<string, unknown>): Date | null {
+  const wt = estimate.work_timestamps as Record<string, unknown> | undefined;
+  const sched = estimate.schedule as Record<string, unknown> | undefined;
+  const completed = wt?.completed_at ?? wt?.completed;
+  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? estimate.scheduled_start;
+  const created = estimate.created_at ?? estimate.createdAt;
+  const updated = estimate.updated_at ?? estimate.updatedAt;
+  const dateStr = (completed ?? scheduled ?? created ?? updated) as string | undefined;
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function estimateInDateRange(estimate: Record<string, unknown>, startDate: string | null, endDate: string | null): boolean {
+  if (!startDate || !endDate) return true;
+  const estDate = getEstimateDate(estimate);
+  if (!estDate) return true;
+  const estDay = estDate.toISOString().slice(0, 10);
+  return estDay >= startDate && estDay <= endDate;
+}
+
+function hasApprovedOption(estimate: Record<string, unknown>): boolean {
+  const options = estimate.options as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(options)) return false;
+  return options.some(
+    (opt) => opt.approval_status === "approved" || opt.approval_status === "pro approved"
+  );
+}
+
+function getDateRangeForPeriod(range: KeyMetricsRange): { startDate: string | null; endDate: string | null } {
+  const today = new Date();
+  const end = new Date(today);
+  end.setHours(23, 59, 59, 999);
+  const endStr = end.toISOString().slice(0, 10);
+
+  if (range === "all") return { startDate: null, endDate: null };
+
+  const start = new Date(today);
+  start.setDate(start.getDate() - (range === "7d" ? 7 : 30));
+  const startStr = start.toISOString().slice(0, 10);
+  return { startDate: startStr, endDate: endStr };
+}
+
+export async function getKeyMetrics(organizationId: string, range: KeyMetricsRange = "7d"): Promise<KeyMetrics> {
   let companyId = "default";
   const client = await getHcpClient(organizationId);
   try {
@@ -103,6 +150,8 @@ export async function getKeyMetrics(organizationId: string): Promise<KeyMetrics>
   } catch {
     /* fall through */
   }
+
+  const { startDate, endDate } = getDateRangeForPeriod(range);
 
   let jobs: unknown[] = [];
   let jobsFromApi = false;
@@ -132,22 +181,14 @@ export async function getKeyMetrics(organizationId: string): Promise<KeyMetrics>
     });
   }
 
-  const today = new Date();
-  const end = new Date(today);
-  end.setHours(23, 59, 59, 999);
-  const start = new Date(today);
-  start.setDate(start.getDate() - 7);
-  const startDate = start.toISOString().slice(0, 10);
-  const endDate = end.toISOString().slice(0, 10);
-
-  let jobsThisWeek = 0;
-  let revenueThisWeek = 0;
+  let jobCount = 0;
+  let revenue = 0;
 
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
     if (!jobInDateRange(j, startDate, endDate)) continue;
 
-    jobsThisWeek += 1;
+    jobCount += 1;
 
     const isPaid = isPaidOrCompleted(j);
     let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
@@ -173,14 +214,41 @@ export async function getKeyMetrics(organizationId: string): Promise<KeyMetrics>
       }
     }
 
-    revenueThisWeek += paidAmount;
+    revenue += paidAmount;
   }
 
-  const avgJobValue = jobsThisWeek > 0 ? revenueThisWeek / jobsThisWeek : null;
+  let estimates: unknown[] = [];
+  try {
+    estimates = await getEstimatesFromDb(companyId);
+  } catch {
+    /* skip */
+  }
+  if (estimates.length === 0) {
+    try {
+      const estimatesRes = await client.getEstimatesAllPages();
+      const data = estimatesRes as { estimates?: unknown[] };
+      estimates = data?.estimates ?? (Array.isArray(estimatesRes) ? estimatesRes : []);
+    } catch {
+      /* skip */
+    }
+  }
+
+  let totalEstimates = 0;
+  let approvedEstimates = 0;
+  for (const est of estimates) {
+    const e = est as Record<string, unknown>;
+    if (!estimateInDateRange(e, startDate, endDate)) continue;
+    totalEstimates += 1;
+    if (hasApprovedOption(e)) approvedEstimates += 1;
+  }
+
+  const conversionRate = totalEstimates > 0 ? (approvedEstimates / totalEstimates) * 100 : null;
+  const avgJobValue = jobCount > 0 ? revenue / jobCount : null;
 
   return {
-    jobsThisWeek,
-    revenueThisWeek,
+    jobCount,
+    revenue,
     avgJobValue,
+    conversionRate,
   };
 }
