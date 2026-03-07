@@ -45,17 +45,16 @@ export function WebhookUrlCard({ webhookUrl }: WebhookUrlCardProps) {
           onClick={() => setShowTroubleshoot(!showTroubleshoot)}
           className="text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
         >
-          {showTroubleshoot ? "Hide" : "Getting 401? Capture request for debugging"}
+          {showTroubleshoot ? "Hide" : "Getting 401? Troubleshooting steps"}
         </button>
         {showTroubleshoot && (
           <div className="mt-2 rounded bg-amber-50 p-3 text-xs text-zinc-700 dark:bg-amber-950/30 dark:text-zinc-300">
-            <p className="font-medium">Capture what Housecall Pro sends:</p>
+            <p className="font-medium">If HCP shows 401 when saving the webhook URL:</p>
             <ol className="mt-1 list-inside list-decimal space-y-1">
-              <li>Go to <a href="https://webhook.site" target="_blank" rel="noopener noreferrer" className="underline">webhook.site</a> and copy your unique URL</li>
-              <li>In HCP Webhooks, paste the webhook.site URL (not your app URL) and click Save</li>
-              <li>On webhook.site, click the request that appears</li>
-              <li>Expand &quot;Request&quot; → &quot;Headers&quot; and copy the full header list</li>
-              <li>Share those headers (you can redact the signature value) so we can fix verification</li>
+              <li><strong>Vercel Deployment Protection:</strong> In Vercel → Project Settings → Deployment Protection, ensure &quot;Vercel Authentication&quot; or &quot;Password Protection&quot; is disabled (or add an exception for webhooks). These return 401 to unauthenticated requests.</li>
+              <li><strong>Bypass for setup:</strong> Add env var <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">HOUSECALLPRO_WEBHOOK_ACCEPT_ALL=true</code> in Vercel, redeploy, save the URL in HCP, then remove the env var.</li>
+              <li><strong>Test reachability:</strong> Open <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">/api/webhooks/hcp/ping</code> in your browser. If that returns 401, the issue is deployment protection.</li>
+              <li><strong>Capture request:</strong> Use <a href="https://webhook.site" target="_blank" rel="noopener noreferrer" className="underline">webhook.site</a> as the URL in HCP to see the exact headers and body HCP sends.</li>
             </ol>
           </div>
         )}
