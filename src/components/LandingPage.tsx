@@ -80,8 +80,8 @@ export function LandingPage() {
                 style={{ borderColor: "rgba(11,31,51,0.12)", backgroundColor: "white" }}
               >
                 <img
-                  src="/dashboard-mockup.png"
-                  alt="Home Services Analytics dashboard showing key metrics"
+                  src="/hero-dashboard.png"
+                  alt="Home Services Analytics dashboard showing key metrics and technician KPIs"
                   className="w-full object-contain"
                 />
               </div>

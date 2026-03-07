@@ -20,7 +20,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
     return (
       <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4 md:px-8" style={{ borderColor: "rgba(11,31,51,0.12)", backgroundColor: "#F8FAFC" }}>
         <div className="flex items-center gap-3">
-          <img src="/logo.svg" alt="" className="h-10 w-10 object-contain" />
+          <img src="/logo.png" alt="Home Services Analytics" className="h-10 w-10 object-contain" />
           <a href="/" className="block hover:opacity-80 transition-opacity">
             <h1 className="text-xl font-semibold" style={{ color: "#0B1F33" }}>{title}</h1>
           </a>
@@ -41,7 +41,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   return (
     <header className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "#0B1F33", backgroundColor: "#F8FAFC" }}>
       <div className="flex items-center gap-3">
-        <img src="/logo.svg" alt="" className="h-10 w-10 object-contain" />
+        <img src="/logo.png" alt="Home Services Analytics" className="h-10 w-10 object-contain" />
         <a
           href="/"
           className="block hover:opacity-80 transition-opacity"
