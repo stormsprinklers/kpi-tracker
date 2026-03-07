@@ -98,22 +98,16 @@ export async function POST(
   const { organizationId } = await params;
   console.log("[HCP Webhook] POST received", { organizationId });
 
-  // Bypass: accept all POSTs with 200 when env is set. Use to get past HCP save; remove after.
-  if (process.env.HOUSECALLPRO_WEBHOOK_ACCEPT_ALL === "true") {
-    const raw = await request.text();
-    console.log("[HCP Webhook] Accept-all bypass active, returning 200. Body length:", raw?.length ?? 0);
-    return NextResponse.json({ ok: true, bypass: true });
-  }
-
+  const rawBody = await request.text();
   const org = await getOrganizationById(organizationId);
   if (!org) {
     return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   }
-
-  const rawBody = await request.text();
   const apiSignature = request.headers.get("api-signature");
   const apiTimestamp = request.headers.get("api-timestamp");
   const housecallSignature = request.headers.get("x-housecall-signature");
+
+  const bypassSignatureCheck = process.env.HOUSECALLPRO_WEBHOOK_ACCEPT_ALL === "true";
 
   // HCP connection test: accept test payloads without verification so the webhook URL can be saved.
   // HCP may send {"foo":"bar"}, empty body, {}, or {"event":"webhook.test"} when testing the URL.
@@ -155,8 +149,8 @@ export async function POST(
     return NextResponse.json({ ok: true, test: true });
   }
 
-  // HCP setup/test: no signing headers at all, accept unsigned requests
-  if (!apiSignature && !housecallSignature) {
+  // HCP setup/test: no signing headers at all, accept unsigned requests (unless bypass is on - then persist)
+  if (!apiSignature && !housecallSignature && !bypassSignatureCheck) {
     console.log("[HCP Webhook] Unsigned setup/test request accepted for org", organizationId);
     if (rawBody) {
       try {
@@ -170,7 +164,7 @@ export async function POST(
   }
 
   const secret = org.hcp_webhook_secret;
-  if (!secret) {
+  if (!secret && !bypassSignatureCheck) {
     console.error("[HCP Webhook] Webhook secret not configured for organization", organizationId);
     return NextResponse.json(
       { error: "Webhook not configured for this organization" },
@@ -200,7 +194,7 @@ export async function POST(
     verified = verifyHcpSignatureTimestamp(rawBody, apiTimestamp, apiSignature, secret);
   }
 
-  if (!verified) {
+  if (!verified && !bypassSignatureCheck) {
     const debugInfo = {
       organizationId,
       rawBodyLength: rawBody.length,
@@ -214,8 +208,10 @@ export async function POST(
       secretLength: secret?.length ?? 0,
     };
     console.warn("[HCP Webhook] Signature verification failed for org", organizationId, debugInfo);
-    // Return 200 so HCP accepts the webhook URL (connection test) - do NOT persist unverified payloads
     return NextResponse.json({ ok: true, unverified: true });
+  }
+  if (!verified && bypassSignatureCheck) {
+    console.log("[HCP Webhook] Bypass active - persisting event without verification");
   }
 
   let payload: unknown;
