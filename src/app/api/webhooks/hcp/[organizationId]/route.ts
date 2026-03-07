@@ -77,6 +77,32 @@ export async function POST(
   const apiTimestamp = request.headers.get("api-timestamp");
   const housecallSignature = request.headers.get("x-housecall-signature");
 
+  // #region agent log
+  const allHeaderNames = Array.from(request.headers.keys());
+  const sigRelatedHeaders = allHeaderNames.filter((h) => /signature|timestamp|sig|housecall|api/i.test(h));
+  fetch("http://127.0.0.1:7243/ingest/336e9f29-31e3-4865-8cc2-c2bfd265975c", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8628a2" },
+    body: JSON.stringify({
+      sessionId: "8628a2",
+      location: "webhook/route.ts:POST",
+      message: "Webhook POST received",
+      data: {
+        organizationId,
+        rawBodyLength: rawBody.length,
+        hasApiSignature: !!apiSignature,
+        hasApiTimestamp: !!apiTimestamp,
+        hasHousecallSignature: !!housecallSignature,
+        sigRelatedHeaderNames: sigRelatedHeaders,
+        allHeaderNames,
+        secretLength: org.hcp_webhook_secret?.length ?? 0,
+      },
+      timestamp: Date.now(),
+      hypothesisId: "H1_H4_H5",
+    }),
+  }).catch(() => {});
+  // #endregion
+
   // HCP setup/test: no signing headers at all, accept unsigned requests
   if (!apiSignature && !housecallSignature) {
     console.log("[HCP Webhook] Unsigned setup/test request accepted for org", organizationId);
@@ -101,18 +127,61 @@ export async function POST(
   }
 
   let verified = false;
+  let pathTried = "none";
   if (housecallSignature) {
-    // x-housecall-signature: HMAC of body only
+    pathTried = "x-housecall-signature";
     verified = verifyHcpSignatureBodyOnly(rawBody, housecallSignature, secret);
   }
   if (!verified && apiSignature && apiTimestamp) {
-    // api-signature + api-timestamp: HMAC of timestamp.body
+    pathTried = "api-signature+timestamp";
     verified = verifyHcpSignatureTimestamp(rawBody, apiTimestamp, apiSignature, secret);
   }
 
+  // #region agent log
   if (!verified) {
+    const sigUsed = housecallSignature ?? apiSignature ?? "";
+    const isHexLike = /^[a-fA-F0-9]+$/.test(normalizeSignature(sigUsed));
+    fetch("http://127.0.0.1:7243/ingest/336e9f29-31e3-4865-8cc2-c2bfd265975c", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "8628a2" },
+      body: JSON.stringify({
+        sessionId: "8628a2",
+        location: "webhook/route.ts:401",
+        message: "Verification failed, returning 401",
+        data: {
+          pathTried,
+          verified,
+          sigLength: sigUsed.length,
+          sigStartsWithSha256: sigUsed.trim().startsWith("sha256="),
+          sigIsHexLike: isHexLike,
+          rawBodyLength: rawBody.length,
+        },
+        timestamp: Date.now(),
+        hypothesisId: "H2_H3_H5",
+      }),
+    }).catch(() => {});
+  }
+  // #endregion
+
+  if (!verified) {
+    const debugInfo = {
+      organizationId,
+      rawBodyLength: rawBody.length,
+      hasApiSignature: !!apiSignature,
+      hasApiTimestamp: !!apiTimestamp,
+      hasHousecallSignature: !!housecallSignature,
+      pathTried,
+      sigLength: (housecallSignature ?? apiSignature ?? "").length,
+      sigStartsWithSha256: (housecallSignature ?? apiSignature ?? "").trim().startsWith("sha256="),
+      allHeaderNames: Array.from(request.headers.keys()),
+      secretLength: secret?.length ?? 0,
+    };
+    console.log("[HCP Webhook DEBUG] 401 diagnostic:", JSON.stringify(debugInfo));
     console.warn("[HCP Webhook] Invalid signature for org", organizationId);
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized", _debug: debugInfo },
+      { status: 401 }
+    );
   }
 
   let payload: unknown;
