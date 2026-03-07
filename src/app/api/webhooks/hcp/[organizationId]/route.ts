@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getOrganizationById } from "@/lib/db/queries";
+import { persistWebhookEvent } from "@/lib/sync/webhookPersist";
+
+/** Allow up to 30s for webhook processing (initSchema + persist can be slow on cold start). */
+export const maxDuration = 30;
 
 /** Verify HMAC using api-signature + api-timestamp format (timestamp.body). Tries hex and base64. */
 function verifyHcpSignatureTimestamp(
@@ -92,6 +96,9 @@ export async function OPTIONS() {
     },
   });
 }
+
+// Allow webhook handler more time for initSchema + persist (cold start can be slow)
+export const maxDuration = 60;
 
 export async function POST(
   request: Request,
@@ -227,12 +234,13 @@ export async function POST(
   console.log("[HCP Webhook] Verified event:", event ?? payload, "org:", organizationId);
 
   const companyId = org.hcp_company_id ?? "default";
+  const payloadObj = (payload ?? {}) as Record<string, unknown>;
+
+  console.log("[HCP Webhook] About to persist", { event, organizationId, payloadKeys: Object.keys(payloadObj) });
 
   try {
-    const { initSchema } = await import("@/lib/db");
-    await initSchema();
-    const { persistWebhookEvent } = await import("@/lib/sync/webhookPersist");
-    await persistWebhookEvent(event ?? "unknown", (payload ?? {}) as Record<string, unknown>, organizationId, companyId);
+    // Schema should already exist from setup/login; skip initSchema to avoid cold-start timeouts
+    await persistWebhookEvent(event ?? "unknown", payloadObj, organizationId, companyId);
   } catch (err) {
     console.error("[HCP Webhook] Persist error:", err);
     // Still return 200 so HCP doesn't retry; we'll catch up on next full sync
