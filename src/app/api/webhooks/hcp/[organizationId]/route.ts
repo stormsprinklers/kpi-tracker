@@ -258,12 +258,9 @@ export async function POST(
       allHeaderNames: Array.from(request.headers.keys()),
       secretLength: secret?.length ?? 0,
     };
-    console.log("[HCP Webhook DEBUG] 401 diagnostic:", JSON.stringify(debugInfo));
-    console.warn("[HCP Webhook] Invalid signature for org", organizationId);
-    return NextResponse.json(
-      { error: "Unauthorized", _debug: debugInfo },
-      { status: 401 }
-    );
+    console.warn("[HCP Webhook] Signature verification failed for org", organizationId, debugInfo);
+    // Return 200 so HCP accepts the webhook URL (connection test) - do NOT persist unverified payloads
+    return NextResponse.json({ ok: true, unverified: true });
   }
 
   let payload: unknown;
