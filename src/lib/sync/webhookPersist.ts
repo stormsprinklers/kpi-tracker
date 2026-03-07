@@ -69,7 +69,7 @@ function extractCity(record: Record<string, unknown>): string | null {
 
 /** Extract first technician name from assigned_employees/assigned_pro. Uses last initial format. */
 function extractTechnicianName(record: Record<string, unknown>): { name: string; hcpId: string } | null {
-  const assigned = record.assigned_employees ?? record.assigned_pro ?? record.assigned_employee;
+  const assigned = record.assigned_employees ?? record.assigned_pro ?? record.assigned_pros ?? record.assigned_employee;
   const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
   for (const a of items) {
     if (!a || typeof a !== "object") continue;
@@ -176,14 +176,17 @@ async function maybeEmitActivityFeedItem(
 ): Promise<void> {
   try {
     if (event === "job.created" || event === "job.appointment.scheduled") {
+      console.log("[ActivityFeed] Processing", event, "org:", organizationId);
       const appointmentOrJob = (payload.job ?? payload.appointment ?? payload.data ?? payload) as Record<string, unknown>;
+      if (!appointmentOrJob || typeof appointmentOrJob !== "object") return;
       const job = (appointmentOrJob.job ?? appointmentOrJob) as Record<string, unknown>;
       const city = extractCity(job) ?? extractCity(appointmentOrJob) ?? "Unknown city";
-      const day = formatScheduledDate(job) ?? "soon";
-      const tech = extractTechnicianName(job);
+      const day = formatScheduledDate(job) ?? formatScheduledDate(appointmentOrJob) ?? "soon";
+      const tech = extractTechnicianName(job) ?? extractTechnicianName(appointmentOrJob);
       const message = tech
         ? `${tech.name} booked a job in ${city} for ${day}`
         : `A job in ${city} was just booked for ${day}`;
+      console.log("[ActivityFeed] Inserting job_booked", { event, organizationId, message: message.substring(0, 60) });
       await insertActivityFeedItem({
         organizationId,
         activityType: "job_booked",
@@ -191,11 +194,12 @@ async function maybeEmitActivityFeedItem(
         technicianName: tech?.name ?? null,
         technicianHcpId: tech?.hcpId ?? null,
         city,
-        scheduledDate: getScheduledDateIso(job),
-        jobHcpId: extractId(job),
-        eventHcpId: extractId(job),
+        scheduledDate: getScheduledDateIso(job) ?? getScheduledDateIso(appointmentOrJob),
+        jobHcpId: extractJobHcpId(appointmentOrJob) ?? extractId(job),
+        eventHcpId: extractId(appointmentOrJob) ?? extractId(job),
         rawPayload: payload,
       });
+      console.log("[ActivityFeed] Inserted job_booked successfully", { organizationId });
     } else if (event.startsWith("appointment.")) {
       const apt = (payload.appointment ?? payload.data ?? payload) as Record<string, unknown>;
       const wt = apt.work_timestamps as Record<string, unknown> | undefined;
@@ -281,101 +285,41 @@ export async function persistWebhookEvent(
 ): Promise<void> {
 
   if (event === "job.appointment.scheduled") {
-    const record = (payload.appointment ?? payload.job ?? payload.data ?? payload) as Record<string, unknown>;
-    const hcpId = extractId(record);
-    if (hcpId) {
-      const jobHcpId = extractJobHcpId(record);
-      const raw = JSON.stringify(record);
-      await sql`
-        INSERT INTO appointments (hcp_id, company_id, job_hcp_id, raw, updated_at)
-        VALUES (${hcpId}, ${companyId}, ${jobHcpId ?? null}, ${raw}::jsonb, NOW())
-        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-          job_hcp_id = EXCLUDED.job_hcp_id,
-          raw = EXCLUDED.raw,
-          updated_at = NOW()
-      `;
-    }
-    const jobRecord = (payload.job ?? (record.job as Record<string, unknown>)) as Record<string, unknown> | null;
-    if (jobRecord && extractId(jobRecord)) {
-      const jHcpId = extractId(jobRecord);
-      const customerHcpId = extractCustomerHcpId(jobRecord);
-      const totalAmount = extractAmountInDollars(jobRecord, "total_amount", "subtotal", "total", "amount");
-      const outstandingBalance = extractAmountInDollars(jobRecord, "outstanding_balance", "balance_due", "amount_due");
-      const jobRaw = JSON.stringify(jobRecord);
-      await sql`
-        INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
-        VALUES (${jHcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${jobRaw}::jsonb, NOW())
-        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-          customer_hcp_id = EXCLUDED.customer_hcp_id,
-          total_amount = EXCLUDED.total_amount,
-          outstanding_balance = EXCLUDED.outstanding_balance,
-          raw = EXCLUDED.raw,
-          updated_at = NOW()
-      `;
-    }
-  } else   if (event === "job.appointment.scheduled") {
-    const record = (payload.appointment ?? payload.data ?? payload) as Record<string, unknown>;
-    const hcpId = extractId(record);
-    if (!hcpId) return;
-    const jobHcpId = extractJobHcpId(record);
-    const raw = JSON.stringify(record);
-    await sql`
-      INSERT INTO appointments (hcp_id, company_id, job_hcp_id, raw, updated_at)
-      VALUES (${hcpId}, ${companyId}, ${jobHcpId}, ${raw}::jsonb, NOW())
-      ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-        job_hcp_id = EXCLUDED.job_hcp_id,
-        raw = EXCLUDED.raw,
-        updated_at = NOW()
-    `;
-    const embeddedJob = (payload.job ?? (record as Record<string, unknown>).job) as Record<string, unknown> | undefined;
-    if (embeddedJob && extractId(embeddedJob)) {
-      const jHcpId = extractId(embeddedJob);
-      const customerHcpId = extractCustomerHcpId(embeddedJob);
-      const totalAmount = extractAmountInDollars(embeddedJob, "total_amount", "subtotal", "total", "amount");
-      const outstandingBalance = extractAmountInDollars(embeddedJob, "outstanding_balance", "balance_due", "amount_due");
-      const jobRaw = JSON.stringify(embeddedJob);
-      await sql`
-        INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
-        VALUES (${jHcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${jobRaw}::jsonb, NOW())
-        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-          customer_hcp_id = EXCLUDED.customer_hcp_id,
-          total_amount = EXCLUDED.total_amount,
-          outstanding_balance = EXCLUDED.outstanding_balance,
-          raw = EXCLUDED.raw,
-          updated_at = NOW()
-      `;
-    }
-  } else   if (event === "job.appointment.scheduled") {
-    const record = (payload.appointment ?? payload.data ?? payload) as Record<string, unknown>;
-    const hcpId = extractId(record);
-    if (!hcpId) return;
-    const jobHcpId = extractJobHcpId(record);
-    const raw = JSON.stringify(record);
-    await sql`
-      INSERT INTO appointments (hcp_id, company_id, job_hcp_id, raw, updated_at)
-      VALUES (${hcpId}, ${companyId}, ${jobHcpId}, ${raw}::jsonb, NOW())
-      ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-        job_hcp_id = EXCLUDED.job_hcp_id,
-        raw = EXCLUDED.raw,
-        updated_at = NOW()
-    `;
-    const embeddedJob = (payload.job ?? (record as Record<string, unknown>).job) as Record<string, unknown> | undefined;
-    if (embeddedJob && extractId(embeddedJob)) {
-      const jHcpId = extractId(embeddedJob);
-      const customerHcpId = extractCustomerHcpId(embeddedJob);
-      const totalAmount = extractAmountInDollars(embeddedJob, "total_amount", "subtotal", "total", "amount");
-      const outstandingBalance = extractAmountInDollars(embeddedJob, "outstanding_balance", "balance_due", "amount_due");
-      const jobRaw = JSON.stringify(embeddedJob);
-      await sql`
-        INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
-        VALUES (${jHcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${jobRaw}::jsonb, NOW())
-        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-          customer_hcp_id = EXCLUDED.customer_hcp_id,
-          total_amount = EXCLUDED.total_amount,
-          outstanding_balance = EXCLUDED.outstanding_balance,
-          raw = EXCLUDED.raw,
-          updated_at = NOW()
-      `;
+    try {
+      const record = (payload.appointment ?? payload.job ?? payload.data ?? payload) as Record<string, unknown>;
+      const hcpId = extractId(record);
+      if (hcpId) {
+        const jobHcpId = extractJobHcpId(record);
+        const raw = JSON.stringify(record);
+        await sql`
+          INSERT INTO appointments (hcp_id, company_id, job_hcp_id, raw, updated_at)
+          VALUES (${hcpId}, ${companyId}, ${jobHcpId ?? null}, ${raw}::jsonb, NOW())
+          ON CONFLICT (hcp_id, company_id) DO UPDATE SET
+            job_hcp_id = EXCLUDED.job_hcp_id,
+            raw = EXCLUDED.raw,
+            updated_at = NOW()
+        `;
+      }
+      const jobRecord = (payload.job ?? (record.job as Record<string, unknown>)) as Record<string, unknown> | null;
+      if (jobRecord && extractId(jobRecord)) {
+        const jHcpId = extractId(jobRecord);
+        const customerHcpId = extractCustomerHcpId(jobRecord);
+        const totalAmount = extractAmountInDollars(jobRecord, "total_amount", "subtotal", "total", "amount");
+        const outstandingBalance = extractAmountInDollars(jobRecord, "outstanding_balance", "balance_due", "amount_due");
+        const jobRaw = JSON.stringify(jobRecord);
+        await sql`
+          INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
+          VALUES (${jHcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${jobRaw}::jsonb, NOW())
+          ON CONFLICT (hcp_id, company_id) DO UPDATE SET
+            customer_hcp_id = EXCLUDED.customer_hcp_id,
+            total_amount = EXCLUDED.total_amount,
+            outstanding_balance = EXCLUDED.outstanding_balance,
+            raw = EXCLUDED.raw,
+            updated_at = NOW()
+        `;
+      }
+    } catch (persistErr) {
+      console.warn("[HCP Webhook] job.appointment.scheduled persist failed (activity feed will still run):", persistErr);
     }
   } else if (event.startsWith("job.")) {
     const record = (payload.job ?? payload.data ?? payload) as Record<string, unknown>;
@@ -469,6 +413,7 @@ export async function persistWebhookEvent(
     event.startsWith("invoice.") ||
     event.startsWith("job.")
   ) {
+    console.log("[ActivityFeed] Calling maybeEmitActivityFeedItem", { event, organizationId });
     await maybeEmitActivityFeedItem(event, payload, organizationId, companyId);
   }
 }
