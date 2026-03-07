@@ -321,25 +321,6 @@ export async function getTimeEntriesByOrganization(
     FROM time_entries
     WHERE organization_id = ${organizationId}
     AND entry_date >= ${start}::date AND entry_date <= ${end}::date
-    ORDER BY hcp_employee_id, entry_date DESC, start_time DESC NULLS LAST
-    LIMIT 2000
-  `;
-  return result.rows as TimeEntry[];
-}
-
-/** Admin-only: get all time entries for the org in a date range (all employees) */
-export async function getTimeEntriesByOrganization(
-  organizationId: string,
-  startDate?: string,
-  endDate?: string
-): Promise<TimeEntry[]> {
-  const start = startDate ?? "1900-01-01";
-  const end = endDate ?? "2099-12-31";
-  const result = await sql`
-    SELECT id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours, job_hcp_id, notes, created_at, updated_at
-    FROM time_entries
-    WHERE organization_id = ${organizationId}
-    AND entry_date >= ${start}::date AND entry_date <= ${end}::date
     ORDER BY hcp_employee_id ASC, entry_date DESC, start_time DESC NULLS LAST
     LIMIT 2000
   `;
