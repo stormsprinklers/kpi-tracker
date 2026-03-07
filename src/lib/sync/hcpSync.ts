@@ -125,6 +125,7 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
         const lineItemsList = Array.isArray(lineItemsRes)
           ? lineItemsRes
           : (lineItemsRes as { line_items?: unknown[] })?.line_items ??
+            (lineItemsRes as { items?: unknown[] })?.items ??
             (lineItemsRes as { data?: unknown[] })?.data ??
             [];
         const items = lineItemsList as Record<string, unknown>[];

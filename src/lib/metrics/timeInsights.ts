@@ -3,6 +3,7 @@ import {
   getJobsFromDb,
   getEmployeesFromDb,
   getAllJobLineItemsByCompany,
+  getOrganizationById,
 } from "../db/queries";
 
 export interface TimeInsightsFilters {
@@ -104,7 +105,7 @@ function extractTimestamps(job: Record<string, unknown>): {
       if (a && typeof a === "object") {
         const awt = (a as Record<string, unknown>).work_timestamps as Record<string, unknown> | undefined;
         if (awt) {
-          const enRoute = awt.en_route_at ?? awt.en_route;
+          const enRoute = awt.on_my_way_at ?? awt.en_route_at ?? awt.en_route;
           const started = awt.started_at ?? awt.started ?? awt.arrived_at ?? awt.arrived;
           const completed = awt.completed_at ?? awt.completed;
           const enRouteDate = enRoute ? new Date(enRoute as string) : null;
@@ -117,7 +118,7 @@ function extractTimestamps(job: Record<string, unknown>): {
     return { enRouteAt: null, startedAt: null, completedAt: null };
   }
 
-  const enRoute = wt.en_route_at ?? wt.en_route;
+  const enRoute = wt.on_my_way_at ?? wt.en_route_at ?? wt.en_route;
   const started = wt.started_at ?? wt.started ?? wt.arrived_at ?? wt.arrived;
   const completed = wt.completed_at ?? wt.completed;
   const enRouteDate = enRoute ? new Date(enRoute as string) : null;
@@ -166,11 +167,16 @@ export async function getTimeInsights(
 ): Promise<TimeInsightsResult> {
   let companyId = "default";
   try {
+    const org = await getOrganizationById(organizationId);
+    if (org?.hcp_company_id) {
+      companyId = org.hcp_company_id;
+    }
     const client = await getHcpClient(organizationId);
     const company = (await client.getCompany()) as { id?: string; company_id?: string };
-    companyId = company?.id ?? company?.company_id ?? "default";
+    companyId = company?.id ?? company?.company_id ?? companyId;
   } catch {
-    /* fall through */
+    const org = await getOrganizationById(organizationId).catch(() => null);
+    if (org?.hcp_company_id) companyId = org.hcp_company_id;
   }
 
   const { startDate, endDate } = filters ?? {};
@@ -251,7 +257,24 @@ export async function getTimeInsights(
     const jobHcpId = (job.id ?? job.uuid) != null ? String(job.id ?? job.uuid) : null;
     if (!jobHcpId) continue;
 
-    const lineItems = lineItemsByJob.get(jobHcpId) ?? [];
+    let lineItems = lineItemsByJob.get(jobHcpId) ?? [];
+    if (lineItems.length === 0) {
+      // Fallback: check if job has line_items embedded (some HCP responses include them)
+      const embedded =
+        job.line_items ??
+        job.items ??
+        (job.invoice as Record<string, unknown>)?.line_items ??
+        (job.estimate as Record<string, unknown>)?.options ??
+        (job as Record<string, unknown>).line_items;
+      const arr = Array.isArray(embedded)
+        ? embedded
+        : embedded && typeof embedded === "object" && "line_items" in (embedded as object)
+          ? ((embedded as { line_items: unknown[] }).line_items ?? [])
+          : embedded && typeof embedded === "object" && "items" in (embedded as object)
+            ? ((embedded as { items: unknown[] }).items ?? [])
+            : [];
+      lineItems = arr as Record<string, unknown>[];
+    }
     if (lineItems.length === 0) continue;
 
     // Group by line item key (name|service_id) and sum quantities
