@@ -8,6 +8,7 @@ interface WebhookUrlCardProps {
 
 export function WebhookUrlCard({ webhookUrl }: WebhookUrlCardProps) {
   const [copied, setCopied] = useState(false);
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(webhookUrl);
@@ -37,6 +38,27 @@ export function WebhookUrlCard({ webhookUrl }: WebhookUrlCardProps) {
         >
           {copied ? "Copied!" : "Copy"}
         </button>
+      </div>
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => setShowTroubleshoot(!showTroubleshoot)}
+          className="text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
+        >
+          {showTroubleshoot ? "Hide" : "Getting 401? Capture request for debugging"}
+        </button>
+        {showTroubleshoot && (
+          <div className="mt-2 rounded bg-amber-50 p-3 text-xs text-zinc-700 dark:bg-amber-950/30 dark:text-zinc-300">
+            <p className="font-medium">Capture what Housecall Pro sends:</p>
+            <ol className="mt-1 list-inside list-decimal space-y-1">
+              <li>Go to <a href="https://webhook.site" target="_blank" rel="noopener noreferrer" className="underline">webhook.site</a> and copy your unique URL</li>
+              <li>In HCP Webhooks, paste the webhook.site URL (not your app URL) and click Save</li>
+              <li>On webhook.site, click the request that appears</li>
+              <li>Expand &quot;Request&quot; → &quot;Headers&quot; and copy the full header list</li>
+              <li>Share those headers (you can redact the signature value) so we can fix verification</li>
+            </ol>
+          </div>
+        )}
       </div>
     </div>
   );

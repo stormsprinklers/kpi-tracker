@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getOrganizationById } from "@/lib/db/queries";
 
-/** Verify HMAC using api-signature + api-timestamp format (timestamp.body) */
+/** Verify HMAC using api-signature + api-timestamp format (timestamp.body). Tries hex and base64. */
 function verifyHcpSignatureTimestamp(
   body: string,
   timestamp: string,
@@ -11,15 +11,20 @@ function verifyHcpSignatureTimestamp(
 ): boolean {
   const secretTrimmed = secret.trim();
   const signedPayload = `${timestamp}.${body}`;
-  const expected = crypto
-    .createHmac("sha256", secretTrimmed)
-    .update(signedPayload)
-    .digest("hex");
-  const sigHex = normalizeSignature(signature);
-  const sigBuf = Buffer.from(sigHex, "hex");
-  const expectedBuf = Buffer.from(expected, "hex");
-  if (sigBuf.length !== expectedBuf.length || sigBuf.length === 0) return false;
-  return crypto.timingSafeEqual(sigBuf, expectedBuf);
+  const expectedHex = crypto.createHmac("sha256", secretTrimmed).update(signedPayload).digest("hex");
+  const expectedBase64 = crypto.createHmac("sha256", secretTrimmed).update(signedPayload).digest("base64");
+  const sigRaw = normalizeSignature(signature);
+  const sigBufHex = Buffer.from(sigRaw, "hex");
+  const expectedBufHex = Buffer.from(expectedHex, "hex");
+  if (sigBufHex.length === expectedBufHex.length && sigBufHex.length > 0 && crypto.timingSafeEqual(sigBufHex, expectedBufHex)) return true;
+  try {
+    const sigBufB64 = Buffer.from(sigRaw, "base64");
+    const expectedBufB64 = Buffer.from(expectedBase64, "base64");
+    if (sigBufB64.length === expectedBufB64.length && sigBufB64.length > 0 && crypto.timingSafeEqual(sigBufB64, expectedBufB64)) return true;
+  } catch {
+    // ignore base64 parse errors
+  }
+  return false;
 }
 
 /** Normalize signature: strip sha256= or v1= prefix, return hex string */
@@ -30,15 +35,23 @@ function normalizeSignature(sig: string): string {
   return s;
 }
 
-/** Verify HMAC using x-housecall-signature format (body only) */
+/** Verify HMAC using x-housecall-signature format (body only). Tries hex and base64. */
 function verifyHcpSignatureBodyOnly(body: string, signature: string, secret: string): boolean {
   const secretTrimmed = secret.trim();
-  const expected = crypto.createHmac("sha256", secretTrimmed).update(body).digest("hex");
-  const sigHex = normalizeSignature(signature);
-  const sigBuf = Buffer.from(sigHex, "hex");
-  const expectedBuf = Buffer.from(expected, "hex");
-  if (sigBuf.length !== expectedBuf.length || sigBuf.length === 0) return false;
-  return crypto.timingSafeEqual(sigBuf, expectedBuf);
+  const expectedHex = crypto.createHmac("sha256", secretTrimmed).update(body).digest("hex");
+  const expectedBase64 = crypto.createHmac("sha256", secretTrimmed).update(body).digest("base64");
+  const sigRaw = normalizeSignature(signature);
+  const sigBufHex = Buffer.from(sigRaw, "hex");
+  const expectedBufHex = Buffer.from(expectedHex, "hex");
+  if (sigBufHex.length === expectedBufHex.length && sigBufHex.length > 0 && crypto.timingSafeEqual(sigBufHex, expectedBufHex)) return true;
+  try {
+    const sigBufB64 = Buffer.from(sigRaw, "base64");
+    const expectedBufB64 = Buffer.from(expectedBase64, "base64");
+    if (sigBufB64.length === expectedBufB64.length && sigBufB64.length > 0 && crypto.timingSafeEqual(sigBufB64, expectedBufB64)) return true;
+  } catch {
+    // ignore base64 parse errors
+  }
+  return false;
 }
 
 export async function GET() {
@@ -66,6 +79,7 @@ export async function POST(
   { params }: { params: Promise<{ organizationId: string }> }
 ) {
   const { organizationId } = await params;
+  console.log("[HCP Webhook] POST received", { organizationId });
 
   const org = await getOrganizationById(organizationId);
   if (!org) {
