@@ -91,6 +91,17 @@ export async function POST(
   const apiTimestamp = request.headers.get("api-timestamp");
   const housecallSignature = request.headers.get("x-housecall-signature");
 
+  // HCP connection test: accept {"foo":"bar"} without verification so the webhook URL can be saved
+  try {
+    const parsed = rawBody ? JSON.parse(rawBody) : null;
+    if (parsed && typeof parsed === "object" && Object.keys(parsed).length === 1 && parsed.foo === "bar") {
+      console.log("[HCP Webhook] Connection test accepted for org", organizationId);
+      return NextResponse.json({ ok: true, test: true });
+    }
+  } catch {
+    // not JSON or not the test payload, continue with normal verification
+  }
+
   // #region agent log
   const allHeaderNames = Array.from(request.headers.keys());
   const sigRelatedHeaders = allHeaderNames.filter((h) => /signature|timestamp|sig|housecall|api/i.test(h));
