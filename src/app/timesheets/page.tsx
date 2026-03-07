@@ -41,6 +41,7 @@ export default async function TimesheetsPage() {
             My Timesheets
           </h2>
           <TimesheetsClient />
+        </section>
       </main>
     </div>
   );
