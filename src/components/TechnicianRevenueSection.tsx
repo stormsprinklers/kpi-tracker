@@ -6,6 +6,7 @@ interface TechnicianRevenue {
   technicianId: string;
   technicianName: string;
   totalRevenue: number;
+  conversionRate: number | null;
 }
 
 interface TechnicianRevenueResult {
@@ -13,7 +14,7 @@ interface TechnicianRevenueResult {
   totalRevenue: number;
 }
 
-type DatePreset = "all" | "7d" | "30d" | "thisMonth" | "lastMonth";
+type DatePreset = "all" | "7d" | "14d" | "30d" | "thisMonth" | "lastMonth";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -34,6 +35,11 @@ function getDateRange(preset: DatePreset): { startDate?: string; endDate?: strin
   if (preset === "7d") {
     const start = new Date(today);
     start.setDate(start.getDate() - 7);
+    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
+  }
+  if (preset === "14d") {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 14);
     return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
   }
   if (preset === "30d") {
@@ -87,6 +93,7 @@ export function TechnicianRevenueSection() {
   const presetLabels: Record<DatePreset, string> = {
     all: "All time",
     "7d": "Last 7 days",
+    "14d": "Last 14 days",
     "30d": "Last 30 days",
     thisMonth: "This month",
     lastMonth: "Last month",
@@ -139,6 +146,9 @@ export function TechnicianRevenueSection() {
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                     Revenue
                   </th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                    Conversion Rate %
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -152,6 +162,11 @@ export function TechnicianRevenueSection() {
                     </td>
                     <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
                       {formatCurrency(t.totalRevenue)}
+                    </td>
+                    <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
+                      {t.conversionRate != null
+                        ? `${t.conversionRate.toFixed(1)}%`
+                        : "—"}
                     </td>
                   </tr>
                 ))}

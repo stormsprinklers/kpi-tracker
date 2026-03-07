@@ -1,10 +1,11 @@
-import { getJobsAllPages, getJobInvoices, getEmployeesAllPages, getPros, getCompany } from "../housecallpro";
-import { getJobsFromDb, getEmployeesFromDb, getInvoicesFromDb, getProsFromDb } from "../db/queries";
+import { getJobsAllPages, getJobInvoices, getEmployeesAllPages, getPros, getCompany, getEstimatesAllPages } from "../housecallpro";
+import { getJobsFromDb, getEmployeesFromDb, getInvoicesFromDb, getProsFromDb, getEstimatesFromDb } from "../db/queries";
 
 export interface TechnicianRevenue {
   technicianId: string;
   technicianName: string;
   totalRevenue: number;
+  conversionRate: number | null;
 }
 
 export interface TechnicianRevenueResult {
@@ -133,9 +134,12 @@ function buildNameMap(
     const id = idFields.map((f) => r[f]).find(Boolean);
     if (!id) continue;
     const idStr = String(id);
-    const part1 = nameFields.flatMap((fields) => fields.map((f) => r[f])).find(Boolean);
-    const part2 = [r.first_name, r.last_name].filter(Boolean).join(" ");
-    const name = (part1 ?? part2 ?? "Unknown") as string;
+    const first = r.first_name ?? r.given_name ?? (r as Record<string, unknown>).firstName;
+    const last = r.last_name ?? r.family_name ?? (r as Record<string, unknown>).lastName;
+    const fullName = [first, last].filter(Boolean).map(String).join(" ").trim();
+    const fallback = (r.full_name ?? nameFields.flatMap((fields) => fields.map((f) => r[f])).find(Boolean)) as string | undefined;
+    // Prefer full name (first + last) when we have both; otherwise use name/display_name if it has last name (contains space)
+    const name = (fullName && last ? fullName : (typeof fallback === "string" && fallback.includes(" ") ? fallback : null) ?? fullName || fallback ?? "Unknown") as string;
     map.set(idStr, String(name));
   }
   return map;
@@ -143,12 +147,14 @@ function buildNameMap(
 
 /** Extract name from assigned employee/pro object. HCP embeds first_name, last_name, name, etc. */
 function getNameFromAssigned(r: Record<string, unknown>): string | null {
-  const name = r.name ?? r.display_name;
-  if (name && typeof name === "string") return name.trim() || null;
-  const first = r.first_name ?? r.given_name;
-  const last = r.last_name ?? r.family_name;
-  const full = [first, last].filter(Boolean).map(String).join(" ").trim();
-  return full || null;
+  const first = r.first_name ?? (r as Record<string, unknown>).firstName ?? r.given_name;
+  const last = r.last_name ?? (r as Record<string, unknown>).lastName ?? r.family_name;
+  const fullName = [first, last].filter(Boolean).map(String).join(" ").trim();
+  const fallback = (r.full_name ?? r.name ?? r.display_name) as string | undefined;
+  // Prefer first+last when we have both; otherwise use name/display_name if it includes last name (has space)
+  if (fullName && last) return fullName;
+  if (typeof fallback === "string" && fallback.includes(" ")) return fallback.trim() || null;
+  return fullName || (fallback?.trim()) || null;
 }
 
 /** Merge names from job's assigned_employees/assigned_pro into nameMap (for former employees not in pros/employees). */
@@ -188,6 +194,66 @@ function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDat
   if (startDate && jobDay < startDate) return false;
   if (endDate && jobDay > endDate) return false;
   return true;
+}
+
+/** Extract technician IDs from estimate.assigned_employees (same structure as jobs). Excludes office staff. */
+function getEstimateTechnicianIds(
+  estimate: Record<string, unknown>,
+  officeStaffIds: Set<string>
+): string[] {
+  const assigned = estimate.assigned_employees ?? estimate.assigned_pro ?? estimate.assigned_employee;
+  const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
+  const ids: string[] = [];
+  for (const a of items) {
+    if (typeof a === "string") {
+      ids.push(a);
+      continue;
+    }
+    if (a && typeof a === "object" && "id" in a) {
+      const r = a as Record<string, unknown>;
+      if (isOfficeStaff(r.role ?? r.employee_type ?? r.type)) continue;
+      ids.push(String(r.id));
+    }
+  }
+  return ids.filter((id) => !officeStaffIds.has(id));
+}
+
+/** Extract estimate date for filtering. Same pattern as getJobDate. */
+function getEstimateDate(estimate: Record<string, unknown>): Date | null {
+  const wt = estimate.work_timestamps as Record<string, unknown> | undefined;
+  const sched = estimate.schedule as Record<string, unknown> | undefined;
+  const completed = wt?.completed_at ?? wt?.completed;
+  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? estimate.scheduled_start;
+  const created = estimate.created_at ?? estimate.createdAt;
+  const updated = estimate.updated_at ?? estimate.updatedAt;
+  const dateStr = (completed ?? scheduled ?? created ?? updated) as string | undefined;
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function estimateInDateRange(
+  estimate: Record<string, unknown>,
+  startDate?: string,
+  endDate?: string
+): boolean {
+  if (!startDate && !endDate) return true;
+  const estDate = getEstimateDate(estimate);
+  if (!estDate) return true;
+  const estDay = estDate.toISOString().slice(0, 10);
+  if (startDate && estDay < startDate) return false;
+  if (endDate && estDay > endDate) return false;
+  return true;
+}
+
+/** True if any option has approval_status "approved" or "pro approved". One estimate with many options = 1 estimate. */
+function hasApprovedOption(estimate: Record<string, unknown>): boolean {
+  const options = estimate.options as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(options)) return false;
+  return options.some(
+    (opt) =>
+      opt.approval_status === "approved" || opt.approval_status === "pro approved"
+  );
 }
 
 export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): Promise<TechnicianRevenueResult> {
@@ -343,12 +409,49 @@ export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): 
     }
   }
 
+  // Estimate conversion: prefer DB, fallback to API
+  const conversionByTech = new Map<string, { total: number; approved: number }>();
+  let estimates: unknown[] = [];
+  try {
+    estimates = await getEstimatesFromDb(companyId);
+  } catch {
+    /* skip */
+  }
+  if (estimates.length === 0) {
+    try {
+      const estimatesRes = await getEstimatesAllPages();
+      const data = estimatesRes as { estimates?: unknown[] };
+      estimates = data?.estimates ?? (Array.isArray(estimatesRes) ? estimatesRes : []);
+    } catch {
+      /* skip */
+    }
+  }
+  for (const est of estimates) {
+    const e = est as Record<string, unknown>;
+    if (!estimateInDateRange(e, startDate, endDate)) continue;
+    const techIds = getEstimateTechnicianIds(e, officeStaffIds);
+    if (techIds.length === 0) continue;
+    const isConverted = hasApprovedOption(e);
+    for (const techId of techIds) {
+      const current = conversionByTech.get(techId) ?? { total: 0, approved: 0 };
+      current.total += 1;
+      if (isConverted) current.approved += 1;
+      conversionByTech.set(techId, current);
+    }
+  }
+
   const technicians: TechnicianRevenue[] = Array.from(revenueByTech.entries())
-    .map(([id, totalRevenue]) => ({
-      technicianId: id,
-      technicianName: nameMap.get(id) ?? (id.startsWith("pro_") || id.startsWith("emp_") ? "Former technician" : `Technician ${id}`),
-      totalRevenue,
-    }))
+    .map(([id, totalRevenue]) => {
+      const conv = conversionByTech.get(id);
+      const conversionRate =
+        conv && conv.total > 0 ? (conv.approved / conv.total) * 100 : null;
+      return {
+        technicianId: id,
+        technicianName: nameMap.get(id) ?? (id.startsWith("pro_") || id.startsWith("emp_") ? "Former technician" : `Technician ${id}`),
+        totalRevenue,
+        conversionRate,
+      };
+    })
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
 
   const totalRevenue = technicians.reduce((sum, t) => sum + t.totalRevenue, 0);
