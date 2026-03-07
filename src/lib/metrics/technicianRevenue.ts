@@ -139,7 +139,14 @@ function buildNameMap(
     const fullName = [first, last].filter(Boolean).map(String).join(" ").trim();
     const fallback = (r.full_name ?? nameFields.flatMap((fields) => fields.map((f) => r[f])).find(Boolean)) as string | undefined;
     // Prefer full name (first + last) when we have both; otherwise use name/display_name if it has last name (contains space)
-    const name = (fullName && last ? fullName : (typeof fallback === "string" && fallback.includes(" ") ? fallback : null) ?? fullName || fallback ?? "Unknown") as string;
+    let name: string;
+    if (fullName && last) {
+      name = fullName;
+    } else if (typeof fallback === "string" && fallback.includes(" ")) {
+      name = fallback;
+    } else {
+      name = (fullName || fallback) ?? "Unknown";
+    }
     map.set(idStr, String(name));
   }
   return map;
