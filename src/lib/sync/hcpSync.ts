@@ -1,6 +1,7 @@
 import { getHcpClient } from "../housecallpro";
 import { sql } from "@vercel/postgres";
 import { initSchema } from "../db";
+import { upsertJobLineItems } from "../db/queries";
 
 const DELAY_MS = 100;
 
@@ -63,6 +64,7 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
   const entitiesSynced: Record<string, number> = {
     customers: 0,
     jobs: 0,
+    job_line_items: 0,
     invoices: 0,
     estimates: 0,
     appointments: 0,
@@ -116,6 +118,22 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
           updated_at = NOW()
       `;
       entitiesSynced.jobs++;
+
+      // Sync line items for this job (rate limit to avoid API throttling)
+      try {
+        const lineItemsRes = await client.getJobLineItems(hcpId);
+        const lineItemsList = Array.isArray(lineItemsRes)
+          ? lineItemsRes
+          : (lineItemsRes as { line_items?: unknown[] })?.line_items ??
+            (lineItemsRes as { data?: unknown[] })?.data ??
+            [];
+        const items = lineItemsList as Record<string, unknown>[];
+        const synced = await upsertJobLineItems(companyId, hcpId, items);
+        entitiesSynced.job_line_items += synced;
+        await delay(50);
+      } catch {
+        /* skip line items on error */
+      }
     }
 
     const invoices = await client.getInvoicesAllPages().catch(() => [] as unknown[]);
@@ -207,7 +225,7 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       entitiesSynced.pros++;
     }
 
-    const entityTypes = ["customers", "jobs", "invoices", "estimates", "appointments", "employees", "pros"];
+    const entityTypes = ["customers", "jobs", "job_line_items", "invoices", "estimates", "appointments", "employees", "pros"];
     for (const entityType of entityTypes) {
       await sql`
         INSERT INTO sync_state (company_id, entity_type, last_sync_at)

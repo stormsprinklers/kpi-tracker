@@ -117,6 +117,7 @@ export interface HcpClient {
   getCompany: () => Promise<Record<string, unknown>>;
   getJobs: (params?: { per_page?: number; page?: number; status?: string }) => Promise<unknown>;
   getJobInvoices: (jobId: string) => Promise<unknown>;
+  getJobLineItems: (jobId: string) => Promise<unknown>;
   getJobsAllPages: (params?: { status?: string }) => Promise<unknown[]>;
   getPros: () => Promise<unknown>;
   getEmployees: (params?: { page?: number; page_size?: number }) => Promise<unknown>;
@@ -196,6 +197,11 @@ function createHcpClient(token: string): HcpClient {
     },
     getJobInvoices: async (jobId) => {
       const res = await clientFetch(`${HCP_API_BASE}/jobs/${jobId}/invoices`);
+      if (!res.ok) throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
+      return res.json();
+    },
+    getJobLineItems: async (jobId) => {
+      const res = await clientFetch(`${HCP_API_BASE}/jobs/${jobId}/line_items`);
       if (!res.ok) throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
       return res.json();
     },

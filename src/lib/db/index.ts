@@ -118,6 +118,22 @@ export async function initSchema(): Promise<void> {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS job_line_items (
+      id SERIAL PRIMARY KEY,
+      hcp_id TEXT NOT NULL,
+      company_id TEXT NOT NULL,
+      job_hcp_id TEXT NOT NULL,
+      raw JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(hcp_id, company_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_job_line_items_job
+    ON job_line_items (company_id, job_hcp_id)
+  `;
+
   // Auth tables (organizations, users)
   await sql`
     CREATE TABLE IF NOT EXISTS organizations (

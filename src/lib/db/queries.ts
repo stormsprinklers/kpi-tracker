@@ -90,6 +90,59 @@ export async function getEstimatesFromDb(
   return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
 }
 
+/** Get all line items for a company, grouped by job_hcp_id. Returns Map<jobHcpId, lineItems[]>. */
+export async function getAllJobLineItemsByCompany(
+  companyId: string
+): Promise<Map<string, Record<string, unknown>[]>> {
+  const result = await sql`
+    SELECT job_hcp_id, raw FROM job_line_items
+    WHERE company_id = ${companyId}
+  `;
+  const map = new Map<string, Record<string, unknown>[]>();
+  for (const row of result.rows ?? []) {
+    const r = row as { job_hcp_id: string; raw: Record<string, unknown> };
+    const list = map.get(r.job_hcp_id) ?? [];
+    list.push(r.raw);
+    map.set(r.job_hcp_id, list);
+  }
+  return map;
+}
+
+/** Get line items for a job from job_line_items table. */
+export async function getJobLineItemsFromDb(
+  companyId: string,
+  jobHcpId: string
+): Promise<Record<string, unknown>[]> {
+  const result = await sql`
+    SELECT raw FROM job_line_items
+    WHERE company_id = ${companyId} AND job_hcp_id = ${jobHcpId}
+  `;
+  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+}
+
+/** Upsert line items for a job. Each line item has hcp_id (line item id), job_hcp_id. */
+export async function upsertJobLineItems(
+  companyId: string,
+  jobHcpId: string,
+  lineItems: Record<string, unknown>[]
+): Promise<number> {
+  let count = 0;
+  for (const item of lineItems) {
+    const hcpId = (item.id ?? item.uuid) != null ? String(item.id ?? item.uuid) : null;
+    if (!hcpId) continue;
+    await sql`
+      INSERT INTO job_line_items (hcp_id, company_id, job_hcp_id, raw, updated_at)
+      VALUES (${hcpId}, ${companyId}, ${jobHcpId}, ${JSON.stringify(item)}::jsonb, NOW())
+      ON CONFLICT (hcp_id, company_id) DO UPDATE SET
+        job_hcp_id = EXCLUDED.job_hcp_id,
+        raw = EXCLUDED.raw,
+        updated_at = NOW()
+    `;
+    count++;
+  }
+  return count;
+}
+
 export async function getEmployeesFromDb(
   companyId: string
 ): Promise<Record<string, unknown>[]> {

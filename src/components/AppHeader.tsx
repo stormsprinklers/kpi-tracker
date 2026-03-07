@@ -68,6 +68,14 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
                 Timesheets
               </a>
             )}
+            {(session.user.role === "admin" || session.user.hcpEmployeeId) && (
+              <a
+                href="/time-insights"
+                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                Time Insights
+              </a>
+            )}
             <a
               href="/debug"
               className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"

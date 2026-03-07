@@ -32,12 +32,19 @@ export async function GET() {
           )
         : null;
 
+    // Phase 1: Inspect work_timestamps and assigned_employees for Time Insights
+    const firstJob = jobList[0] as Record<string, unknown> | undefined;
+    const workTimestampsSample = firstJob?.work_timestamps ?? null;
+    const assignedEmployeesSample = firstJob?.assigned_employees ?? firstJob?.assigned_pro ?? null;
+
     return NextResponse.json({
       jobs_sample: jobList,
       job_invoices_sample: jobWithInvoices,
       employees_sample: employeesRes,
       pros_sample: prosRes,
-      note: "Use this to confirm field names: assigned_employee, employee_id, assigned_pro, amount_paid, total, etc.",
+      work_timestamps_sample: workTimestampsSample,
+      assigned_employees_sample: assignedEmployeesSample,
+      note: "Use this to confirm field names: assigned_employee, employee_id, assigned_pro, amount_paid, total, work_timestamps (en_route_at, started_at, completed_at), etc.",
     });
   } catch (error) {
     console.error("[HCP Debug] Error:", error);
