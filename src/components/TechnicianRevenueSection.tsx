@@ -7,6 +7,7 @@ interface TechnicianRevenue {
   technicianName: string;
   totalRevenue: number;
   conversionRate: number | null;
+  revenuePerHour: number | null;
 }
 
 interface TechnicianRevenueResult {
@@ -149,6 +150,9 @@ export function TechnicianRevenueSection() {
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                     Conversion Rate %
                   </th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                    Rev/Hr
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -167,6 +171,11 @@ export function TechnicianRevenueSection() {
                       {t.conversionRate != null
                         ? `${t.conversionRate.toFixed(1)}%`
                         : "—"}
+                    </td>
+                    <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
+                      {t.revenuePerHour != null
+                        ? `${formatCurrency(t.revenuePerHour)}/hr`
+                        : "N/A"}
                     </td>
                   </tr>
                 ))}

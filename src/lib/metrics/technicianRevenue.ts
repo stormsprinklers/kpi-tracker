@@ -1,11 +1,19 @@
 import { getHcpClient } from "../housecallpro";
-import { getJobsFromDb, getEmployeesFromDb, getInvoicesFromDb, getProsFromDb, getEstimatesFromDb } from "../db/queries";
+import {
+  getJobsFromDb,
+  getEmployeesFromDb,
+  getInvoicesFromDb,
+  getProsFromDb,
+  getEstimatesFromDb,
+  getTimeEntriesByOrganization,
+} from "../db/queries";
 
 export interface TechnicianRevenue {
   technicianId: string;
   technicianName: string;
   totalRevenue: number;
   conversionRate: number | null;
+  revenuePerHour: number | null;
 }
 
 export interface TechnicianRevenueResult {
@@ -363,6 +371,32 @@ export async function getTechnicianRevenue(
   }
 
   const revenueByTech = new Map<string, number>();
+  const revenueByTechAndDate = new Map<string, Map<string, number>>();
+
+  const { startDate, endDate } = filters ?? {};
+
+  // Fetch time entries and build hours-by-date map (techId -> date -> hours)
+  const hoursByTechAndDate = new Map<string, Map<string, number>>();
+  try {
+    const timeEntries = await getTimeEntriesByOrganization(organizationId, startDate, endDate);
+    for (const e of timeEntries) {
+      const techId = e.hcp_employee_id ?? "unknown";
+      const dateStr = e.entry_date;
+      const h = typeof e.hours === "number" && !Number.isNaN(e.hours)
+        ? e.hours
+        : typeof e.hours === "string"
+          ? parseFloat(e.hours) || 0
+          : 0;
+      let byDate = hoursByTechAndDate.get(techId);
+      if (!byDate) {
+        byDate = new Map<string, number>();
+        hoursByTechAndDate.set(techId, byDate);
+      }
+      byDate.set(dateStr, (byDate.get(dateStr) ?? 0) + h);
+    }
+  } catch {
+    /* skip - no time entries or DB error */
+  }
 
   // Prefer DB for jobs; fall back to API if empty
   let jobs: unknown[] = [];
@@ -394,7 +428,6 @@ export async function getTechnicianRevenue(
     });
   }
 
-  const { startDate, endDate } = filters ?? {};
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
     if (!jobInDateRange(j, startDate, endDate)) continue;
@@ -402,6 +435,9 @@ export async function getTechnicianRevenue(
     let techIds = getTechnicianIds(j);
     techIds = techIds.filter((id) => !officeStaffIds.has(id));
     if (techIds.length === 0) continue;
+
+    const jobDate = getJobDate(j);
+    const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
 
     const isPaid = isPaidOrCompleted(j);
     let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
@@ -432,6 +468,14 @@ export async function getTechnicianRevenue(
     for (const techId of techIds) {
       const current = revenueByTech.get(techId) ?? 0;
       revenueByTech.set(techId, current + amountPerTech);
+      if (jobDay) {
+        let byDate = revenueByTechAndDate.get(techId);
+        if (!byDate) {
+          byDate = new Map<string, number>();
+          revenueByTechAndDate.set(techId, byDate);
+        }
+        byDate.set(jobDay, (byDate.get(jobDay) ?? 0) + amountPerTech);
+      }
     }
   }
 
@@ -471,11 +515,24 @@ export async function getTechnicianRevenue(
       const conv = conversionByTech.get(id);
       const conversionRate =
         conv && conv.total > 0 ? (conv.approved / conv.total) * 100 : null;
+      const hoursByDate = hoursByTechAndDate.get(id);
+      const revenueByDate = revenueByTechAndDate.get(id);
+      let revenuePerHour: number | null = null;
+      if (hoursByDate && hoursByDate.size > 0) {
+        let totalHours = 0;
+        let totalRevenueOnDaysWithHours = 0;
+        for (const [dateStr, hours] of hoursByDate) {
+          totalHours += hours;
+          totalRevenueOnDaysWithHours += revenueByDate?.get(dateStr) ?? 0;
+        }
+        revenuePerHour = totalHours > 0 ? totalRevenueOnDaysWithHours / totalHours : null;
+      }
       return {
         technicianId: id,
         technicianName: nameMap.get(id) ?? (id.startsWith("pro_") || id.startsWith("emp_") ? "Former technician" : `Technician ${id}`),
         totalRevenue,
         conversionRate,
+        revenuePerHour,
       };
     })
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
