@@ -12,7 +12,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get("startDate") ?? undefined;
   const endDate = searchParams.get("endDate") ?? undefined;
-  const filters = (startDate || endDate) ? { startDate, endDate } : undefined;
+  const activeOnly = searchParams.get("activeOnly") !== "false";
+  const filters = {
+    ...(startDate || endDate ? { startDate, endDate } : {}),
+    activeInCurrentYearOnly: activeOnly,
+  };
 
   try {
     const result = await getTechnicianRevenue(session.user.organizationId, filters);

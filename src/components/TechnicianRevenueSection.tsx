@@ -19,12 +19,14 @@ interface TechnicianRevenueResult {
 interface TechnicianCard {
   technicianId: string;
   technicianName: string;
-  revenuePerHour14d: number | null;
-  totalRevenueAllTime: number;
+  revenuePerHour: number | null;
+  totalRevenue: number;
   conversionRate: number | null;
   fiveStarReviews: number | null;
   photoUrl: string | null;
 }
+
+type DatePreset = "all" | "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "custom";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -35,16 +37,45 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function get14DayRange(): { startDate: string; endDate: string } {
+function getDateRange(preset: DatePreset, customStart?: string, customEnd?: string): { startDate?: string; endDate?: string } {
   const today = new Date();
   const end = new Date(today);
   end.setHours(23, 59, 59, 999);
-  const start = new Date(today);
-  start.setDate(start.getDate() - 14);
-  return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
-  };
+  const endStr = end.toISOString().slice(0, 10);
+
+  if (preset === "custom" && customStart && customEnd) {
+    return { startDate: customStart, endDate: customEnd };
+  }
+  if (preset === "custom") return {};
+  if (preset === "all") return {};
+  if (preset === "7d") {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 7);
+    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
+  }
+  if (preset === "14d") {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 14);
+    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
+  }
+  if (preset === "30d") {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 30);
+    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
+  }
+  if (preset === "thisMonth") {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
+  }
+  if (preset === "lastMonth") {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const endLast = new Date(today.getFullYear(), today.getMonth(), 0);
+    return {
+      startDate: start.toISOString().slice(0, 10),
+      endDate: endLast.toISOString().slice(0, 10),
+    };
+  }
+  return {};
 }
 
 function getInitials(name: string): string {
@@ -54,38 +85,45 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+const PRESET_LABELS: Record<DatePreset, string> = {
+  "7d": "Last 7 days",
+  "14d": "Last 14 days",
+  "30d": "Last 30 days",
+  thisMonth: "This month",
+  lastMonth: "Last month",
+  all: "All time",
+  custom: "Custom range",
+};
+
 export function TechnicianRevenueSection() {
   const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
+  const [viewTab, setViewTab] = useState<"cards" | "tables">("cards");
+  const [datePreset, setDatePreset] = useState<DatePreset>("14d");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [data, setData] = useState<TechnicianRevenueResult | null>(null);
   const [cards, setCards] = useState<TechnicianCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
-  const [totalRevenueAllTime, setTotalRevenueAllTime] = useState(0);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const range = getDateRange(datePreset, customStartDate, customEndDate);
+    const params = new URLSearchParams();
+    if (range.startDate) params.set("startDate", range.startDate);
+    if (range.endDate) params.set("endDate", range.endDate);
+    const url = `/api/metrics/technician-revenue${params.toString() ? `?${params}` : ""}`;
     try {
-      const { startDate, endDate } = get14DayRange();
-      const params14d = new URLSearchParams({ startDate, endDate });
-      const paramsAll = "";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to load metrics");
+      const result: TechnicianRevenueResult = await res.json();
+      setData(result);
 
-      const [res14d, resAll] = await Promise.all([
-        fetch(`/api/metrics/technician-revenue?${params14d}`),
-        fetch(`/api/metrics/technician-revenue`),
-      ]);
-
-      if (!res14d.ok || !resAll.ok) throw new Error("Failed to load metrics");
-      const data14d: TechnicianRevenueResult = await res14d.json();
-      const dataAll: TechnicianRevenueResult = await resAll.json();
-
-      const technicianIds = [
-        ...new Set([
-          ...data14d.technicians.map((t) => t.technicianId),
-          ...dataAll.technicians.map((t) => t.technicianId),
-        ]),
-      ];
+      const technicianIds = result.technicians.map((t) => t.technicianId);
       const photosRes =
         technicianIds.length > 0
           ? await fetch(`/api/technicians/photos?ids=${technicianIds.join(",")}`)
@@ -93,36 +131,22 @@ export function TechnicianRevenueSection() {
       const photosData = photosRes?.ok ? await photosRes.json() : {};
       const photos: Record<string, string> = photosData.photos ?? {};
 
-      const byId14d = new Map(data14d.technicians.map((t) => [t.technicianId, t]));
-      const byIdAll = new Map(dataAll.technicians.map((t) => [t.technicianId, t]));
-
-      const merged: TechnicianCard[] = technicianIds.map((id) => {
-        const t14 = byId14d.get(id);
-        const tAll = byIdAll.get(id);
-        const name =
-          t14?.technicianName ??
-          tAll?.technicianName ??
-          (id.startsWith("pro_") || id.startsWith("emp_") ? "Former technician" : `Technician ${id}`);
-        return {
-          technicianId: id,
-          technicianName: name,
-          revenuePerHour14d: t14?.revenuePerHour ?? null,
-          totalRevenueAllTime: tAll?.totalRevenue ?? 0,
-          conversionRate: t14?.conversionRate ?? null,
-          fiveStarReviews: null,
-          photoUrl: photos[id] ?? null,
-        };
-      });
-
-      merged.sort((a, b) => b.totalRevenueAllTime - a.totalRevenueAllTime);
+      const merged: TechnicianCard[] = result.technicians.map((t) => ({
+        technicianId: t.technicianId,
+        technicianName: t.technicianName,
+        revenuePerHour: t.revenuePerHour,
+        totalRevenue: t.totalRevenue,
+        conversionRate: t.conversionRate,
+        fiveStarReviews: null,
+        photoUrl: photos[t.technicianId] ?? null,
+      }));
       setCards(merged);
-      setTotalRevenueAllTime(dataAll.totalRevenue);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [datePreset, customStartDate, customEndDate]);
 
   useEffect(() => {
     fetchData();
@@ -154,6 +178,39 @@ export function TechnicianRevenueSection() {
     return role === "admin" || (role === "employee" && hcpId === technicianId);
   };
 
+  const dateSelector = (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={datePreset}
+        onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+        className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+      >
+        {(Object.keys(PRESET_LABELS) as DatePreset[]).map((key) => (
+          <option key={key} value={key}>
+            {PRESET_LABELS[key]}
+          </option>
+        ))}
+      </select>
+      {datePreset === "custom" && (
+        <>
+          <input
+            type="date"
+            value={customStartDate}
+            onChange={(e) => setCustomStartDate(e.target.value)}
+            className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+          />
+          <span className="text-sm text-zinc-500">to</span>
+          <input
+            type="date"
+            value={customEndDate}
+            onChange={(e) => setCustomEndDate(e.target.value)}
+            className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+          />
+        </>
+      )}
+    </div>
+  );
+
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -162,8 +219,29 @@ export function TechnicianRevenueSection() {
             Technician KPIs
           </h2>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Revenue per hour (14-day avg), total revenue (all time), conversion rate, and 5-star reviews
+            Revenue per hour, total revenue, conversion rate, and 5-star reviews. Only technicians with jobs in the current year.
           </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {isAdmin && (
+            <div className="flex rounded border border-zinc-300 dark:border-zinc-600">
+              <button
+                type="button"
+                onClick={() => setViewTab("cards")}
+                className={`px-3 py-1.5 text-sm ${viewTab === "cards" ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50" : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+              >
+                Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewTab("tables")}
+                className={`px-3 py-1.5 text-sm ${viewTab === "tables" ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50" : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+              >
+                Tables
+              </button>
+            </div>
+          )}
+          {dateSelector}
         </div>
       </div>
       {loading && (
@@ -172,12 +250,50 @@ export function TechnicianRevenueSection() {
       {error && (
         <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
       )}
-      {!loading && !error && cards.length === 0 && (
+      {!loading && !error && (!data || data.technicians.length === 0) && (
         <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
-          No technician KPI data. Connect Housecall Pro and ensure jobs are marked paid or have paid invoices.
+          No technician KPI data for this period. Connect Housecall Pro and ensure jobs are marked paid or have paid invoices.
         </p>
       )}
-      {!loading && !error && cards.length > 0 && (
+      {!loading && !error && data && data.technicians.length > 0 && viewTab === "tables" && isAdmin && (
+        <>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[280px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Technician</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Revenue</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Conversion Rate %</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Rev/Hr</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.technicians.map((t) => (
+                  <tr key={t.technicianId} className="border-b border-zinc-100 dark:border-zinc-800">
+                    <td className="py-2 text-zinc-900 dark:text-zinc-50">{t.technicianName}</td>
+                    <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
+                      {formatCurrency(t.totalRevenue)}
+                    </td>
+                    <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
+                      {t.conversionRate != null ? `${t.conversionRate.toFixed(1)}%` : "—"}
+                    </td>
+                    <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
+                      {t.revenuePerHour != null ? `${formatCurrency(t.revenuePerHour)}/hr` : "N/A"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Total: </span>
+            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              {formatCurrency(data.totalRevenue)}
+            </span>
+          </div>
+        </>
+      )}
+      {!loading && !error && cards.length > 0 && (viewTab === "cards" || !isAdmin) && (
         <>
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {cards.map((card) => (
@@ -240,25 +356,21 @@ export function TechnicianRevenueSection() {
                 </div>
                 <dl className="mt-4 space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <dt className="text-zinc-500 dark:text-zinc-400">Rev/Hr (14d)</dt>
+                    <dt className="text-zinc-500 dark:text-zinc-400">Rev/Hr</dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
-                      {card.revenuePerHour14d != null
-                        ? `${formatCurrency(card.revenuePerHour14d)}/hr`
-                        : "—"}
+                      {card.revenuePerHour != null ? `${formatCurrency(card.revenuePerHour)}/hr` : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-zinc-500 dark:text-zinc-400">Total Revenue</dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
-                      {formatCurrency(card.totalRevenueAllTime)}
+                      {formatCurrency(card.totalRevenue)}
                     </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-zinc-500 dark:text-zinc-400">Conversion Rate</dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
-                      {card.conversionRate != null
-                        ? `${card.conversionRate.toFixed(1)}%`
-                        : "—"}
+                      {card.conversionRate != null ? `${card.conversionRate.toFixed(1)}%` : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between">
@@ -272,11 +384,9 @@ export function TechnicianRevenueSection() {
             ))}
           </div>
           <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Total Revenue (all time):{" "}
-            </span>
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Total Revenue: </span>
             <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              {formatCurrency(totalRevenueAllTime)}
+              {formatCurrency(data?.totalRevenue ?? 0)}
             </span>
           </div>
         </>

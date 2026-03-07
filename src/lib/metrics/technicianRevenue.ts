@@ -24,6 +24,8 @@ export interface TechnicianRevenueResult {
 export interface TechnicianRevenueFilters {
   startDate?: string; // ISO date YYYY-MM-DD
   endDate?: string;   // ISO date YYYY-MM-DD
+  /** When true (default), only include technicians with at least one job in the current calendar year */
+  activeInCurrentYearOnly?: boolean;
 }
 
 const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
@@ -373,7 +375,7 @@ export async function getTechnicianRevenue(
   const revenueByTech = new Map<string, number>();
   const revenueByTechAndDate = new Map<string, Map<string, number>>();
 
-  const { startDate, endDate } = filters ?? {};
+  const { startDate, endDate, activeInCurrentYearOnly = true } = filters ?? {};
 
   // Fetch time entries and build hours-by-date map (techId -> date -> hours)
   const hoursByTechAndDate = new Map<string, Map<string, number>>();
@@ -510,7 +512,25 @@ export async function getTechnicianRevenue(
     }
   }
 
+  // Build set of technicians with at least one job in current calendar year (when filtering)
+  const activeInCurrentYear = new Set<string>();
+  if (activeInCurrentYearOnly) {
+    const currentYear = new Date().getFullYear();
+    const yearStart = `${currentYear}-01-01`;
+    const yearEnd = `${currentYear}-12-31`;
+    for (const job of jobs) {
+      const j = job as Record<string, unknown>;
+      const jobDate = getJobDate(j);
+      if (!jobDate) continue;
+      const jobDay = jobDate.toISOString().slice(0, 10);
+      if (jobDay < yearStart || jobDay > yearEnd) continue;
+      const techIds = getTechnicianIds(j).filter((id) => !officeStaffIds.has(id));
+      for (const id of techIds) activeInCurrentYear.add(id);
+    }
+  }
+
   const technicians: TechnicianRevenue[] = Array.from(revenueByTech.entries())
+    .filter(([id]) => !activeInCurrentYearOnly || activeInCurrentYear.has(id))
     .map(([id, totalRevenue]) => {
       const conv = conversionByTech.get(id);
       const conversionRate =
