@@ -137,6 +137,15 @@ function isPaidStatus(record: Record<string, unknown>): boolean {
   return ["paid", "completed", "complete", "closed", "done", "paid_in_full", "invoiced", "finished"].includes(status);
 }
 
+/** Many webhook providers (e.g. HCP) nest event data under payload.payload. Normalize to the inner data. */
+function getWebhookData(payload: Record<string, unknown>): Record<string, unknown> {
+  const inner = payload.payload;
+  if (inner && typeof inner === "object" && inner !== null && !Array.isArray(inner)) {
+    return inner as Record<string, unknown>;
+  }
+  return payload;
+}
+
 async function insertActivityFeedItem(params: {
   organizationId: string;
   activityType: string;
@@ -175,9 +184,10 @@ async function maybeEmitActivityFeedItem(
   companyId: string
 ): Promise<void> {
   try {
+    const data = getWebhookData(payload);
     if (event === "job.created" || event === "job.appointment.scheduled") {
       console.log("[ActivityFeed] Processing", event, "org:", organizationId);
-      const appointmentOrJob = (payload.job ?? payload.appointment ?? payload.data ?? payload) as Record<string, unknown>;
+      const appointmentOrJob = (data.job ?? data.appointment ?? data.data ?? data) as Record<string, unknown>;
       if (!appointmentOrJob || typeof appointmentOrJob !== "object") return;
       const job = (appointmentOrJob.job ?? appointmentOrJob) as Record<string, unknown>;
       const city = extractCity(job) ?? extractCity(appointmentOrJob) ?? "Unknown city";
@@ -201,12 +211,12 @@ async function maybeEmitActivityFeedItem(
       });
       console.log("[ActivityFeed] Inserted job_booked successfully", { organizationId });
     } else if (event.startsWith("appointment.")) {
-      const apt = (payload.appointment ?? payload.data ?? payload) as Record<string, unknown>;
+      const apt = (data.appointment ?? data.data ?? data) as Record<string, unknown>;
       const wt = apt.work_timestamps as Record<string, unknown> | undefined;
       const enRoute = wt?.en_route_at ?? wt?.on_my_way_at ?? wt?.en_route ?? wt?.on_my_way;
       if (!enRoute) return;
       const jobHcpId = extractJobHcpId(apt);
-      let job: Record<string, unknown> | null = (apt.job ?? payload.job) as Record<string, unknown> | null;
+      let job: Record<string, unknown> | null = (apt.job ?? data.job) as Record<string, unknown> | null;
       if (!job && jobHcpId) {
         const rows = await sql`SELECT raw FROM jobs WHERE hcp_id = ${jobHcpId} AND company_id = ${companyId} LIMIT 1`;
         job = (rows.rows?.[0] as { raw: Record<string, unknown> } | undefined)?.raw ?? null;
@@ -226,7 +236,7 @@ async function maybeEmitActivityFeedItem(
         rawPayload: payload,
       });
     } else if (event.startsWith("estimate.")) {
-      const est = (payload.estimate ?? payload.data ?? payload) as Record<string, unknown>;
+      const est = (data.estimate ?? data.data ?? data) as Record<string, unknown>;
       if (!hasApprovedOption(est)) return;
       const amount = extractAmountInDollars(est, "total_amount", "subtotal", "total", "amount");
       const amountStr = amount != null ? amount.toFixed(2) : "—";
@@ -245,8 +255,8 @@ async function maybeEmitActivityFeedItem(
       });
     } else if (event.startsWith("invoice.") || event.startsWith("job.")) {
       const record = event.startsWith("invoice.")
-        ? (payload.invoice ?? payload.data ?? payload) as Record<string, unknown>
-        : (payload.job ?? payload.data ?? payload) as Record<string, unknown>;
+        ? (data.invoice ?? data.data ?? data) as Record<string, unknown>
+        : (data.job ?? data.data ?? data) as Record<string, unknown>;
       const amountPaid = extractAmountInDollars(record, "amount_paid", "paid_amount", "total_paid");
       const paid = amountPaid != null && amountPaid > 0 ? true : isPaidStatus(record);
       if (!paid) return;
@@ -285,9 +295,11 @@ export async function persistWebhookEvent(
 ): Promise<void> {
   console.log("[HCP Webhook] persistWebhookEvent start", { event, organizationId });
 
+  const data = getWebhookData(payload);
+
   if (event === "job.appointment.scheduled") {
     try {
-      const record = (payload.appointment ?? payload.job ?? payload.data ?? payload) as Record<string, unknown>;
+      const record = (data.appointment ?? data.job ?? data.data ?? data) as Record<string, unknown>;
       const hcpId = extractId(record);
       if (hcpId) {
         const jobHcpId = extractJobHcpId(record);
@@ -301,7 +313,7 @@ export async function persistWebhookEvent(
             updated_at = NOW()
         `;
       }
-      const jobRecord = (payload.job ?? (record.job as Record<string, unknown>)) as Record<string, unknown> | null;
+      const jobRecord = (data.job ?? (record.job as Record<string, unknown>)) as Record<string, unknown> | null;
       if (jobRecord && extractId(jobRecord)) {
         const jHcpId = extractId(jobRecord);
         const customerHcpId = extractCustomerHcpId(jobRecord);
@@ -323,7 +335,7 @@ export async function persistWebhookEvent(
       console.warn("[HCP Webhook] job.appointment.scheduled persist failed (activity feed will still run):", persistErr);
     }
   } else if (event.startsWith("job.")) {
-    const record = (payload.job ?? payload.data ?? payload) as Record<string, unknown>;
+    const record = (data.job ?? data.data ?? data) as Record<string, unknown>;
     const hcpId = extractId(record);
     if (!hcpId) return;
     const customerHcpId = extractCustomerHcpId(record);
@@ -341,7 +353,7 @@ export async function persistWebhookEvent(
         updated_at = NOW()
     `;
   } else if (event.startsWith("customer.")) {
-    const record = (payload.customer ?? payload.data ?? payload) as Record<string, unknown>;
+    const record = (data.customer ?? data.data ?? data) as Record<string, unknown>;
     const hcpId = extractId(record);
     if (!hcpId) return;
     const raw = JSON.stringify(record);
@@ -351,7 +363,7 @@ export async function persistWebhookEvent(
       ON CONFLICT (hcp_id, company_id) DO UPDATE SET raw = EXCLUDED.raw, updated_at = NOW()
     `;
   } else if (event.startsWith("invoice.")) {
-    const record = (payload.invoice ?? payload.data ?? payload) as Record<string, unknown>;
+    const record = (data.invoice ?? data.data ?? data) as Record<string, unknown>;
     const hcpId = extractId(record);
     if (!hcpId) return;
     const jobHcpId = extractJobHcpId(record);
@@ -365,7 +377,7 @@ export async function persistWebhookEvent(
         updated_at = NOW()
     `;
   } else if (event.startsWith("estimate.")) {
-    const record = (payload.estimate ?? payload.data ?? payload) as Record<string, unknown>;
+    const record = (data.estimate ?? data.data ?? data) as Record<string, unknown>;
     const hcpId = extractId(record);
     if (!hcpId) return;
     const jobHcpId = extractJobHcpId(record);
@@ -381,7 +393,7 @@ export async function persistWebhookEvent(
         updated_at = NOW()
     `;
   } else if (event.startsWith("appointment.")) {
-    const record = (payload.appointment ?? payload.data ?? payload) as Record<string, unknown>;
+    const record = (data.appointment ?? data.data ?? data) as Record<string, unknown>;
     const hcpId = extractId(record);
     if (!hcpId) return;
     const jobHcpId = extractJobHcpId(record);
@@ -395,7 +407,7 @@ export async function persistWebhookEvent(
         updated_at = NOW()
     `;
   } else if (event.startsWith("employee.") || event.startsWith("pro.")) {
-    const record = (payload.employee ?? payload.pro ?? payload.data ?? payload) as Record<string, unknown>;
+    const record = (data.employee ?? data.pro ?? data.data ?? data) as Record<string, unknown>;
     const hcpId = extractId(record);
     if (!hcpId) return;
     const raw = JSON.stringify(record);
