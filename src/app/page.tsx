@@ -5,11 +5,15 @@ import { getOrganizationById } from "@/lib/db/queries";
 import { KeyMetricsSection } from "@/components/KeyMetricsSection";
 import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
 import { ActivityFeed } from "@/components/ActivityFeed";
+import { LandingPage } from "@/components/LandingPage";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.organizationId) {
-    redirect("/login");
+  if (!session?.user) {
+    return <LandingPage />;
+  }
+  if (!session.user.organizationId) {
+    redirect("/setup");
   }
   const org = await getOrganizationById(session.user.organizationId);
   const connected = !!org?.hcp_access_token;

@@ -14,10 +14,34 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   const pathname = usePathname();
   if (pathname === "/login" || pathname === "/setup") return null;
 
+  const isLanding = pathname === "/" && !session?.user;
+
+  if (isLanding) {
+    return (
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4 md:px-8" style={{ borderColor: "rgba(11,31,51,0.12)", backgroundColor: "#F8FAFC" }}>
+        <div className="flex items-center gap-3">
+          <img src="/logo.svg" alt="" className="h-10 w-10 object-contain" />
+          <a href="/" className="block hover:opacity-80 transition-opacity">
+            <h1 className="text-xl font-semibold" style={{ color: "#0B1F33" }}>{title}</h1>
+          </a>
+        </div>
+        <nav className="flex flex-wrap items-center gap-4 md:gap-6">
+          <a href="#features" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Features</a>
+          <a href="#integrations" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Integrations</a>
+          <a href="#faq" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>FAQ</a>
+          <a href="mailto:contact@example.com" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Contact</a>
+          <a href="/login" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Log in</a>
+          <a href="#" className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90" style={{ backgroundColor: "#0B1F33" }}>Book a demo</a>
+          <a href="#" className="rounded-lg border-2 px-4 py-2 text-sm font-semibold transition hover:bg-[rgba(11,31,51,0.04)]" style={{ borderColor: "#0B1F33", color: "#0B1F33" }}>Join the waitlist</a>
+        </nav>
+      </header>
+    );
+  }
+
   return (
     <header className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "#0B1F33", backgroundColor: "#F8FAFC" }}>
       <div className="flex items-center gap-3">
-        <img src="/logo.png" alt="" className="h-10 w-10 object-contain" />
+        <img src="/logo.svg" alt="" className="h-10 w-10 object-contain" />
         <a
           href="/"
           className="block hover:opacity-80 transition-opacity"
