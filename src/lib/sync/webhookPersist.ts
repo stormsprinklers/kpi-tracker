@@ -418,17 +418,16 @@ export async function persistWebhookEvent(
     `;
   }
 
-  // Emit activity feed items for relevant events
-  const shouldEmit =
-    event === "job.created" ||
-    event.startsWith("appointment.") ||
-    event.startsWith("estimate.") ||
-    event.startsWith("invoice.") ||
-    event.startsWith("job.");
-  console.log("[HCP Webhook] Activity feed check", { event, shouldEmit, organizationId });
-  if (shouldEmit) {
-    console.log("[ActivityFeed] Calling maybeEmitActivityFeedItem", { event, organizationId });
-    await maybeEmitActivityFeedItem(event, payload, organizationId, companyId);
-    console.log("[ActivityFeed] maybeEmitActivityFeedItem completed", { event, organizationId });
+  // Insert every verified webhook raw into activity feed (no filtering)
+  try {
+    await insertActivityFeedItem({
+      organizationId,
+      activityType: event,
+      message: `Webhook: ${event}`,
+      rawPayload: payload,
+    });
+    console.log("[ActivityFeed] Inserted raw webhook", { event, organizationId });
+  } catch (err) {
+    console.error("[ActivityFeed] Failed to insert raw webhook:", err);
   }
 }

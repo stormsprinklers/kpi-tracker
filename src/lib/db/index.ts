@@ -235,4 +235,14 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_activity_feed_org_created
     ON activity_feed (organization_id, created_at DESC)
   `;
+
+  // One-time migration: wipe activity feed for fresh raw webhook restart
+  await sql`
+    CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW())
+  `;
+  const wipeCheck = await sql`SELECT 1 FROM app_migrations WHERE name = 'wipe_activity_feed_2024' LIMIT 1`;
+  if (!wipeCheck.rows?.length) {
+    await sql`TRUNCATE activity_feed`;
+    await sql`INSERT INTO app_migrations (name) VALUES ('wipe_activity_feed_2024')`;
+  }
 }
