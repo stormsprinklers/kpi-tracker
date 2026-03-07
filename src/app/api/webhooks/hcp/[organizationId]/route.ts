@@ -91,15 +91,25 @@ export async function POST(
   const apiTimestamp = request.headers.get("api-timestamp");
   const housecallSignature = request.headers.get("x-housecall-signature");
 
-  // HCP connection test: accept {"foo":"bar"} without verification so the webhook URL can be saved
-  try {
-    const parsed = rawBody ? JSON.parse(rawBody) : null;
-    if (parsed && typeof parsed === "object" && Object.keys(parsed).length === 1 && parsed.foo === "bar") {
-      console.log("[HCP Webhook] Connection test accepted for org", organizationId);
-      return NextResponse.json({ ok: true, test: true });
+  // HCP connection test: accept test payloads without verification so the webhook URL can be saved.
+  // HCP may send {"foo":"bar"}, empty body, or {} when testing the URL.
+  const isConnectionTest = (() => {
+    if (!rawBody || rawBody.trim() === "") return true;
+    try {
+      const parsed = JSON.parse(rawBody);
+      if (!parsed || typeof parsed !== "object") return false;
+      const keys = Object.keys(parsed);
+      if (keys.length === 0) return true;
+      if (keys.length === 1 && parsed.foo === "bar") return true;
+      if (!("event" in parsed)) return true;
+    } catch {
+      return false;
     }
-  } catch {
-    // not JSON or not the test payload, continue with normal verification
+    return false;
+  })();
+  if (isConnectionTest) {
+    console.log("[HCP Webhook] Connection test accepted for org", organizationId, "bodyLength:", rawBody?.length ?? 0);
+    return NextResponse.json({ ok: true, test: true });
   }
 
   // #region agent log
