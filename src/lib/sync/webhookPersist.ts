@@ -283,6 +283,7 @@ export async function persistWebhookEvent(
   organizationId: string,
   companyId: string
 ): Promise<void> {
+  console.log("[HCP Webhook] persistWebhookEvent start", { event, organizationId });
 
   if (event === "job.appointment.scheduled") {
     try {
@@ -406,14 +407,16 @@ export async function persistWebhookEvent(
   }
 
   // Emit activity feed items for relevant events
-  if (
+  const shouldEmit =
     event === "job.created" ||
     event.startsWith("appointment.") ||
     event.startsWith("estimate.") ||
     event.startsWith("invoice.") ||
-    event.startsWith("job.")
-  ) {
+    event.startsWith("job.");
+  console.log("[HCP Webhook] Activity feed check", { event, shouldEmit, organizationId });
+  if (shouldEmit) {
     console.log("[ActivityFeed] Calling maybeEmitActivityFeedItem", { event, organizationId });
     await maybeEmitActivityFeedItem(event, payload, organizationId, companyId);
+    console.log("[ActivityFeed] maybeEmitActivityFeedItem completed", { event, organizationId });
   }
 }

@@ -229,6 +229,8 @@ export async function POST(
   const companyId = org.hcp_company_id ?? "default";
 
   try {
+    const { initSchema } = await import("@/lib/db");
+    await initSchema();
     const { persistWebhookEvent } = await import("@/lib/sync/webhookPersist");
     await persistWebhookEvent(event ?? "unknown", (payload ?? {}) as Record<string, unknown>, organizationId, companyId);
   } catch (err) {
