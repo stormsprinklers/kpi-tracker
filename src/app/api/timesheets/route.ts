@@ -3,11 +3,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
   getTimeEntriesByEmployee,
+  getTimeEntriesByOrganization,
   createTimeEntry,
 } from "@/lib/db/queries";
 import { initSchema } from "@/lib/db";
 
-/** GET /api/timesheets - List time entries. Employee: own entries. Admin: ?hcp_employee_id=xxx required. */
+/** GET /api/timesheets - List time entries. Employee: own entries. Admin: all entries in date range (start_date/end_date required). */
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.organizationId) {
@@ -15,27 +16,38 @@ export async function GET(request: Request) {
   }
 
   const isAdmin = session.user.role === "admin";
-  const hcpEmployeeId = isAdmin
-    ? new URL(request.url).searchParams.get("hcp_employee_id")?.trim() || null
-    : session.user.hcpEmployeeId ?? null;
-
-  if (!hcpEmployeeId) {
-    return NextResponse.json(
-      isAdmin
-        ? { error: "hcp_employee_id query param is required for admin" }
-        : { error: "Your account is not linked to an HCP employee. Contact your admin." },
-      { status: 403 }
-    );
-  }
-
-  await initSchema();
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get("start_date") ?? undefined;
   const endDate = searchParams.get("end_date") ?? undefined;
 
-  const entries = await getTimeEntriesByEmployee(
+  if (!isAdmin) {
+    const hcpEmployeeId = session.user.hcpEmployeeId ?? null;
+    if (!hcpEmployeeId) {
+      return NextResponse.json(
+        { error: "Your account is not linked to an HCP employee. Contact your admin." },
+        { status: 403 }
+      );
+    }
+    await initSchema();
+    const entries = await getTimeEntriesByEmployee(
+      session.user.organizationId,
+      hcpEmployeeId,
+      startDate,
+      endDate
+    );
+    return NextResponse.json(entries);
+  }
+
+  if (!startDate || !endDate) {
+    return NextResponse.json(
+      { error: "start_date and end_date query params are required for admin" },
+      { status: 400 }
+    );
+  }
+
+  await initSchema();
+  const entries = await getTimeEntriesByOrganization(
     session.user.organizationId,
-    hcpEmployeeId,
     startDate,
     endDate
   );

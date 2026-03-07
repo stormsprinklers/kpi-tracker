@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
 interface TimeEntry {
   id: string;
+  hcp_employee_id?: string;
   entry_date: string;
   start_time: string | null;
   end_time: string | null;
@@ -27,7 +28,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(initialHcpEmployeeId ?? "");
+  const [formEmployeeId, setFormEmployeeId] = useState<string>("");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -42,7 +43,22 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
   const [formNotes, setFormNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const effectiveHcpEmployeeId = isAdmin ? selectedEmployeeId || null : initialHcpEmployeeId ?? null;
+  const effectiveHcpEmployeeId = isAdmin ? null : initialHcpEmployeeId ?? null;
+  const employeeMap = Object.fromEntries(employees.map((e) => [e.id, e.name]));
+
+  const totalsByEmployee = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of entries) {
+      const empId = e.hcp_employee_id ?? "unknown";
+      const h = typeof e.hours === "number" && !Number.isNaN(e.hours) ? e.hours : 0;
+      map.set(empId, (map.get(empId) ?? 0) + h);
+    }
+    return map;
+  }, [entries]);
+
+  const grandTotal = useMemo(() => {
+    return [...totalsByEmployee.values()].reduce((a, b) => a + b, 0);
+  }, [totalsByEmployee]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -53,14 +69,14 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
             ? data.map((e) => ({ id: String(e.id), name: String(e.name || e.id || "Unknown") }))
             : [];
           setEmployees(opts);
-          if (opts.length > 0 && !selectedEmployeeId) setSelectedEmployeeId(opts[0].id);
+          if (opts.length > 0 && !formEmployeeId) setFormEmployeeId(opts[0].id);
         })
         .catch(() => setEmployees([]));
     }
   }, [isAdmin]);
 
   function fetchEntries() {
-    if (isAdmin && !effectiveHcpEmployeeId) {
+    if (!isAdmin && !effectiveHcpEmployeeId) {
       setEntries([]);
       setLoading(false);
       return;
@@ -87,13 +103,19 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const empId = isAdmin ? formEmployeeId : effectiveHcpEmployeeId;
+    if (isAdmin && !empId) {
+      setError("Please select an employee");
+      return;
+    }
     setSubmitting(true);
+    setError(null);
     try {
       const res = await fetch("/api/timesheets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(effectiveHcpEmployeeId && isAdmin ? { hcp_employee_id: effectiveHcpEmployeeId } : {}),
+          ...(empId ? { hcp_employee_id: empId } : {}),
           entry_date: formDate,
           start_time: formStart || null,
           end_time: formEnd || null,
@@ -132,25 +154,6 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
 
   return (
     <div className="mt-4 space-y-4">
-      {isAdmin && (
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-            Employee
-          </label>
-          <select
-            value={selectedEmployeeId}
-            onChange={(e) => setSelectedEmployeeId(e.target.value)}
-            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
-          >
-            <option value="">Select employee...</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-xs text-zinc-600 dark:text-zinc-400">
           From
@@ -173,7 +176,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          disabled={isAdmin && !effectiveHcpEmployeeId}
+          disabled={isAdmin && employees.length === 0}
           className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
         >
           Add entry
@@ -187,6 +190,24 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       {showForm && (
         <form onSubmit={handleSubmit} className="rounded border border-zinc-200 p-4 dark:border-zinc-700">
           <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">New time entry</h3>
+          {isAdmin && (
+            <label className="mt-3 block text-xs">
+              Employee
+              <select
+                value={formEmployeeId}
+                onChange={(e) => setFormEmployeeId(e.target.value)}
+                required
+                className="mt-1 block w-full rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+              >
+                <option value="">Select employee...</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="text-xs">
               Date
@@ -262,40 +283,69 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       ) : entries.length === 0 ? (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">No time entries in this range.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Date</th>
-                <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Start</th>
-                <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">End</th>
-                <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Hours</th>
-                <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Notes</th>
-                <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id} className="border-b border-zinc-100 dark:border-zinc-800">
-                  <td className="py-2 text-zinc-900 dark:text-zinc-50">{e.entry_date}</td>
-                  <td className="py-2">{e.start_time ?? "—"}</td>
-                  <td className="py-2">{e.end_time ?? "—"}</td>
-                  <td className="py-2">{e.hours ?? "—"}</td>
-                  <td className="py-2 max-w-[200px] truncate">{e.notes ?? "—"}</td>
-                  <td className="py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(e.id)}
-                      className="text-red-600 hover:underline dark:text-red-400"
-                    >
-                      Delete
-                    </button>
-                  </td>
+        <>
+          {isAdmin && totalsByEmployee.size > 0 && (
+            <div className="rounded border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
+              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Totals by employee</h3>
+              <ul className="mt-2 space-y-1 text-sm">
+                {[...totalsByEmployee.entries()]
+                  .sort((a, b) => (employeeMap[a[0]] ?? a[0]).localeCompare(employeeMap[b[0]] ?? b[0]))
+                  .map(([empId, hours]) => (
+                    <li key={empId} className="flex justify-between gap-4">
+                      <span className="text-zinc-600 dark:text-zinc-400">{employeeMap[empId] ?? empId}</span>
+                      <span className="font-medium tabular-nums">{hours.toFixed(2)} hrs</span>
+                    </li>
+                  ))}
+                <li className="mt-2 flex justify-between border-t border-zinc-200 pt-2 font-medium dark:border-zinc-700">
+                  <span>Total</span>
+                  <span className="tabular-nums">{grandTotal.toFixed(2)} hrs</span>
+                </li>
+              </ul>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                  {isAdmin && (
+                    <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Employee</th>
+                  )}
+                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Date</th>
+                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Start</th>
+                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">End</th>
+                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Hours</th>
+                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Notes</th>
+                  <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.id} className="border-b border-zinc-100 dark:border-zinc-800">
+                    {isAdmin && (
+                      <td className="py-2 text-zinc-900 dark:text-zinc-50">
+                        {e.hcp_employee_id ? (employeeMap[e.hcp_employee_id] ?? e.hcp_employee_id) : "—"}
+                      </td>
+                    )}
+                    <td className="py-2 text-zinc-900 dark:text-zinc-50">{e.entry_date}</td>
+                    <td className="py-2">{e.start_time ?? "—"}</td>
+                    <td className="py-2">{e.end_time ?? "—"}</td>
+                    <td className="py-2">{e.hours ?? "—"}</td>
+                    <td className="py-2 max-w-[200px] truncate">{e.notes ?? "—"}</td>
+                    <td className="py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(e.id)}
+                        className="text-red-600 hover:underline dark:text-red-400"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
