@@ -2,16 +2,10 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getOrganizationById } from "@/lib/db/queries";
+import { getHcpWebhookUrl } from "@/lib/webhook";
 import { SettingsPageClient } from "./SettingsPageClient";
 import { WebhookUrlCard } from "@/components/WebhookUrlCard";
 import { SyncStatusSection } from "@/components/SyncStatusSection";
-
-function getWebhookUrl(organizationId: string): string {
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
-  return `${baseUrl}/api/webhooks/hcp/${organizationId}`;
-}
 
 export default async function SettingsPage() {
   const session = await getServerSession(authOptions);
@@ -24,7 +18,7 @@ export default async function SettingsPage() {
 
   const org = await getOrganizationById(session.user.organizationId);
   const connected = !!org?.hcp_access_token;
-  const webhookUrl = getWebhookUrl(session.user.organizationId);
+  const webhookUrl = getHcpWebhookUrl(session.user.organizationId);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">

@@ -51,10 +51,9 @@ export function WebhookUrlCard({ webhookUrl }: WebhookUrlCardProps) {
           <div className="mt-2 rounded bg-amber-50 p-3 text-xs text-zinc-700 dark:bg-amber-950/30 dark:text-zinc-300">
             <p className="font-medium">If HCP shows 401 when saving the webhook URL:</p>
             <ol className="mt-1 list-inside list-decimal space-y-1">
-              <li><strong>Vercel Deployment Protection:</strong> In Vercel → Project Settings → Deployment Protection, ensure &quot;Vercel Authentication&quot; or &quot;Password Protection&quot; is disabled (or add an exception for webhooks). These return 401 to unauthenticated requests.</li>
-              <li><strong>Bypass for setup:</strong> Add env var <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">HOUSECALLPRO_WEBHOOK_ACCEPT_ALL=true</code> in Vercel, redeploy, save the URL in HCP, then remove the env var.</li>
-              <li><strong>Test reachability:</strong> Open <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">/api/webhooks/hcp/ping</code> in your browser. If that returns 401, the issue is deployment protection.</li>
-              <li><strong>Capture request:</strong> Use <a href="https://webhook.site" target="_blank" rel="noopener noreferrer" className="underline">webhook.site</a> as the URL in HCP to see the exact headers and body HCP sends.</li>
+              <li><strong>Vercel bypass:</strong> The URL above includes <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">x-vercel-protection-bypass</code> when configured. Ensure you created a bypass secret in Vercel → Project Settings → Deployment Protection → Protection Bypass for Automation. Vercel sets <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">VERCEL_AUTOMATION_BYPASS_SECRET</code> automatically.</li>
+              <li><strong>Redeploy:</strong> After creating the bypass secret, redeploy so the env var is available when the URL is generated.</li>
+              <li><strong>Test reachability:</strong> Open the webhook URL (or <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">/api/webhooks/hcp/ping</code>) in your browser. If it returns 401, the bypass may not be configured.</li>
             </ol>
           </div>
         )}

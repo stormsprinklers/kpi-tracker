@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-
-function getWebhookUrl(organizationId: string): string {
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
-  return `${baseUrl}/api/webhooks/hcp/${organizationId}`;
-}
+import { getHcpWebhookUrl } from "@/lib/webhook";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -15,7 +9,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const webhookUrl = getWebhookUrl(session.user.organizationId);
+  const webhookUrl = getHcpWebhookUrl(session.user.organizationId);
 
   let webhookReachable = false;
   try {
