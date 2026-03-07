@@ -213,26 +213,4 @@ export async function initSchema(): Promise<void> {
     ON technician_profiles (organization_id, hcp_employee_id)
   `;
 
-  // Activity feed - recent business events from webhooks
-  await sql`
-    CREATE TABLE IF NOT EXISTS activity_feed (
-      id SERIAL PRIMARY KEY,
-      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-      activity_type TEXT NOT NULL,
-      message TEXT NOT NULL,
-      technician_name TEXT,
-      technician_hcp_id TEXT,
-      city TEXT,
-      amount NUMERIC,
-      scheduled_date DATE,
-      job_hcp_id TEXT,
-      event_hcp_id TEXT,
-      raw_payload JSONB,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `;
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_activity_feed_org_created
-    ON activity_feed (organization_id, created_at DESC)
-  `;
 }
