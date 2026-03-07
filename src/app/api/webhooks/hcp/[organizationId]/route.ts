@@ -7,8 +7,9 @@ function verifyHcpSignatureTimestamp(
   body: string,
   timestamp: string,
   signature: string,
-  secret: string
+  secret: string | null
 ): boolean {
+  if (!secret || typeof secret !== "string") return false;
   const secretTrimmed = secret.trim();
   const signedPayload = `${timestamp}.${body}`;
   const expectedHex = crypto.createHmac("sha256", secretTrimmed).update(signedPayload).digest("hex");
@@ -40,7 +41,8 @@ function normalizeSignature(sig: string): string {
  * Per Rollout/HCP docs: body may be JSON.stringify(parsed) not raw - try both.
  * Tries hex and base64 for signature encoding.
  */
-function verifyHcpSignatureBodyOnly(rawBody: string, signature: string, secret: string): boolean {
+function verifyHcpSignatureBodyOnly(rawBody: string, signature: string, secret: string | null): boolean {
+  if (!secret) return false;
   const secretTrimmed = secret.trim();
   const sigRaw = normalizeSignature(signature);
 
@@ -174,7 +176,7 @@ export async function POST(
 
   let verified = false;
   let pathTried = "none";
-  if (housecallSignature) {
+  if (housecallSignature && secret) {
     pathTried = "x-housecall-signature";
     verified = verifyHcpSignatureBodyOnly(rawBody, housecallSignature, secret);
     // Per Rollout/HCP docs: some implementations use JSON.stringify(parsed body) for the signed payload
@@ -189,7 +191,7 @@ export async function POST(
       }
     }
   }
-  if (!verified && apiSignature && apiTimestamp) {
+  if (!verified && apiSignature && apiTimestamp && secret) {
     pathTried = "api-signature+timestamp";
     verified = verifyHcpSignatureTimestamp(rawBody, apiTimestamp, apiSignature, secret);
   }
