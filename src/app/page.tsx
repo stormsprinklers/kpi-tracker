@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { getOrganizationById } from "@/lib/db/queries";
 import { KeyMetricsSection } from "@/components/KeyMetricsSection";
 import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
+import { ActivityFeed } from "@/components/ActivityFeed";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
@@ -16,6 +17,7 @@ export default async function Home() {
   return (
     <div className="flex min-h-screen flex-col font-sans" style={{ backgroundColor: "#F8FAFC" }}>
       <main className="flex flex-1 flex-col gap-6 p-6">
+        {connected && <ActivityFeed connected={connected} />}
         <KeyMetricsSection connected={connected} />
         {connected && <TechnicianRevenueSection />}
       </main>

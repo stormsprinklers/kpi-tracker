@@ -232,7 +232,7 @@ export async function POST(
 
   try {
     const { persistWebhookEvent } = await import("@/lib/sync/webhookPersist");
-    await persistWebhookEvent(event ?? "unknown", (payload ?? {}) as Record<string, unknown>, companyId);
+    await persistWebhookEvent(event ?? "unknown", (payload ?? {}) as Record<string, unknown>, organizationId, companyId);
   } catch (err) {
     console.error("[HCP Webhook] Persist error:", err);
     // Still return 200 so HCP doesn't retry; we'll catch up on next full sync
