@@ -13,12 +13,12 @@ export default async function SetupPage() {
   const envToken = process.env.HOUSECALLPRO_ACCESS_TOKEN ?? "";
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4 dark:bg-black">
-      <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Set up KPI Tracker
+    <div className="flex min-h-screen flex-col items-center justify-center px-4" style={{ backgroundColor: "#F8FAFC" }}>
+      <div className="w-full max-w-sm rounded-lg border bg-white p-6 shadow-sm" style={{ borderColor: "#0B1F33" }}>
+        <h1 className="text-xl font-semibold" style={{ color: "#0B1F33" }}>
+          Set up Home Services Analytics
         </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="mt-1 text-sm opacity-80" style={{ color: "#0B1F33" }}>
           Create your organization and admin account
         </p>
         <SetupForm envToken={envToken} />

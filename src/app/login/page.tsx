@@ -38,10 +38,10 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4 dark:bg-black">
-      <div className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Sign in to KPI Tracker
+    <div className="flex min-h-screen flex-col items-center justify-center px-4" style={{ backgroundColor: "#F8FAFC" }}>
+      <div className="w-full max-w-sm rounded-lg border bg-white p-6 shadow-sm" style={{ borderColor: "#0B1F33" }}>
+        <h1 className="text-xl font-semibold" style={{ color: "#0B1F33" }}>
+          Sign in to Home Services Analytics
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Enter your email and password
@@ -50,7 +50,8 @@ function LoginForm() {
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+              className="block text-sm font-medium"
+              style={{ color: "#0B1F33" }}
             >
               Email
             </label>
@@ -67,7 +68,8 @@ function LoginForm() {
           <div>
             <label
               htmlFor="password"
-              className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+              className="block text-sm font-medium"
+              style={{ color: "#0B1F33" }}
             >
               Password
             </label>
@@ -87,16 +89,18 @@ function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="w-full rounded px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: "#0B1F33" }}
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
-        <p className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="mt-4 text-center text-sm opacity-80" style={{ color: "#0B1F33" }}>
           First time?{" "}
           <a
             href="/setup"
-            className="font-medium text-zinc-900 underline hover:text-zinc-700 dark:text-zinc-50 dark:hover:text-zinc-300"
+            className="font-medium underline hover:opacity-80"
+            style={{ color: "#0B1F33" }}
           >
             Set up your organization
           </a>
@@ -108,7 +112,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">Loading...</div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: "#F8FAFC" }}>Loading...</div>}>
       <LoginForm />
     </Suspense>
   );

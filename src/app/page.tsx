@@ -14,7 +14,7 @@ export default async function Home() {
   const connected = !!org?.hcp_access_token;
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
+    <div className="flex min-h-screen flex-col font-sans" style={{ backgroundColor: "#F8FAFC" }}>
       <main className="flex flex-1 flex-col gap-6 p-6">
         <KeyMetricsSection connected={connected} />
         {connected && <TechnicianRevenueSection />}

@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KPI Tracker | Home Services Metrics",
-  description: "Key performance indicator importer, analyzer, and AI insights for home services businesses",
+  title: "Home Services Analytics | Analytics and insights",
+  description: "Analytics and insights for home services businesses",
 };
 
 export default function RootLayout({

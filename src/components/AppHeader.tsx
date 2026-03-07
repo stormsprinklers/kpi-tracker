@@ -9,22 +9,23 @@ interface AppHeaderProps {
   extra?: React.ReactNode;
 }
 
-export function AppHeader({ title = "KPI Tracker", subtitle = "Home services metrics and insights", extra }: AppHeaderProps) {
+export function AppHeader({ title = "Home Services Analytics", subtitle = "Analytics and insights for home services", extra }: AppHeaderProps) {
   const { data: session } = useSession();
   const pathname = usePathname();
   if (pathname === "/login" || pathname === "/setup") return null;
 
   return (
-    <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <div>
+    <header className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "#0B1F33", backgroundColor: "#F8FAFC" }}>
+      <div className="flex items-center gap-3">
+        <img src="/logo.png" alt="" className="h-10 w-10 object-contain" />
         <a
           href="/"
           className="block hover:opacity-80 transition-opacity"
         >
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+          <h1 className="text-xl font-semibold" style={{ color: "#0B1F33" }}>
             {title}
           </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="mt-1 text-sm opacity-80" style={{ color: "#0B1F33" }}>
             {subtitle}
           </p>
         </a>
