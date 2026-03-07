@@ -123,6 +123,23 @@ function isPaidOrCompleted(job: Record<string, unknown>): boolean {
   );
 }
 
+/** Format name with last initial only (e.g. "John S" instead of "John Smith"). */
+function formatWithLastInitial(first: unknown, last: unknown): string {
+  const f = (first ?? "").toString().trim();
+  const l = (last ?? "").toString().trim();
+  if (!f && !l) return "Unknown";
+  if (!l) return f || "Unknown";
+  return `${f} ${l[0]}`.trim();
+}
+
+/** Convert full name string to last-initial format (e.g. "John Smith" -> "John S"). */
+function fullNameToLastInitial(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length <= 1) return fullName.trim() || "Unknown";
+  const last = parts.pop()!;
+  return [...parts, last[0]].join(" ").trim();
+}
+
 function buildNameMap(
   items: unknown[],
   idFields: string[],
@@ -136,32 +153,30 @@ function buildNameMap(
     const idStr = String(id);
     const first = r.first_name ?? r.given_name ?? (r as Record<string, unknown>).firstName;
     const last = r.last_name ?? r.family_name ?? (r as Record<string, unknown>).lastName;
-    const fullName = [first, last].filter(Boolean).map(String).join(" ").trim();
     const fallback = (r.full_name ?? nameFields.flatMap((fields) => fields.map((f) => r[f])).find(Boolean)) as string | undefined;
-    // Prefer full name (first + last) when we have both; otherwise use name/display_name if it has last name (contains space)
     let name: string;
-    if (fullName && last) {
-      name = fullName;
-    } else if (typeof fallback === "string" && fallback.includes(" ")) {
-      name = fallback;
+    if (first || last) {
+      name = formatWithLastInitial(first, last);
+    } else if (typeof fallback === "string" && fallback.trim()) {
+      name = fallback.includes(" ") ? fullNameToLastInitial(fallback) : fallback.trim();
     } else {
-      name = (fullName || fallback) ?? "Unknown";
+      name = "Unknown";
     }
     map.set(idStr, String(name));
   }
   return map;
 }
 
-/** Extract name from assigned employee/pro object. HCP embeds first_name, last_name, name, etc. */
+/** Extract name from assigned employee/pro object. HCP embeds first_name, last_name, name, etc. Uses last initial only. */
 function getNameFromAssigned(r: Record<string, unknown>): string | null {
   const first = r.first_name ?? (r as Record<string, unknown>).firstName ?? r.given_name;
   const last = r.last_name ?? (r as Record<string, unknown>).lastName ?? r.family_name;
-  const fullName = [first, last].filter(Boolean).map(String).join(" ").trim();
   const fallback = (r.full_name ?? r.name ?? r.display_name) as string | undefined;
-  // Prefer first+last when we have both; otherwise use name/display_name if it includes last name (has space)
-  if (fullName && last) return fullName;
-  if (typeof fallback === "string" && fallback.includes(" ")) return fallback.trim() || null;
-  return fullName || (fallback?.trim()) || null;
+  if (first || last) return formatWithLastInitial(first, last);
+  if (typeof fallback === "string" && fallback.trim()) {
+    return fallback.includes(" ") ? fullNameToLastInitial(fallback) : fallback.trim();
+  }
+  return null;
 }
 
 /** Merge names from job's assigned_employees/assigned_pro into nameMap (for former employees not in pros/employees). */
