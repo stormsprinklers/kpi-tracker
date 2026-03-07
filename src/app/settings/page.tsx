@@ -6,11 +6,11 @@ import { SettingsPageClient } from "./SettingsPageClient";
 import { WebhookUrlCard } from "@/components/WebhookUrlCard";
 import { SyncStatusSection } from "@/components/SyncStatusSection";
 
-function getWebhookUrl(): string {
+function getWebhookUrl(organizationId: string): string {
   const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : "http://localhost:3000";
-  return `${baseUrl}/api/webhooks/housecallpro`;
+  return `${baseUrl}/api/webhooks/hcp/${organizationId}`;
 }
 
 export default async function SettingsPage() {
@@ -24,7 +24,7 @@ export default async function SettingsPage() {
 
   const org = await getOrganizationById(session.user.organizationId);
   const connected = !!org?.hcp_access_token;
-  const webhookUrl = getWebhookUrl();
+  const webhookUrl = getWebhookUrl(session.user.organizationId);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">

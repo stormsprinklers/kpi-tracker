@@ -19,7 +19,7 @@ const QUICK_ACTIONS = [
   { label: "HCP Sample (Jobs, Employees, Invoices)", path: "/api/debug/hcp-sample" },
   { label: "HCP Raw Pagination (diagnose 10-only)", path: "/api/debug/hcp-raw-pagination" },
   { label: "Technician KPIs", path: "/api/metrics/technician-revenue" },
-  { label: "Webhook Status (GET)", path: "/api/webhooks/housecallpro" },
+  { label: "Webhook Status (GET)", path: "/api/webhooks/hcp/status" },
 ];
 
 export function DeveloperConsole() {

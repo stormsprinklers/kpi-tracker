@@ -1,5 +1,4 @@
 import { sql } from "@vercel/postgres";
-import { getCompany } from "../housecallpro";
 
 function extractId(record: Record<string, unknown>): string | null {
   const id = record.id ?? record.uuid;
@@ -43,16 +42,11 @@ function extractJobHcpId(record: Record<string, unknown>): string | null {
   return scalar != null ? String(scalar) : null;
 }
 
-async function getCompanyId(): Promise<string> {
-  const company = (await getCompany()) as { id?: string };
-  return company?.id ?? "default";
-}
-
 export async function persistWebhookEvent(
   event: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  companyId: string
 ): Promise<void> {
-  const companyId = await getCompanyId();
 
   if (event.startsWith("job.")) {
     const record = (payload.job ?? payload.data ?? payload) as Record<string, unknown>;
