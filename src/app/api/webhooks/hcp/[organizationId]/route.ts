@@ -3,8 +3,8 @@ import crypto from "crypto";
 import { getOrganizationById } from "@/lib/db/queries";
 import { persistWebhookEvent } from "@/lib/sync/webhookPersist";
 
-/** Allow up to 30s for webhook processing (initSchema + persist can be slow on cold start). */
-export const maxDuration = 30;
+/** Allow up to 60s for webhook processing (cold start can be slow). */
+export const maxDuration = 60;
 
 /** Verify HMAC using api-signature + api-timestamp format (timestamp.body). Tries hex and base64. */
 function verifyHcpSignatureTimestamp(
@@ -96,9 +96,6 @@ export async function OPTIONS() {
     },
   });
 }
-
-// Allow webhook handler more time for initSchema + persist (cold start can be slow)
-export const maxDuration = 60;
 
 export async function POST(
   request: Request,
