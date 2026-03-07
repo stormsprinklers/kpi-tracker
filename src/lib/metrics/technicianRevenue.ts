@@ -278,16 +278,20 @@ function hasApprovedOption(estimate: Record<string, unknown>): boolean {
   );
 }
 
-export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): Promise<TechnicianRevenueResult> {
+export async function getTechnicianRevenue(
+  organizationId: string,
+  filters?: TechnicianRevenueFilters
+): Promise<TechnicianRevenueResult> {
   const nameMap = new Map<string, string>();
   const officeStaffIds = new Set<string>();
   let companyId = "default";
 
+  const client = await getHcpClient(organizationId);
   try {
-    const company = (await getCompany()) as { id?: string };
-    companyId = company?.id ?? "default";
+    const company = (await client.getCompany()) as { id?: string; company_id?: string };
+    companyId = company?.id ?? company?.company_id ?? "default";
   } catch {
-    // Fall through to API
+    // Fall through - use default
   }
 
   // Build employee name map and office staff IDs (from DB first, then API)
@@ -342,7 +346,7 @@ export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): 
     /* skip */
   }
   try {
-    const prosRes = await getPros();
+    const prosRes = await client.getPros();
     const prosList = Array.isArray(prosRes) ? prosRes : (prosRes as { pros?: unknown[] })?.pros ?? (prosRes as { data?: unknown[] })?.data ?? [];
     const proMap = buildNameMap(
       prosList,
@@ -413,7 +417,7 @@ export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): 
       }
       if (paidAmount <= 0) {
         try {
-          const invoices = await getJobInvoices(String(j.id));
+          const invoices = await client.getJobInvoices(String(j.id));
           const invList = Array.isArray(invoices) ? invoices : (invoices as { invoices?: unknown[] })?.invoices ?? (invoices as { data?: unknown[] })?.data ?? [];
           for (const inv of invList) {
             paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);

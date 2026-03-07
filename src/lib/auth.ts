@@ -16,6 +16,12 @@ declare module "next-auth" {
   interface Session {
     user: SessionUser;
   }
+  interface User {
+    id?: string;
+    role?: string;
+    organizationId?: string;
+    organizationName?: string;
+  }
 }
 
 declare module "next-auth/jwt" {
@@ -55,10 +61,11 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.role = user.role;
-        token.organizationId = user.organizationId;
-        token.organizationName = user.organizationName;
+        const u = user as SessionUser;
+        token.id = u.id;
+        token.role = u.role;
+        token.organizationId = u.organizationId;
+        token.organizationName = u.organizationName;
       }
       return token;
     },

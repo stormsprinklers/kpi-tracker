@@ -272,20 +272,6 @@ export async function getHcpClient(organizationId: string): Promise<HcpClient> {
   return createHcpClient(org.hcp_access_token);
 }
 
-
-export async function getJobs(params?: { per_page?: number; page?: number; status?: string }) {
-  const searchParams = new URLSearchParams();
-  if (params?.per_page) searchParams.set("per_page", String(params.per_page));
-  if (params?.page) searchParams.set("page", String(params.page));
-  if (params?.status) searchParams.set("status", params.status);
-  const query = searchParams.toString();
-  const res = await hcpFetch(`${HCP_API_BASE}/jobs${query ? `?${query}` : ""}`);
-  if (!res.ok) {
-    throw new Error(`Housecall Pro API error: ${res.status} ${res.statusText}`);
-  }
-  return res.json();
-}
-
 export async function getJobInvoices(jobId: string) {
   const res = await hcpFetch(`${HCP_API_BASE}/jobs/${jobId}/invoices`);
   if (!res.ok) {
