@@ -48,6 +48,14 @@ export function AppHeader({ title = "KPI Tracker", subtitle = "Home services met
                 Settings
               </a>
             )}
+            {session.user.hcpEmployeeId && (
+              <a
+                href="/timesheets"
+                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                Timesheets
+              </a>
+            )}
             <a
               href="/debug"
               className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { hash } from "bcryptjs";
 import { authOptions } from "@/lib/auth";
-import { getUsersByOrganizationId, createUser } from "@/lib/db/queries";
+import { getUsersByOrganizationId, createUser, getOrganizationById, getEmployeeHcpIdByEmail } from "@/lib/db/queries";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -57,16 +57,25 @@ export async function POST(request: Request) {
 
   try {
     const passwordHash = await hash(password, 10);
+    let hcpEmployeeId: string | null = null;
+    if (role === "employee") {
+      const org = await getOrganizationById(session.user.organizationId);
+      if (org?.hcp_company_id) {
+        hcpEmployeeId = await getEmployeeHcpIdByEmail(org.hcp_company_id, email);
+      }
+    }
     const user = await createUser({
       email,
       password_hash: passwordHash,
       organization_id: session.user.organizationId,
       role,
+      hcp_employee_id: hcpEmployeeId,
     });
     return NextResponse.json({
       id: user.id,
       email: user.email,
       role: user.role,
+      hcp_employee_id: user.hcp_employee_id,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

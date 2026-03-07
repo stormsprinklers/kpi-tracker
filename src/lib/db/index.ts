@@ -137,8 +137,38 @@ export async function initSchema(): Promise<void> {
       password_hash TEXT NOT NULL,
       organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
       role TEXT NOT NULL CHECK (role IN ('admin', 'employee')),
+      hcp_employee_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(email, organization_id)
     )
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='hcp_employee_id') THEN
+        ALTER TABLE users ADD COLUMN hcp_employee_id TEXT;
+      END IF;
+    END $$
+  `;
+
+  // Time entries (timesheets) - employee time tracking, scoped by hcp_employee_id
+  await sql`
+    CREATE TABLE IF NOT EXISTS time_entries (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      hcp_employee_id TEXT NOT NULL,
+      entry_date DATE NOT NULL,
+      start_time TIME,
+      end_time TIME,
+      hours NUMERIC,
+      job_hcp_id TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_time_entries_org_employee_date
+    ON time_entries (organization_id, hcp_employee_id, entry_date)
   `;
 }

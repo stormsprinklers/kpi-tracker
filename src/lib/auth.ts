@@ -10,6 +10,7 @@ export interface SessionUser {
   role: string;
   organizationId: string;
   organizationName?: string;
+  hcpEmployeeId?: string | null;
 }
 
 declare module "next-auth" {
@@ -21,6 +22,7 @@ declare module "next-auth" {
     role?: string;
     organizationId?: string;
     organizationName?: string;
+    hcpEmployeeId?: string | null;
   }
 }
 
@@ -30,6 +32,7 @@ declare module "next-auth/jwt" {
     role: string;
     organizationId: string;
     organizationName?: string;
+    hcpEmployeeId?: string | null;
   }
 }
 
@@ -54,6 +57,7 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           organizationId: user.organization_id,
           organizationName: user.org_name,
+          hcpEmployeeId: user.hcp_employee_id ?? null,
         };
       },
     }),
@@ -66,6 +70,7 @@ export const authOptions: NextAuthOptions = {
         token.role = u.role;
         token.organizationId = u.organizationId;
         token.organizationName = u.organizationName;
+        token.hcpEmployeeId = u.hcpEmployeeId ?? null;
       }
       return token;
     },
@@ -75,6 +80,7 @@ export const authOptions: NextAuthOptions = {
         session.user.role = token.role;
         session.user.organizationId = token.organizationId;
         session.user.organizationName = token.organizationName;
+        session.user.hcpEmployeeId = token.hcpEmployeeId ?? null;
       }
       return session;
     },

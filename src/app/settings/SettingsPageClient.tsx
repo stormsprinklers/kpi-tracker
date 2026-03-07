@@ -6,6 +6,7 @@ interface User {
   id: string;
   email: string;
   role: string;
+  hcp_employee_id?: string | null;
   created_at: string;
 }
 
@@ -139,6 +140,10 @@ export function SettingsPageClient({
         <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
           Users
         </h2>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Employee users whose email matches a Housecall Pro team member are
+          automatically linked for timesheets and other in-app updates.
+        </p>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -164,14 +169,21 @@ export function SettingsPageClient({
                     {u.email}
                   </td>
                   <td className="py-2">
-                    <span
-                      className={`rounded px-2 py-0.5 text-xs ${
-                        u.role === "admin"
-                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                          : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                      }`}
-                    >
-                      {u.role}
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs ${
+                          u.role === "admin"
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                            : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                        }`}
+                      >
+                        {u.role}
+                      </span>
+                      {u.role === "employee" && u.hcp_employee_id && (
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          Linked to HCP
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className="py-2 text-right">
@@ -224,6 +236,18 @@ export function SettingsPageClient({
             {addLoading ? "Adding..." : "Add user"}
           </button>
         </form>
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+          Employee users whose email matches a Housecall Pro team member are
+          automatically linked for timesheets and in-app updates.
+        </p>
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+          Employee users whose email matches a Housecall Pro team member are
+          automatically linked for timesheets and other in-app updates.
+        </p>
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+          Employee users whose email matches a Housecall Pro team member are
+          automatically linked for timesheets and other in-app updates.
+        </p>
         {addError && (
           <p className="mt-2 text-sm text-red-600 dark:text-red-400">
             {addError}
