@@ -2,20 +2,42 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getOrganizationById } from "@/lib/db/queries";
 
-function verifyHcpSignature(
+/** Verify HMAC using api-signature + api-timestamp format (timestamp.body) */
+function verifyHcpSignatureTimestamp(
   body: string,
   timestamp: string,
   signature: string,
   secret: string
 ): boolean {
+  const secretTrimmed = secret.trim();
   const signedPayload = `${timestamp}.${body}`;
   const expected = crypto
-    .createHmac("sha256", secret)
+    .createHmac("sha256", secretTrimmed)
     .update(signedPayload)
     .digest("hex");
-  const sigBuf = Buffer.from(signature, "hex");
+  const sigHex = normalizeSignature(signature);
+  const sigBuf = Buffer.from(sigHex, "hex");
   const expectedBuf = Buffer.from(expected, "hex");
-  if (sigBuf.length !== expectedBuf.length) return false;
+  if (sigBuf.length !== expectedBuf.length || sigBuf.length === 0) return false;
+  return crypto.timingSafeEqual(sigBuf, expectedBuf);
+}
+
+/** Normalize signature: strip sha256= or v1= prefix, return hex string */
+function normalizeSignature(sig: string): string {
+  const s = sig.trim();
+  if (s.startsWith("sha256=")) return s.slice(7).trim();
+  if (s.startsWith("v1=")) return s.slice(3).trim();
+  return s;
+}
+
+/** Verify HMAC using x-housecall-signature format (body only) */
+function verifyHcpSignatureBodyOnly(body: string, signature: string, secret: string): boolean {
+  const secretTrimmed = secret.trim();
+  const expected = crypto.createHmac("sha256", secretTrimmed).update(body).digest("hex");
+  const sigHex = normalizeSignature(signature);
+  const sigBuf = Buffer.from(sigHex, "hex");
+  const expectedBuf = Buffer.from(expected, "hex");
+  if (sigBuf.length !== expectedBuf.length || sigBuf.length === 0) return false;
   return crypto.timingSafeEqual(sigBuf, expectedBuf);
 }
 
@@ -51,11 +73,12 @@ export async function POST(
   }
 
   const rawBody = await request.text();
-  const signature = request.headers.get("api-signature");
-  const timestamp = request.headers.get("api-timestamp");
+  const apiSignature = request.headers.get("api-signature");
+  const apiTimestamp = request.headers.get("api-timestamp");
+  const housecallSignature = request.headers.get("x-housecall-signature");
 
-  // HCP setup/test: no signing secret yet, accept unsigned requests
-  if (!signature || !timestamp) {
+  // HCP setup/test: no signing headers at all, accept unsigned requests
+  if (!apiSignature && !housecallSignature) {
     console.log("[HCP Webhook] Unsigned setup/test request accepted for org", organizationId);
     if (rawBody) {
       try {
@@ -77,7 +100,17 @@ export async function POST(
     );
   }
 
-  if (!verifyHcpSignature(rawBody, timestamp, signature, secret)) {
+  let verified = false;
+  if (housecallSignature) {
+    // x-housecall-signature: HMAC of body only
+    verified = verifyHcpSignatureBodyOnly(rawBody, housecallSignature, secret);
+  }
+  if (!verified && apiSignature && apiTimestamp) {
+    // api-signature + api-timestamp: HMAC of timestamp.body
+    verified = verifyHcpSignatureTimestamp(rawBody, apiTimestamp, apiSignature, secret);
+  }
+
+  if (!verified) {
     console.warn("[HCP Webhook] Invalid signature for org", organizationId);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

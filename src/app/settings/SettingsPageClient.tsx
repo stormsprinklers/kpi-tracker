@@ -277,8 +277,11 @@ export function SettingsPageClient({
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Webhook secret
+              Webhook signing secret
             </label>
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              This is different from the API key. In Housecall Pro: My Apps → Webhooks. When you add the webhook URL, HCP shows a &quot;Signing Secret&quot;—copy that exact value here. If you get 401 when saving the URL in HCP, the secret may be wrong; try re-copying it from HCP.
+            </p>
             <input
               type="password"
               placeholder="••••••••"
