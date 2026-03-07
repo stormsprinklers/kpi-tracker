@@ -34,6 +34,14 @@ export async function middleware(request: NextRequest) {
       loginUrl.searchParams.set("callbackUrl", pathname);
       return NextResponse.redirect(loginUrl);
     }
+    // Investor: read-only access; block Settings, Developer Console, Timesheets
+    const investorBlockedPaths = ["/settings", "/debug", "/timesheets"];
+    if (
+      token.role === "investor" &&
+      investorBlockedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+    ) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
     return NextResponse.next();
   }
 

@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     email?: string;
     password?: string;
-    role?: "admin" | "employee";
+    role?: "admin" | "employee" | "investor";
   };
 
   const email = body.email?.trim();
@@ -48,9 +48,9 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (role !== "admin" && role !== "employee") {
+  if (role !== "admin" && role !== "employee" && role !== "investor") {
     return NextResponse.json(
-      { error: "Role must be admin or employee" },
+      { error: "Role must be admin, employee, or investor" },
       { status: 400 }
     );
   }

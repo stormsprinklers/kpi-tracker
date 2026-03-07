@@ -152,7 +152,7 @@ export async function initSchema(): Promise<void> {
       email TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'employee')),
+      role TEXT NOT NULL CHECK (role IN ('admin', 'employee', 'investor')),
       hcp_employee_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(email, organization_id)
@@ -164,6 +164,15 @@ export async function initSchema(): Promise<void> {
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='hcp_employee_id') THEN
         ALTER TABLE users ADD COLUMN hcp_employee_id TEXT;
       END IF;
+    END $$
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+      ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'employee', 'investor'));
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
     END $$
   `;
 

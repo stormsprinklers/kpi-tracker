@@ -26,7 +26,7 @@ export function SettingsPageClient({
   const [users, setUsers] = useState<User[]>([]);
   const [addEmail, setAddEmail] = useState("");
   const [addPassword, setAddPassword] = useState("");
-  const [addRole, setAddRole] = useState<"admin" | "employee">("employee");
+  const [addRole, setAddRole] = useState<"admin" | "employee" | "investor">("employee");
   const [addError, setAddError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
   const [hcpToken, setHcpToken] = useState("");
@@ -68,7 +68,7 @@ export function SettingsPageClient({
       }
       setAddEmail("");
       setAddPassword("");
-      setAddRole("employee");
+      setAddRole("employee" as const);
       fetchUsers();
     } catch {
       setAddError("Something went wrong");
@@ -174,7 +174,9 @@ export function SettingsPageClient({
                         className={`rounded px-2 py-0.5 text-xs ${
                           u.role === "admin"
                             ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                            : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                            : u.role === "investor"
+                              ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
+                              : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                         }`}
                       >
                         {u.role}
@@ -222,11 +224,12 @@ export function SettingsPageClient({
           />
           <select
             value={addRole}
-            onChange={(e) => setAddRole(e.target.value as "admin" | "employee")}
+            onChange={(e) => setAddRole(e.target.value as "admin" | "employee" | "investor")}
             className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
           >
             <option value="employee">Employee</option>
             <option value="admin">Admin</option>
+            <option value="investor">Investor</option>
           </select>
           <button
             type="submit"

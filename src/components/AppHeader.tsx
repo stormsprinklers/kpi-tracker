@@ -65,7 +65,9 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
               className={`rounded px-2 py-0.5 text-xs ${
                 session.user.role === "admin"
                   ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                  : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                  : session.user.role === "investor"
+                    ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
+                    : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
               }`}
             >
               {session.user.role}
@@ -92,7 +94,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
                 Timesheets
               </a>
             )}
-            {(session.user.role === "admin" || session.user.hcpEmployeeId) && (
+            {(session.user.role === "admin" || session.user.role === "investor" || session.user.hcpEmployeeId) && (
               <a
                 href="/time-insights"
                 className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -100,12 +102,14 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
                 Time Insights
               </a>
             )}
-            <a
-              href="/debug"
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              Developer Console
-            </a>
+            {session.user.role !== "investor" && (
+              <a
+                href="/debug"
+                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                Developer Console
+              </a>
+            )}
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: "/login" })}

@@ -333,7 +333,7 @@ export async function createUser(params: {
   email: string;
   password_hash: string;
   organization_id: string;
-  role: "admin" | "employee";
+  role: "admin" | "employee" | "investor";
   hcp_employee_id?: string | null;
 }) {
   const result = await sql`

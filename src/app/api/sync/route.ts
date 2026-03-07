@@ -75,6 +75,9 @@ export async function POST(request: Request) {
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (session.user.role !== "admin") {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
 
   const org = await getOrganizationById(session.user.organizationId);
   if (!org?.hcp_access_token) {
