@@ -105,3 +105,11 @@ function LoginForm() {
     </div>
   );
 }
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">Loading...</div>}>
+      <LoginForm />
+    </Suspense>
+  );
+}
