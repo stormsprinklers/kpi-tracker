@@ -12,10 +12,22 @@ interface TimeEntry {
   notes: string | null;
 }
 
-export function TimesheetsClient() {
+interface EmployeeOption {
+  id: string;
+  name: string;
+}
+
+interface TimesheetsClientProps {
+  isAdmin?: boolean;
+  hcpEmployeeId?: string;
+}
+
+export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId }: TimesheetsClientProps = {}) {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(initialHcpEmployeeId ?? "");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -30,12 +42,35 @@ export function TimesheetsClient() {
   const [formNotes, setFormNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const effectiveHcpEmployeeId = isAdmin ? selectedEmployeeId || null : initialHcpEmployeeId ?? null;
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetch("/api/employees")
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data: { id: string; name: string }[]) => {
+          const opts: EmployeeOption[] = Array.isArray(data)
+            ? data.map((e) => ({ id: String(e.id), name: String(e.name || e.id || "Unknown") }))
+            : [];
+          setEmployees(opts);
+          if (opts.length > 0 && !selectedEmployeeId) setSelectedEmployeeId(opts[0].id);
+        })
+        .catch(() => setEmployees([]));
+    }
+  }, [isAdmin]);
+
   function fetchEntries() {
+    if (isAdmin && !effectiveHcpEmployeeId) {
+      setEntries([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     const params = new URLSearchParams();
     if (startDate) params.set("start_date", startDate);
     if (endDate) params.set("end_date", endDate);
+    if (effectiveHcpEmployeeId) params.set("hcp_employee_id", effectiveHcpEmployeeId);
     fetch(`/api/timesheets?${params}`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to load timesheets");
@@ -48,7 +83,7 @@ export function TimesheetsClient() {
 
   useEffect(() => {
     fetchEntries();
-  }, [startDate, endDate]);
+  }, [startDate, endDate, effectiveHcpEmployeeId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,6 +93,7 @@ export function TimesheetsClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...(effectiveHcpEmployeeId && isAdmin ? { hcp_employee_id: effectiveHcpEmployeeId } : {}),
           entry_date: formDate,
           start_time: formStart || null,
           end_time: formEnd || null,
@@ -96,6 +132,25 @@ export function TimesheetsClient() {
 
   return (
     <div className="mt-4 space-y-4">
+      {isAdmin && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+            Employee
+          </label>
+          <select
+            value={selectedEmployeeId}
+            onChange={(e) => setSelectedEmployeeId(e.target.value)}
+            className="rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+          >
+            <option value="">Select employee...</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-xs text-zinc-600 dark:text-zinc-400">
           From
@@ -118,7 +173,8 @@ export function TimesheetsClient() {
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          disabled={isAdmin && !effectiveHcpEmployeeId}
+          className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
         >
           Add entry
         </button>

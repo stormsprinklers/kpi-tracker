@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
-  getTimeEntriesByEmployee,
   updateTimeEntry,
   deleteTimeEntry,
+  updateTimeEntryForAdmin,
+  deleteTimeEntryForAdmin,
 } from "@/lib/db/queries";
 import { initSchema } from "@/lib/db";
 
@@ -16,8 +17,11 @@ export async function PATCH(
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const hcpEmployeeId = session.user.hcpEmployeeId;
-  if (!hcpEmployeeId) {
+
+  const isAdmin = session.user.role === "admin";
+  const hcpEmployeeId = session.user.hcpEmployeeId ?? null;
+
+  if (!isAdmin && !hcpEmployeeId) {
     return NextResponse.json(
       { error: "Your account is not linked to an HCP employee. Contact your admin." },
       { status: 403 }
@@ -35,12 +39,9 @@ export async function PATCH(
   };
 
   await initSchema();
-  const updated = await updateTimeEntry(
-    id,
-    session.user.organizationId,
-    hcpEmployeeId,
-    body
-  );
+  const updated = isAdmin
+    ? await updateTimeEntryForAdmin(id, session.user.organizationId, body)
+    : await updateTimeEntry(id, session.user.organizationId, hcpEmployeeId!, body);
   if (!updated) {
     return NextResponse.json({ error: "Time entry not found" }, { status: 404 });
   }
@@ -55,8 +56,11 @@ export async function DELETE(
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const hcpEmployeeId = session.user.hcpEmployeeId;
-  if (!hcpEmployeeId) {
+
+  const isAdmin = session.user.role === "admin";
+  const hcpEmployeeId = session.user.hcpEmployeeId ?? null;
+
+  if (!isAdmin && !hcpEmployeeId) {
     return NextResponse.json(
       { error: "Your account is not linked to an HCP employee. Contact your admin." },
       { status: 403 }
@@ -65,11 +69,9 @@ export async function DELETE(
 
   const { id } = await params;
   await initSchema();
-  const deleted = await deleteTimeEntry(
-    id,
-    session.user.organizationId,
-    hcpEmployeeId
-  );
+  const deleted = isAdmin
+    ? await deleteTimeEntryForAdmin(id, session.user.organizationId)
+    : await deleteTimeEntry(id, session.user.organizationId, hcpEmployeeId!);
   if (!deleted) {
     return NextResponse.json({ error: "Time entry not found" }, { status: 404 });
   }

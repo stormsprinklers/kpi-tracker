@@ -100,6 +100,26 @@ export async function getEmployeesFromDb(
   return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
 }
 
+/** Returns { id, name } for employee selector. Uses hcp_id from table for reliable id. */
+export async function getEmployeesForSelector(
+  companyId: string
+): Promise<{ id: string; name: string }[]> {
+  const result = await sql`
+    SELECT hcp_id, raw FROM employees
+    WHERE company_id = ${companyId}
+    ORDER BY COALESCE(raw->>'first_name', raw->>'last_name', raw->>'email', '') ASC
+  `;
+  return (result.rows ?? []).map((r) => {
+    const row = r as { hcp_id: string; raw: Record<string, unknown> };
+    const raw = row.raw ?? {};
+    const first = String(raw.first_name ?? raw.firstName ?? "").trim();
+    const last = String(raw.last_name ?? raw.lastName ?? "").trim();
+    const name = [first, last].filter(Boolean).join(" ").trim()
+      || String(raw.email ?? raw.email_address ?? row.hcp_id ?? "Unknown");
+    return { id: row.hcp_id, name };
+  });
+}
+
 /** Find HCP employee id by email for a company. Matches raw->>'email' or raw->>'email_address'. */
 export async function getEmployeeHcpIdByEmail(
   companyId: string,
@@ -332,6 +352,37 @@ export async function deleteTimeEntry(id: string, organizationId: string, hcpEmp
   const result = await sql`
     DELETE FROM time_entries
     WHERE id = ${id} AND organization_id = ${organizationId} AND hcp_employee_id = ${hcpEmployeeId}
+  `;
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Admin-only: update any time entry in the org (no hcp_employee_id check) */
+export async function updateTimeEntryForAdmin(
+  id: string,
+  organizationId: string,
+  params: { entry_date?: string; start_time?: string | null; end_time?: string | null; hours?: number | null; job_hcp_id?: string | null; notes?: string | null }
+): Promise<TimeEntry | null> {
+  const result = await sql`
+    UPDATE time_entries
+    SET
+      entry_date = COALESCE(${params.entry_date ?? null}::date, entry_date),
+      start_time = COALESCE(${params.start_time ?? null}::time, start_time),
+      end_time = COALESCE(${params.end_time ?? null}::time, end_time),
+      hours = COALESCE(${params.hours ?? null}, hours),
+      job_hcp_id = COALESCE(${params.job_hcp_id ?? null}, job_hcp_id),
+      notes = COALESCE(${params.notes ?? null}, notes),
+      updated_at = NOW()
+    WHERE id = ${id} AND organization_id = ${organizationId}
+    RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours, job_hcp_id, notes, created_at, updated_at
+  `;
+  return (result.rows?.[0] as TimeEntry) ?? null;
+}
+
+/** Admin-only: delete any time entry in the org (no hcp_employee_id check) */
+export async function deleteTimeEntryForAdmin(id: string, organizationId: string): Promise<boolean> {
+  const result = await sql`
+    DELETE FROM time_entries
+    WHERE id = ${id} AND organization_id = ${organizationId}
   `;
   return (result.rowCount ?? 0) > 0;
 }
