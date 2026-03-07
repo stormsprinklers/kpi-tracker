@@ -35,21 +35,38 @@ function normalizeSignature(sig: string): string {
   return s;
 }
 
-/** Verify HMAC using x-housecall-signature format (body only). Tries hex and base64. */
-function verifyHcpSignatureBodyOnly(body: string, signature: string, secret: string): boolean {
+/**
+ * Verify HMAC using x-housecall-signature format (body only).
+ * Per Rollout/HCP docs: body may be JSON.stringify(parsed) not raw - try both.
+ * Tries hex and base64 for signature encoding.
+ */
+function verifyHcpSignatureBodyOnly(rawBody: string, signature: string, secret: string): boolean {
   const secretTrimmed = secret.trim();
-  const expectedHex = crypto.createHmac("sha256", secretTrimmed).update(body).digest("hex");
-  const expectedBase64 = crypto.createHmac("sha256", secretTrimmed).update(body).digest("base64");
   const sigRaw = normalizeSignature(signature);
-  const sigBufHex = Buffer.from(sigRaw, "hex");
-  const expectedBufHex = Buffer.from(expectedHex, "hex");
-  if (sigBufHex.length === expectedBufHex.length && sigBufHex.length > 0 && crypto.timingSafeEqual(sigBufHex, expectedBufHex)) return true;
+
+  const tryBody = (body: string) => {
+    const expectedHex = crypto.createHmac("sha256", secretTrimmed).update(body).digest("hex");
+    const expectedBase64 = crypto.createHmac("sha256", secretTrimmed).update(body).digest("base64");
+    const sigBufHex = Buffer.from(sigRaw, "hex");
+    const expectedBufHex = Buffer.from(expectedHex, "hex");
+    if (sigBufHex.length === expectedBufHex.length && sigBufHex.length > 0 && crypto.timingSafeEqual(sigBufHex, expectedBufHex)) return true;
+    try {
+      const sigBufB64 = Buffer.from(sigRaw, "base64");
+      const expectedBufB64 = Buffer.from(expectedBase64, "base64");
+      if (sigBufB64.length === expectedBufB64.length && sigBufB64.length > 0 && crypto.timingSafeEqual(sigBufB64, expectedBufB64)) return true;
+    } catch {
+      // ignore base64 parse errors
+    }
+    return false;
+  };
+
+  if (tryBody(rawBody)) return true;
   try {
-    const sigBufB64 = Buffer.from(sigRaw, "base64");
-    const expectedBufB64 = Buffer.from(expectedBase64, "base64");
-    if (sigBufB64.length === expectedBufB64.length && sigBufB64.length > 0 && crypto.timingSafeEqual(sigBufB64, expectedBufB64)) return true;
+    const parsed = JSON.parse(rawBody);
+    const normalized = JSON.stringify(parsed);
+    if (normalized !== rawBody && tryBody(normalized)) return true;
   } catch {
-    // ignore base64 parse errors
+    // not JSON, skip normalized attempt
   }
   return false;
 }
@@ -92,15 +109,34 @@ export async function POST(
   const housecallSignature = request.headers.get("x-housecall-signature");
 
   // HCP connection test: accept test payloads without verification so the webhook URL can be saved.
-  // HCP may send {"foo":"bar"}, empty body, or {} when testing the URL.
+  // HCP may send {"foo":"bar"}, empty body, {}, or {"event":"webhook.test"} when testing the URL.
+  // Also accept any small payload (<256 bytes) without "event" - catches unknown test formats.
   const isConnectionTest = (() => {
     if (!rawBody || rawBody.trim() === "") return true;
+    if (rawBody.length < 256) {
+      try {
+        const parsed = JSON.parse(rawBody);
+        if (parsed && typeof parsed === "object") {
+          const keys = Object.keys(parsed);
+          const ev = parsed.event;
+          if (ev === "webhook.test" || ev === "ping" || ev === "connection_test") return true;
+          if (!("event" in parsed)) return true;
+          if (keys.length === 0) return true;
+          if (keys.length === 1 && parsed.foo === "bar") return true;
+        }
+      } catch {
+        // not JSON - still accept as connection test if small (e.g. plain "ping")
+        return true;
+      }
+    }
     try {
       const parsed = JSON.parse(rawBody);
       if (!parsed || typeof parsed !== "object") return false;
       const keys = Object.keys(parsed);
       if (keys.length === 0) return true;
       if (keys.length === 1 && parsed.foo === "bar") return true;
+      const ev = parsed.event;
+      if (ev === "webhook.test" || ev === "ping" || ev === "connection_test") return true;
       if (!("event" in parsed)) return true;
     } catch {
       return false;
@@ -166,6 +202,17 @@ export async function POST(
   if (housecallSignature) {
     pathTried = "x-housecall-signature";
     verified = verifyHcpSignatureBodyOnly(rawBody, housecallSignature, secret);
+    // Per Rollout/HCP docs: some implementations use JSON.stringify(parsed body) for the signed payload
+    if (!verified && rawBody) {
+      try {
+        const normalizedBody = JSON.stringify(JSON.parse(rawBody));
+        if (normalizedBody !== rawBody) {
+          verified = verifyHcpSignatureBodyOnly(normalizedBody, housecallSignature, secret);
+        }
+      } catch {
+        // ignore
+      }
+    }
   }
   if (!verified && apiSignature && apiTimestamp) {
     pathTried = "api-signature+timestamp";
