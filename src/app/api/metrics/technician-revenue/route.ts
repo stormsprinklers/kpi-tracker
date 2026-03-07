@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { getTechnicianRevenue } from "@/lib/metrics/technicianRevenue";
-import { isConfigured } from "@/lib/housecallpro";
 
 export async function GET(request: Request) {
-  if (!isConfigured()) {
-    return NextResponse.json(
-      { error: "Housecall Pro not configured" },
-      { status: 503 }
-    );
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.organizationId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -16,7 +15,7 @@ export async function GET(request: Request) {
   const filters = (startDate || endDate) ? { startDate, endDate } : undefined;
 
   try {
-    const result = await getTechnicianRevenue(filters);
+    const result = await getTechnicianRevenue(session.user.organizationId, filters);
     return NextResponse.json(result);
   } catch (error) {
     console.error("[Technician Revenue] Error:", error);

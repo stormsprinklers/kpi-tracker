@@ -1,4 +1,4 @@
-import { getJobsAllPages, getJobInvoices, getEmployeesAllPages, getPros, getCompany, getEstimatesAllPages } from "../housecallpro";
+import { getHcpClient } from "../housecallpro";
 import { getJobsFromDb, getEmployeesFromDb, getInvoicesFromDb, getProsFromDb, getEstimatesFromDb } from "../db/queries";
 
 export interface TechnicianRevenue {
@@ -309,7 +309,7 @@ export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): 
 
   if (nameMap.size === 0) {
     try {
-      const employeesList = await getEmployeesAllPages();
+      const employeesList = await client.getEmployeesAllPages();
       const empMap = buildNameMap(
         employeesList,
         ["id", "employee_id", "pro_id"],
@@ -370,7 +370,7 @@ export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): 
   }
   if (jobs.length === 0) {
     try {
-      jobs = await getJobsAllPages();
+      jobs = await client.getJobsAllPages();
       jobsFromApi = true;
     } catch {
       /* skip */
@@ -441,7 +441,7 @@ export async function getTechnicianRevenue(filters?: TechnicianRevenueFilters): 
   }
   if (estimates.length === 0) {
     try {
-      const estimatesRes = await getEstimatesAllPages();
+      const estimatesRes = await client.getEstimatesAllPages();
       const data = estimatesRes as { estimates?: unknown[] };
       estimates = data?.estimates ?? (Array.isArray(estimatesRes) ? estimatesRes : []);
     } catch {

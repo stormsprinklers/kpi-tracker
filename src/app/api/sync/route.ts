@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { runFullSync } from "@/lib/sync/hcpSync";
-import { getCompany } from "@/lib/housecallpro";
-import { getLastSyncAt } from "@/lib/db/queries";
-import { isConfigured } from "@/lib/housecallpro";
+import { getLastSyncAt, getOrganizationsWithTokens, getOrganizationById } from "@/lib/db/queries";
 
 function isCronRequest(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -12,33 +12,30 @@ function isCronRequest(request: Request): boolean {
 }
 
 export async function GET(request: Request) {
-  if (!isConfigured()) {
-    return NextResponse.json(
-      { error: "Housecall Pro not configured" },
-      { status: 503 }
-    );
-  }
-
-  // Vercel cron sends GET with Authorization: Bearer CRON_SECRET
+  // Cron: sync all orgs with tokens
   if (isCronRequest(request)) {
     try {
-      const result = await runFullSync();
-      if (result.status === "error") {
-        return NextResponse.json(
-          {
-            error: "Sync failed",
-            details: result.error,
-            entitiesSynced: result.entitiesSynced,
-            duration: result.duration,
-          },
-          { status: 500 }
-        );
+      const orgs = await getOrganizationsWithTokens();
+      if (orgs.length === 0) {
+        return NextResponse.json({
+          status: "ok",
+          message: "No organizations with HCP configured",
+          synced: [],
+        });
+      }
+      const results: { orgId: string; result: Awaited<ReturnType<typeof runFullSync>> }[] = [];
+      for (const org of orgs) {
+        const result = await runFullSync(org.id);
+        results.push({ orgId: org.id, result });
       }
       return NextResponse.json({
-        status: result.status,
-        companyId: result.companyId,
-        entitiesSynced: result.entitiesSynced,
-        duration: result.duration,
+        status: "ok",
+        synced: results.map((r) => ({
+          orgId: r.orgId,
+          companyId: r.result.companyId,
+          status: r.result.status,
+          entitiesSynced: r.result.entitiesSynced,
+        })),
       });
     } catch (err) {
       return NextResponse.json(
@@ -51,35 +48,44 @@ export async function GET(request: Request) {
     }
   }
 
-  try {
-    const company = (await getCompany()) as { id?: string };
-    const companyId = company?.id ?? "default";
-    const lastSync = await getLastSyncAt(companyId, "jobs");
-    return NextResponse.json({
-      companyId,
-      lastSyncAt: lastSync?.toISOString() ?? null,
-    });
-  } catch (err) {
+  // Authenticated: return sync status for user's org
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.organizationId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const org = await getOrganizationById(session.user.organizationId);
+  if (!org?.hcp_access_token) {
     return NextResponse.json(
-      {
-        error: "Failed to get sync status",
-        details: err instanceof Error ? err.message : String(err),
-      },
-      { status: 500 }
+      { error: "Housecall Pro not configured for your organization" },
+      { status: 503 }
     );
   }
+
+  const companyId = org.hcp_company_id ?? "default";
+  const lastSync = await getLastSyncAt(companyId, "jobs");
+  return NextResponse.json({
+    companyId,
+    lastSyncAt: lastSync?.toISOString() ?? null,
+  });
 }
 
-export async function POST() {
-  if (!isConfigured()) {
+export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.organizationId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const org = await getOrganizationById(session.user.organizationId);
+  if (!org?.hcp_access_token) {
     return NextResponse.json(
-      { error: "Housecall Pro not configured" },
+      { error: "Housecall Pro not configured for your organization. Add an access token in Settings." },
       { status: 503 }
     );
   }
 
   try {
-    const result = await runFullSync();
+    const result = await runFullSync(session.user.organizationId);
     if (result.status === "error") {
       return NextResponse.json(
         {

@@ -1,13 +1,4 @@
-import {
-  getCompany,
-  getCustomersAllPages,
-  getJobsAllPages,
-  getInvoicesAllPages,
-  getEstimatesAllPages,
-  getAppointmentsAllPages,
-  getEmployeesAllPages,
-  getPros,
-} from "../housecallpro";
+import { getHcpClient } from "../housecallpro";
 import { sql } from "@vercel/postgres";
 import { initSchema } from "../db";
 
@@ -67,7 +58,7 @@ export interface SyncResult {
   error?: string;
 }
 
-export async function runFullSync(): Promise<SyncResult> {
+export async function runFullSync(organizationId: string): Promise<SyncResult> {
   const start = Date.now();
   const entitiesSynced: Record<string, number> = {
     customers: 0,
@@ -82,13 +73,14 @@ export async function runFullSync(): Promise<SyncResult> {
   try {
     await initSchema();
 
-    const company = (await getCompany()) as { id: string };
-    const companyId = company?.id ?? "default";
+    const client = await getHcpClient(organizationId);
+    const company = (await client.getCompany()) as { id?: string; company_id?: string };
+    const companyId = company?.id ?? company?.company_id ?? "default";
     if (!companyId) {
       throw new Error("Could not get company ID from Housecall Pro");
     }
 
-    const customers = await getCustomersAllPages();
+    const customers = await client.getCustomersAllPages();
     await delay(DELAY_MS);
     for (const c of customers) {
       const r = c as Record<string, unknown>;
@@ -104,7 +96,7 @@ export async function runFullSync(): Promise<SyncResult> {
       entitiesSynced.customers++;
     }
 
-    const jobs = await getJobsAllPages();
+    const jobs = await client.getJobsAllPages();
     await delay(DELAY_MS);
     for (const j of jobs) {
       const r = j as Record<string, unknown>;
@@ -126,7 +118,7 @@ export async function runFullSync(): Promise<SyncResult> {
       entitiesSynced.jobs++;
     }
 
-    const invoices = await getInvoicesAllPages().catch(() => [] as unknown[]);
+    const invoices = await client.getInvoicesAllPages().catch(() => [] as unknown[]);
     await delay(DELAY_MS);
     for (const inv of invoices) {
       const r = inv as Record<string, unknown>;
@@ -144,7 +136,7 @@ export async function runFullSync(): Promise<SyncResult> {
       entitiesSynced.invoices++;
     }
 
-    const estimates = await getEstimatesAllPages().catch(() => [] as unknown[]);
+    const estimates = await client.getEstimatesAllPages().catch(() => [] as unknown[]);
     await delay(DELAY_MS);
     for (const est of estimates) {
       const r = est as Record<string, unknown>;
@@ -164,7 +156,7 @@ export async function runFullSync(): Promise<SyncResult> {
       entitiesSynced.estimates++;
     }
 
-    const appointments = await getAppointmentsAllPages().catch(() => [] as unknown[]);
+    const appointments = await client.getAppointmentsAllPages().catch(() => [] as unknown[]);
     await delay(DELAY_MS);
     for (const apt of appointments) {
       const r = apt as Record<string, unknown>;
@@ -182,7 +174,7 @@ export async function runFullSync(): Promise<SyncResult> {
       entitiesSynced.appointments++;
     }
 
-    const employees = await getEmployeesAllPages().catch(() => [] as unknown[]);
+    const employees = await client.getEmployeesAllPages().catch(() => [] as unknown[]);
     await delay(DELAY_MS);
     for (const emp of employees) {
       const r = emp as Record<string, unknown>;
@@ -198,7 +190,7 @@ export async function runFullSync(): Promise<SyncResult> {
       entitiesSynced.employees++;
     }
 
-    const prosRes = await getPros().catch(() => ({ pros: [] as unknown[] }));
+    const prosRes = await client.getPros().catch(() => ({ pros: [] as unknown[] }));
     const prosList = Array.isArray(prosRes) ? prosRes : (prosRes as { pros?: unknown[] }).pros ?? (prosRes as { data?: unknown[] }).data ?? [];
     await delay(DELAY_MS);
     for (const p of prosList) {
