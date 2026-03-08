@@ -85,7 +85,7 @@ async function logInboundWebhook(
   organizationId: string,
   rawBody: string,
   request: Request,
-  status: "processed" | "skipped",
+  status: "processed" | "skipped" | "received",
   skipReason?: string
 ) {
   // #region agent log
@@ -263,15 +263,13 @@ export async function handleWebhookPOST(
   const companyId = org.hcp_company_id ?? "default";
   const payloadObj = (payload ?? {}) as Record<string, unknown>;
 
+  // Log webhook FIRST (before persist) so we capture it even if persist hangs or times out
+  await logInboundWebhook(organizationId, rawBody, request, "received");
+
   try {
     await persistWebhookEvent(event ?? "unknown", payloadObj, organizationId, companyId);
-    // #region agent log
-    console.log("[WH-DBG] H1 HCP persist done, about to logInboundWebhook", JSON.stringify({ hypothesisId: "H1", organizationId, event }));
-    // #endregion
-    await logInboundWebhook(organizationId, rawBody, request, "processed");
   } catch (err) {
     console.error(`${logPrefix} Persist error:`, err);
-    await logInboundWebhook(organizationId, rawBody, request, "skipped", err instanceof Error ? err.message : String(err));
   }
 
   return NextResponse.json({ ok: true });
