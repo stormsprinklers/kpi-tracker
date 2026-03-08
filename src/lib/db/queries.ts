@@ -508,6 +508,9 @@ export async function insertWebhookLog(params: {
     params.rawBody != null && params.rawBody.length > WEBHOOK_LOG_BODY_MAX_LEN
       ? params.rawBody.slice(0, WEBHOOK_LOG_BODY_MAX_LEN) + "\n\n...[truncated]"
       : params.rawBody;
+  // #region agent log
+  console.log("[WH-DBG] H2 insertWebhookLog DB write", JSON.stringify({ hypothesisId: "H2", organizationId: params.organizationId, source: params.source }));
+  // #endregion
   await sql`
     INSERT INTO webhook_logs (organization_id, source, raw_body, headers, status, skip_reason)
     VALUES (
@@ -533,6 +536,9 @@ export interface WebhookLog {
 }
 
 export async function getWebhookLogs(organizationId: string, limit = 50): Promise<WebhookLog[]> {
+  // #region agent log
+  console.log("[WH-DBG] H3 getWebhookLogs query", JSON.stringify({ hypothesisId: "H3", organizationId, limit }));
+  // #endregion
   const result = await sql`
     SELECT id, organization_id, source, raw_body, headers, status, skip_reason, created_at
     FROM webhook_logs
@@ -540,5 +546,9 @@ export async function getWebhookLogs(organizationId: string, limit = 50): Promis
     ORDER BY created_at DESC
     LIMIT ${limit}
   `;
-  return (result.rows ?? []) as WebhookLog[];
+  const rows = (result.rows ?? []) as WebhookLog[];
+  // #region agent log
+  console.log("[WH-DBG] H3 getWebhookLogs result", JSON.stringify({ hypothesisId: "H3", organizationId, rowCount: rows.length, firstId: rows[0]?.id }));
+  // #endregion
+  return rows;
 }

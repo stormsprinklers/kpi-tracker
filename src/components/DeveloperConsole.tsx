@@ -107,11 +107,12 @@ export function DeveloperConsole() {
   async function fetchWebhookLogs() {
     setWebhookLogsLoading(true);
     try {
-      const res = await fetch("/api/debug/webhook-logs?limit=50");
+      const res = await fetch("/api/debug/webhook-logs?limit=50", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to fetch");
-      setWebhookLogs(data.logs ?? []);
-      setSelectedWebhookLog(data.logs?.[0] ?? null);
+      const logs = data.logs ?? [];
+      setWebhookLogs(logs);
+      setSelectedWebhookLog(logs[0] ?? null);
     } catch (err) {
       setWebhookLogs([]);
       setSelectedWebhookLog(null);

@@ -88,12 +88,18 @@ async function logInboundWebhook(
   status: "processed" | "skipped",
   skipReason?: string
 ) {
+  // #region agent log
+  console.log("[WH-DBG] H1 HCP logInboundWebhook entered", JSON.stringify({ hypothesisId: "H1", organizationId, status, skipReason, rawBodyLen: rawBody?.length }));
+  // #endregion
   try {
     await initSchema();
     const headersObj: Record<string, string> = {};
     request.headers.forEach((v, k) => {
       headersObj[k] = v;
     });
+    // #region agent log
+    console.log("[WH-DBG] H2 HCP about to insertWebhookLog", JSON.stringify({ hypothesisId: "H2", organizationId }));
+    // #endregion
     await insertWebhookLog({
       organizationId,
       source: "hcp",
@@ -102,7 +108,13 @@ async function logInboundWebhook(
       status,
       skipReason: skipReason ?? null,
     });
+    // #region agent log
+    console.log("[WH-DBG] H2 HCP insertWebhookLog succeeded", JSON.stringify({ hypothesisId: "H2", organizationId }));
+    // #endregion
   } catch (err) {
+    // #region agent log
+    console.log("[WH-DBG] H2 HCP insertWebhookLog FAILED", JSON.stringify({ hypothesisId: "H2", organizationId, err: String(err) }));
+    // #endregion
     console.error(`${logPrefix} Failed to log webhook to webhook_logs:`, err);
   }
 }
@@ -253,6 +265,9 @@ export async function handleWebhookPOST(
 
   try {
     await persistWebhookEvent(event ?? "unknown", payloadObj, organizationId, companyId);
+    // #region agent log
+    console.log("[WH-DBG] H1 HCP persist done, about to logInboundWebhook", JSON.stringify({ hypothesisId: "H1", organizationId, event }));
+    // #endregion
     await logInboundWebhook(organizationId, rawBody, request, "processed");
   } catch (err) {
     console.error(`${logPrefix} Persist error:`, err);

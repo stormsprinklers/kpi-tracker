@@ -81,6 +81,9 @@ export async function POST(
 
   try {
     await initSchema();
+    // #region agent log
+    console.log("[WH-DBG] H1 GHL about to insertWebhookLog", JSON.stringify({ hypothesisId: "H1", organizationId }));
+    // #endregion
     // Log immediately so we capture payload even if persist times out or fails later
     await insertWebhookLog({
       organizationId,
@@ -90,6 +93,9 @@ export async function POST(
       status: "received",
       skipReason: null,
     });
+    // #region agent log
+    console.log("[WH-DBG] H2 GHL insertWebhookLog succeeded", JSON.stringify({ hypothesisId: "H2", organizationId }));
+    // #endregion
     const result = await persistGhlCallRecord(
       organizationId,
       companyId,

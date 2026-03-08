@@ -21,6 +21,9 @@ export async function GET(request: Request) {
   try {
     await initSchema(); // Ensure table exists before query
     const logs = await getWebhookLogs(session.user.organizationId, limit);
+    // #region agent log
+    console.log("[WH-DBG] H3 API returning logs", JSON.stringify({ hypothesisId: "H3", organizationId: session.user.organizationId, logCount: logs.length }));
+    // #endregion
     return NextResponse.json({
       logs,
       organizationId: session.user.organizationId,
