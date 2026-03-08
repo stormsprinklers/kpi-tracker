@@ -81,6 +81,15 @@ export async function POST(
 
   try {
     await initSchema();
+    // Log immediately so we capture payload even if persist times out or fails later
+    await insertWebhookLog({
+      organizationId,
+      source: "ghl",
+      rawBody: rawBody || null,
+      headers: headersObj,
+      status: "received",
+      skipReason: null,
+    });
     const result = await persistGhlCallRecord(
       organizationId,
       companyId,
@@ -95,27 +104,11 @@ export async function POST(
       },
       rawPayload
     );
-    await insertWebhookLog({
-      organizationId,
-      source: "ghl",
-      rawBody: rawBody || null,
-      headers: headersObj,
-      status: result.skipped ? "skipped" : "processed",
-      skipReason: result.skipped ?? null,
-    });
     if (result.skipped) {
       console.log("[GHL Webhook] Skipped:", result.skipped);
     }
   } catch (err) {
     console.error("[GHL Webhook] Persist error:", err);
-    await insertWebhookLog({
-      organizationId,
-      source: "ghl",
-      rawBody: rawBody || null,
-      headers: headersObj,
-      status: "skipped",
-      skipReason: err instanceof Error ? err.message : String(err),
-    }).catch((logErr) => console.error("[GHL Webhook] Failed to log:", logErr));
     return NextResponse.json({ error: "Failed to persist call record" }, { status: 500 });
   }
 

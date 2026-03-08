@@ -41,6 +41,8 @@ export function DeveloperConsole() {
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [webhookLogs, setWebhookLogs] = useState<WebhookLogEntry[]>([]);
   const [webhookLogsLoading, setWebhookLogsLoading] = useState(false);
+  const [webhookLogsError, setWebhookLogsError] = useState<string | null>(null);
+  const [webhookOrgId, setWebhookOrgId] = useState<string | null>(null);
   const [selectedWebhookLog, setSelectedWebhookLog] = useState<WebhookLogEntry | null>(null);
 
   async function fetchEndpoint(path: string) {
@@ -161,9 +163,9 @@ export function DeveloperConsole() {
           Webhook Logs
         </h3>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          Raw payload and headers of incoming GHL webhooks (including skipped). Use to debug booking_value_not_valid, etc.
+          Raw payload and headers of incoming webhooks (GHL and HCP). Includes skipped/rejected requests. Use to debug booking_value_not_valid, signature failures, etc.
         </p>
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={fetchWebhookLogs}
@@ -172,7 +174,17 @@ export function DeveloperConsole() {
           >
             {webhookLogsLoading ? "Loading…" : "Load Webhook Logs"}
           </button>
+          {webhookOrgId && (
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              Org: {webhookOrgId} — ensure your GHL URL uses this ID
+            </span>
+          )}
         </div>
+        {webhookLogsError && (
+          <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+            {webhookLogsError}
+          </p>
+        )}
         {webhookLogs.length > 0 && (
           <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <ul className="max-h-64 space-y-1 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/50">
@@ -194,7 +206,9 @@ export function DeveloperConsole() {
                       className={
                         entry.status === "skipped"
                           ? "text-amber-600 dark:text-amber-400"
-                          : "text-zinc-500 dark:text-zinc-400"
+                          : entry.status === "received"
+                          ? "text-zinc-500 dark:text-zinc-400"
+                          : "text-emerald-600 dark:text-emerald-400"
                       }
                     >
                       {entry.status}

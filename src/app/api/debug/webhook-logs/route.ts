@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { initSchema } from "@/lib/db";
 import { getWebhookLogs } from "@/lib/db/queries";
 
 /**
@@ -18,8 +19,13 @@ export async function GET(request: Request) {
   const limit = Math.min(Math.max(parseInt(searchParams.get("limit") ?? "50", 10) || 50, 1), 100);
 
   try {
+    await initSchema(); // Ensure table exists before query
     const logs = await getWebhookLogs(session.user.organizationId, limit);
-    return NextResponse.json({ logs, ok: true });
+    return NextResponse.json({
+      logs,
+      organizationId: session.user.organizationId,
+      ok: true,
+    });
   } catch (err) {
     console.error("[webhook-logs] Error:", err);
     return NextResponse.json(

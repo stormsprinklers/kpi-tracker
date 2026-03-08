@@ -493,21 +493,27 @@ export async function deleteTimeEntryForAdmin(id: string, organizationId: string
   return (result.rowCount ?? 0) > 0;
 }
 
+const WEBHOOK_LOG_BODY_MAX_LEN = 512 * 1024; // 512KB to avoid driver/param limits
+
 // Webhook logs (debug)
 export async function insertWebhookLog(params: {
   organizationId: string;
   source: string;
   rawBody: string | null;
   headers: Record<string, string>;
-  status: "processed" | "skipped";
+  status: "processed" | "skipped" | "received";
   skipReason?: string | null;
 }) {
+  const rawBody =
+    params.rawBody != null && params.rawBody.length > WEBHOOK_LOG_BODY_MAX_LEN
+      ? params.rawBody.slice(0, WEBHOOK_LOG_BODY_MAX_LEN) + "\n\n...[truncated]"
+      : params.rawBody;
   await sql`
     INSERT INTO webhook_logs (organization_id, source, raw_body, headers, status, skip_reason)
     VALUES (
       ${params.organizationId}::uuid,
       ${params.source},
-      ${params.rawBody},
+      ${rawBody},
       ${JSON.stringify(params.headers)}::jsonb,
       ${params.status},
       ${params.skipReason ?? null}

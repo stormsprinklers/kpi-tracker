@@ -251,10 +251,19 @@ export async function initSchema(): Promise<void> {
       source TEXT NOT NULL,
       raw_body TEXT,
       headers JSONB,
-      status TEXT NOT NULL CHECK (status IN ('processed', 'skipped')),
+      status TEXT NOT NULL CHECK (status IN ('processed', 'skipped', 'received')),
       skip_reason TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      ALTER TABLE webhook_logs DROP CONSTRAINT IF EXISTS webhook_logs_status_check;
+      ALTER TABLE webhook_logs ADD CONSTRAINT webhook_logs_status_check
+        CHECK (status IN ('processed', 'skipped', 'received'));
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END $$
   `;
   await sql`
     CREATE INDEX IF NOT EXISTS idx_webhook_logs_org_created

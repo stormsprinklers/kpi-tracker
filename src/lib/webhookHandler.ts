@@ -4,7 +4,8 @@
  */
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { getOrganizationById } from "@/lib/db/queries";
+import { getOrganizationById, insertWebhookLog } from "@/lib/db/queries";
+import { initSchema } from "@/lib/db";
 import { persistWebhookEvent } from "@/lib/sync/webhookPersist";
 
 /** Verify HMAC using api-signature + api-timestamp format (timestamp.body). Tries hex and base64. */
@@ -80,6 +81,32 @@ function verifyHcpSignatureBodyOnly(rawBody: string, signature: string, secret: 
 
 const logPrefix = "[Webhook]";
 
+async function logInboundWebhook(
+  organizationId: string,
+  rawBody: string,
+  request: Request,
+  status: "processed" | "skipped",
+  skipReason?: string
+) {
+  try {
+    await initSchema();
+    const headersObj: Record<string, string> = {};
+    request.headers.forEach((v, k) => {
+      headersObj[k] = v;
+    });
+    await insertWebhookLog({
+      organizationId,
+      source: "hcp",
+      rawBody: rawBody || null,
+      headers: headersObj,
+      status,
+      skipReason: skipReason ?? null,
+    });
+  } catch (err) {
+    console.error(`${logPrefix} Failed to log webhook to webhook_logs:`, err);
+  }
+}
+
 export async function handleWebhookGET() {
   return NextResponse.json({
     ok: true,
@@ -150,6 +177,7 @@ export async function handleWebhookPOST(
   })();
   if (isConnectionTest) {
     console.log(`${logPrefix} Connection test accepted for org`, organizationId);
+    await logInboundWebhook(organizationId, rawBody, request, "skipped", "connection_test");
     return NextResponse.json({ ok: true, test: true });
   }
 
@@ -162,6 +190,7 @@ export async function handleWebhookPOST(
   const secret = org.hcp_webhook_secret;
   if (!secret && !bypassSignatureCheck) {
     console.error(`${logPrefix} Webhook secret not configured for organization`, organizationId);
+    await logInboundWebhook(organizationId, rawBody, request, "skipped", "no_webhook_secret");
     return NextResponse.json(
       { error: "Webhook not configured for this organization" },
       { status: 500 }
@@ -201,6 +230,7 @@ export async function handleWebhookPOST(
       secretLength: secret?.length ?? 0,
     };
     console.warn(`${logPrefix} Signature verification failed for org`, organizationId, debugInfo);
+    await logInboundWebhook(organizationId, rawBody, request, "skipped", "signature_unverified");
     return NextResponse.json({ ok: true, unverified: true });
   }
   if (!verified && bypassSignatureCheck) {
@@ -211,6 +241,7 @@ export async function handleWebhookPOST(
   try {
     payload = rawBody ? JSON.parse(rawBody) : null;
   } catch {
+    await logInboundWebhook(organizationId, rawBody, request, "skipped", "invalid_json");
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
@@ -222,8 +253,10 @@ export async function handleWebhookPOST(
 
   try {
     await persistWebhookEvent(event ?? "unknown", payloadObj, organizationId, companyId);
+    await logInboundWebhook(organizationId, rawBody, request, "processed");
   } catch (err) {
     console.error(`${logPrefix} Persist error:`, err);
+    await logInboundWebhook(organizationId, rawBody, request, "skipped", err instanceof Error ? err.message : String(err));
   }
 
   return NextResponse.json({ ok: true });
