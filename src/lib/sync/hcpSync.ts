@@ -195,10 +195,12 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
 
     const employees = await client.getEmployeesAllPages().catch(() => [] as unknown[]);
     await delay(DELAY_MS);
+    const employeeIds: string[] = [];
     for (const emp of employees) {
       const r = emp as Record<string, unknown>;
       const hcpId = extractId(r);
       if (!hcpId) continue;
+      employeeIds.push(hcpId);
       await sql`
         INSERT INTO employees (hcp_id, company_id, raw, updated_at)
         VALUES (${hcpId}, ${companyId}, ${JSON.stringify(r)}::jsonb, NOW())
@@ -208,14 +210,23 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       `;
       entitiesSynced.employees++;
     }
+    if (employeeIds.length > 0) {
+      await sql`
+        DELETE FROM employees
+        WHERE company_id = ${companyId}
+        AND NOT (hcp_id = ANY(${employeeIds}))
+      `;
+    }
 
     const prosRes = await client.getPros().catch(() => ({ pros: [] as unknown[] }));
     const prosList = Array.isArray(prosRes) ? prosRes : (prosRes as { pros?: unknown[] }).pros ?? (prosRes as { data?: unknown[] }).data ?? [];
     await delay(DELAY_MS);
+    const proIds: string[] = [];
     for (const p of prosList) {
       const r = p as Record<string, unknown>;
       const hcpId = extractId(r);
       if (!hcpId) continue;
+      proIds.push(hcpId);
       await sql`
         INSERT INTO pros (hcp_id, company_id, raw, updated_at)
         VALUES (${hcpId}, ${companyId}, ${JSON.stringify(r)}::jsonb, NOW())
@@ -224,6 +235,13 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
           updated_at = NOW()
       `;
       entitiesSynced.pros++;
+    }
+    if (proIds.length > 0) {
+      await sql`
+        DELETE FROM pros
+        WHERE company_id = ${companyId}
+        AND NOT (hcp_id = ANY(${proIds}))
+      `;
     }
 
     const entityTypes = ["customers", "jobs", "job_line_items", "invoices", "estimates", "appointments", "employees", "pros"];
