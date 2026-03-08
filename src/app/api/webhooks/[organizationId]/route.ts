@@ -1,7 +1,3 @@
-/**
- * Legacy HCP-specific webhook route.
- * Delegates to the shared handler. Use /api/webhooks/[organizationId] for new integrations.
- */
 import {
   handleWebhookGET,
   handleWebhookHEAD,

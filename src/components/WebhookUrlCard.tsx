@@ -22,7 +22,7 @@ export function WebhookUrlCard({ webhookUrl }: WebhookUrlCardProps) {
         Webhook URL
       </h3>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        Copy this URL into Housecall Pro (My Apps → App Store → Webhooks)
+        Use in Housecall Pro, GoHighLevel, Zapier, Make, or any automation platform
       </p>
       <div className="mt-3 flex gap-2">
         <input

@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getOrganizationById } from "@/lib/db/queries";
-import { getHcpWebhookUrl } from "@/lib/webhook";
+import { getWebhookUrl } from "@/lib/webhook";
 import { SettingsPageClient } from "./SettingsPageClient";
 import { WebhookUrlCard } from "@/components/WebhookUrlCard";
 import { SyncStatusSection } from "@/components/SyncStatusSection";
@@ -18,7 +18,7 @@ export default async function SettingsPage() {
 
   const org = await getOrganizationById(session.user.organizationId);
   const connected = !!org?.hcp_access_token;
-  const webhookUrl = getHcpWebhookUrl(session.user.organizationId);
+  const webhookUrl = getWebhookUrl(session.user.organizationId);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">

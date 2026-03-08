@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 const GONE_MESSAGE = {
   error: "Webhook URL has changed",
   message:
-    "Use your organization-specific URL from Settings. Format: {baseUrl}/api/webhooks/hcp/{organizationId}",
+    "Use your organization-specific URL from Settings. Format: {baseUrl}/api/webhooks/{organizationId}",
 };
 
 export async function GET() {
