@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { getOrganizationById } from "@/lib/db/queries";
 import { KeyMetricsSection } from "@/components/KeyMetricsSection";
 import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
+import { CsrKpisSection } from "@/components/CsrKpisSection";
 import { LandingPage } from "@/components/LandingPage";
 
 export default async function Home() {
@@ -22,6 +23,7 @@ export default async function Home() {
       <main className="flex flex-1 flex-col gap-6 p-6">
         <KeyMetricsSection connected={connected} />
         {connected && <TechnicianRevenueSection />}
+        {connected && <CsrKpisSection />}
       </main>
     </div>
   );
