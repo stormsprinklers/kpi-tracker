@@ -57,6 +57,7 @@ export async function persistWebhookEvent(
   organizationId: string,
   companyId: string
 ): Promise<void> {
+  console.log("[WH-LIVE-CHECK] webhookPersist persistWebhookEvent version 2026-03-08-01", { event, organizationId });
   console.log("[Webhook] persistWebhookEvent start", { event, organizationId });
 
   const data = getWebhookData(payload);

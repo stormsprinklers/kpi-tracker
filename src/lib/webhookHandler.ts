@@ -139,13 +139,11 @@ export async function handleWebhookOPTIONS() {
   });
 }
 
-const WEBHOOK_HANDLER_VERSION = "v2-log-first";
-
 export async function handleWebhookPOST(
   request: Request,
   organizationId: string
 ): Promise<NextResponse> {
-  console.log(`${logPrefix} POST received [${WEBHOOK_HANDLER_VERSION}]`, { organizationId });
+  console.log("[WH-LIVE-CHECK] handleWebhookPOST entered version 2026-03-08-02", { organizationId });
 
   const rawBody = await request.text();
   const org = await getOrganizationById(organizationId);

@@ -52,7 +52,7 @@ export async function POST(
   { params }: { params: Promise<{ organizationId: string }> }
 ) {
   const { organizationId } = await params;
-  console.log("[GHL Webhook] POST received", { organizationId });
+  console.log("[WH-LIVE-CHECK] GHL route /api/webhooks/ghl/[organizationId] version 2026-03-08-01");
 
   const rawBody = await request.text();
   const org = await getOrganizationById(organizationId);
