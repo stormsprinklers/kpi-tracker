@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 
 type WebhookLogEntry = {
   id: string;
@@ -134,17 +133,9 @@ export function DeveloperConsole() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          Developer Console
-        </h2>
-        <Link
-          href="/"
-          className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-400"
-        >
-          Back to Dashboard
-        </Link>
-      </div>
+      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        Developer Console
+      </h2>
 
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
         <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
