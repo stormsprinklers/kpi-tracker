@@ -211,11 +211,12 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       entitiesSynced.employees++;
     }
     if (employeeIds.length > 0) {
-      await sql`
-        DELETE FROM employees
-        WHERE company_id = ${companyId}
-        AND NOT (hcp_id = ANY(${employeeIds}))
-      `;
+      const existingEmp = await sql`SELECT hcp_id FROM employees WHERE company_id = ${companyId}`;
+      const existingEmpIds = (existingEmp.rows ?? []).map((row) => (row as { hcp_id: string }).hcp_id);
+      const toRemove = existingEmpIds.filter((id) => !employeeIds.includes(id));
+      for (const id of toRemove) {
+        await sql`DELETE FROM employees WHERE company_id = ${companyId} AND hcp_id = ${id}`;
+      }
     }
 
     const prosRes = await client.getPros().catch(() => ({ pros: [] as unknown[] }));
@@ -237,11 +238,12 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       entitiesSynced.pros++;
     }
     if (proIds.length > 0) {
-      await sql`
-        DELETE FROM pros
-        WHERE company_id = ${companyId}
-        AND NOT (hcp_id = ANY(${proIds}))
-      `;
+      const existingPros = await sql`SELECT hcp_id FROM pros WHERE company_id = ${companyId}`;
+      const existingProIds = (existingPros.rows ?? []).map((row) => (row as { hcp_id: string }).hcp_id);
+      const toRemove = existingProIds.filter((id) => !proIds.includes(id));
+      for (const id of toRemove) {
+        await sql`DELETE FROM pros WHERE company_id = ${companyId} AND hcp_id = ${id}`;
+      }
     }
 
     const entityTypes = ["customers", "jobs", "job_line_items", "invoices", "estimates", "appointments", "employees", "pros"];
