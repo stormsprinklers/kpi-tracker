@@ -24,25 +24,72 @@ function getHeader(headers: Record<string, string>, key: string): string {
   return "";
 }
 
-function getGhlValue(log: WebhookLog, key: string): string {
-  const fromHeader = getHeader(log.headers ?? {}, key);
-  if (fromHeader) return fromHeader;
-  try {
-    const parsed = JSON.parse(log.raw_body ?? "{}") as Record<string, unknown>;
-    const lower = key.toLowerCase();
-    for (const k of Object.keys(parsed)) {
-      if (k.toLowerCase() === lower) {
-        const val = parsed[k];
-        return val != null ? String(val) : "";
+const BODY_KEY_VARIANTS: Record<string, string[]> = {
+  csr: ["csr", "CSR", "Csr"],
+  booking_value: ["booking_value", "bookingValue", "booking-value", "bookingvalue"],
+  date: ["date", "Date"],
+  time: ["time", "Time"],
+  duration: ["duration", "Duration"],
+  transcript: ["transcript", "Transcript"],
+  customer_phone: ["customer_phone", "customerPhone", "customer-phone", "phone", "Phone"],
+};
+
+function getFromObject(obj: Record<string, unknown>, keyVariants: string[]): string {
+  const keys = Object.keys(obj);
+  for (const variant of keyVariants) {
+    const vLo = variant.toLowerCase().replace(/-/g, "_");
+    for (const k of keys) {
+      const kLo = k.toLowerCase().replace(/-/g, "_");
+      if (kLo === vLo || kLo.replace(/_/g, "") === vLo.replace(/_/g, "")) {
+        const val = obj[k];
+        if (val != null && val !== "") return String(val);
       }
     }
-  } catch {
-    /* ignore */
   }
   return "";
 }
 
+function parseBody(raw: string | null): Record<string, unknown> {
+  if (!raw || !raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+  } catch {
+    /* not JSON */
+  }
+  // Form-urlencoded fallback
+  try {
+    const params = new URLSearchParams(raw);
+    const obj: Record<string, unknown> = {};
+    params.forEach((v, k) => { obj[k] = v; });
+    return obj;
+  } catch {
+    /* ignore */
+  }
+  return {};
+}
+
+function getGhlValue(log: WebhookLog, key: string): string {
+  const fromHeader = getHeader(log.headers ?? {}, key);
+  if (fromHeader) return fromHeader;
+  const parsed = parseBody(log.raw_body);
+  const variants = BODY_KEY_VARIANTS[key] ?? [key];
+  let val = getFromObject(parsed, variants);
+  if (val) return val;
+  const nested = (parsed.data ?? parsed.payload ?? parsed.body) as Record<string, unknown> | undefined;
+  if (nested && typeof nested === "object") {
+    val = getFromObject(nested, variants);
+  }
+  return val ?? "";
+}
+
 function looksLikeGhlCall(log: WebhookLog): boolean {
+  // If source is ghl, treat as GHL and require only csr + booking_value
+  if (log.source === "ghl") {
+    const csr = getGhlValue(log, "csr");
+    const booking = getGhlValue(log, "booking_value");
+    return !!csr.trim() && !!booking.trim();
+  }
   const csr = getGhlValue(log, "csr");
   const booking = getGhlValue(log, "booking_value");
   const hasEvent = (() => {
@@ -83,11 +130,9 @@ export async function syncWebhookLogToCallRecords(
     customer_phone: getGhlValue(log, "customer_phone"),
   };
 
-  let rawPayload: Record<string, unknown> = {};
-  try {
-    rawPayload = log.raw_body ? (JSON.parse(log.raw_body) as Record<string, unknown>) : {};
-  } catch {
-    rawPayload = { _raw: log.raw_body };
+  const rawPayload = parseBody(log.raw_body) as Record<string, unknown>;
+  if (Object.keys(rawPayload).length === 0 && log.raw_body) {
+    (rawPayload as Record<string, unknown>)._raw = log.raw_body;
   }
 
   try {
