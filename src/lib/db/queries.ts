@@ -645,6 +645,10 @@ export interface CallRecordForCsr {
   booking_value: string;
   customer_phone: string | null;
   job_hcp_id?: string | null;
+  /** Debug: associated job from jobs table (HCP webhook) */
+  job_debug?: Record<string, unknown> | null;
+  /** Debug: associated call payload from GHL webhook (raw_payload) */
+  call_debug?: Record<string, unknown> | null;
 }
 
 /** Get recent jobs (from job.appointment.booked / job.scheduled etc.) for phone-to-job matching.
@@ -671,13 +675,26 @@ export async function getCallRecordsForCsr(
   const start = filters?.startDate ?? "2000-01-01";
   const end = filters?.endDate ?? "2100-12-31";
   const result = await sql`
-    SELECT id, call_date::text, call_time::text, duration_seconds, customer_name, customer_city, transcript, booking_value, customer_phone, job_hcp_id
-    FROM call_records
-    WHERE organization_id = ${organizationId}::uuid
-      AND hcp_employee_id = ${hcpEmployeeId}
-      AND call_date >= ${start}
-      AND call_date <= ${end}
-    ORDER BY call_date DESC, call_time DESC NULLS LAST
+    SELECT
+      c.id,
+      c.call_date::text,
+      c.call_time::text,
+      c.duration_seconds,
+      c.customer_name,
+      c.customer_city,
+      c.transcript,
+      c.booking_value,
+      c.customer_phone,
+      c.job_hcp_id,
+      c.raw_payload AS call_debug,
+      j.raw AS job_debug
+    FROM call_records c
+    LEFT JOIN jobs j ON j.hcp_id = c.job_hcp_id AND j.company_id = c.company_id
+    WHERE c.organization_id = ${organizationId}::uuid
+      AND c.hcp_employee_id = ${hcpEmployeeId}
+      AND c.call_date >= ${start}
+      AND c.call_date <= ${end}
+    ORDER BY c.call_date DESC, c.call_time DESC NULLS LAST
   `;
   return (result.rows ?? []) as CallRecordForCsr[];
 }

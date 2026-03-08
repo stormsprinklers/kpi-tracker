@@ -14,6 +14,8 @@ interface CallRecord {
   booking_value: string;
   customer_phone: string | null;
   job_hcp_id?: string | null;
+  job_debug?: Record<string, unknown> | null;
+  call_debug?: Record<string, unknown> | null;
 }
 
 type DatePreset = "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "all" | "custom";
@@ -103,6 +105,8 @@ export function CsrCallDetailClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -195,6 +199,8 @@ export function CsrCallDetailClient({
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Duration</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Booking</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job</th>
+                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job (debug)</th>
+                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Call (debug)</th>
               </tr>
             </thead>
             <tbody>
@@ -243,6 +249,32 @@ export function CsrCallDetailClient({
                       )}
                     </td>
                     <td className="py-2">
+                      {r.job_debug ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedJobId(expandedJobId === r.id ? null : r.id)}
+                          className="text-xs text-amber-600 hover:underline dark:text-amber-400"
+                        >
+                          {expandedJobId === r.id ? "Hide" : "Show"}
+                        </button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2">
+                      {r.call_debug ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCallId(expandedCallId === r.id ? null : r.id)}
+                          className="text-xs text-amber-600 hover:underline dark:text-amber-400"
+                        >
+                          {expandedCallId === r.id ? "Hide" : "Show"}
+                        </button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2">
                       <button
                         type="button"
                         onClick={() =>
@@ -260,10 +292,40 @@ export function CsrCallDetailClient({
                         key={`${r.id}-transcript`}
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
-                        <td colSpan={8} className="bg-zinc-50 py-2 pl-4 dark:bg-zinc-900/50">
+                        <td colSpan={10} className="bg-zinc-50 py-2 pl-4 dark:bg-zinc-900/50">
                           <p className="whitespace-pre-wrap text-xs text-zinc-600 dark:text-zinc-400">
                             {r.transcript}
                           </p>
+                        </td>
+                      </tr>,
+                    ]
+                  : []),
+                ...(expandedJobId === r.id && r.job_debug
+                  ? [
+                      <tr
+                        key={`${r.id}-job-debug`}
+                        className="border-b border-zinc-100 dark:border-zinc-800"
+                      >
+                        <td colSpan={10} className="bg-amber-50/50 py-2 pl-4 dark:bg-amber-950/20">
+                          <div className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-400">Job (from jobs table / HCP webhook)</div>
+                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                            {JSON.stringify(r.job_debug, null, 2)}
+                          </pre>
+                        </td>
+                      </tr>,
+                    ]
+                  : []),
+                ...(expandedCallId === r.id && r.call_debug
+                  ? [
+                      <tr
+                        key={`${r.id}-call-debug`}
+                        className="border-b border-zinc-100 dark:border-zinc-800"
+                      >
+                        <td colSpan={10} className="bg-sky-50/50 py-2 pl-4 dark:bg-sky-950/20">
+                          <div className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">Call (from call_records.raw_payload / GHL webhook)</div>
+                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                            {JSON.stringify(r.call_debug, null, 2)}
+                          </pre>
                         </td>
                       </tr>,
                     ]
