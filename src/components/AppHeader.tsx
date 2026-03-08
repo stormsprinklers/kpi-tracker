@@ -102,6 +102,14 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
                 Time Insights
               </a>
             )}
+            {(session.user.role === "admin" || session.user.role === "investor" || session.user.hcpEmployeeId) && (
+              <a
+                href="/call-insights"
+                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                Call Insights
+              </a>
+            )}
             {session.user.role !== "investor" && (
               <a
                 href="/debug"

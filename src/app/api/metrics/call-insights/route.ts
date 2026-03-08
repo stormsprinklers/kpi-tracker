@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getCsrKpiList } from "@/lib/metrics/csrKpis";
+import { getCallInsights } from "@/lib/metrics/callInsights";
 
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
@@ -14,16 +14,16 @@ export async function GET(request: Request) {
   const endDate = searchParams.get("endDate") ?? undefined;
 
   try {
-    const csrList = await getCsrKpiList(session.user.organizationId, {
+    const result = await getCallInsights(session.user.organizationId, {
       startDate,
       endDate,
     });
-    return NextResponse.json(csrList);
+    return NextResponse.json(result);
   } catch (error) {
-    console.error("[CSR KPIs] Error:", error);
+    console.error("[Call Insights] Error:", error);
     return NextResponse.json(
       {
-        error: "Failed to fetch CSR KPIs",
+        error: "Failed to fetch call insights",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }

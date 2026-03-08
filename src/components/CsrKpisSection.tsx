@@ -44,8 +44,46 @@ export function CsrKpisSection() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const today = new Date();
+    const end = new Date(today);
+    end.setHours(23, 59, 59, 999);
+    const endStr = end.toISOString().slice(0, 10);
+    const params = new URLSearchParams();
+    let startStr: string;
+    if (datePreset === "7d") {
+      const s = new Date(today);
+      s.setDate(s.getDate() - 7);
+      startStr = s.toISOString().slice(0, 10);
+      params.set("startDate", startStr);
+      params.set("endDate", endStr);
+    } else if (datePreset === "14d") {
+      const s = new Date(today);
+      s.setDate(s.getDate() - 14);
+      startStr = s.toISOString().slice(0, 10);
+      params.set("startDate", startStr);
+      params.set("endDate", endStr);
+    } else if (datePreset === "30d") {
+      const s = new Date(today);
+      s.setDate(s.getDate() - 30);
+      startStr = s.toISOString().slice(0, 10);
+      params.set("startDate", startStr);
+      params.set("endDate", endStr);
+    } else if (datePreset === "thisMonth") {
+      const s = new Date(today.getFullYear(), today.getMonth(), 1);
+      startStr = s.toISOString().slice(0, 10);
+      params.set("startDate", startStr);
+      params.set("endDate", endStr);
+    } else if (datePreset === "lastMonth") {
+      const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const e = new Date(today.getFullYear(), today.getMonth(), 0);
+      params.set("startDate", s.toISOString().slice(0, 10));
+      params.set("endDate", e.toISOString().slice(0, 10));
+    } else {
+      params.set("startDate", "2000-01-01");
+      params.set("endDate", "2100-12-31");
+    }
     try {
-      const res = await fetch("/api/metrics/csr-kpis");
+      const res = await fetch(`/api/metrics/csr-kpis?${params}`);
       if (!res.ok) throw new Error("Failed to load CSR KPIs");
       const data: CsrKpiEntry[] = await res.json();
       setCards(data);
@@ -54,7 +92,7 @@ export function CsrKpisSection() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [datePreset]);
 
   useEffect(() => {
     fetchData();
@@ -82,7 +120,7 @@ export function CsrKpisSection() {
             CSR KPIs
           </h2>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Office staff metrics: booking rate, call duration, lead response time. Data will be populated via webhooks integration.
+            Office staff metrics: booking rate, call duration, lead response time. Data from GoHighLevel call webhooks.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">{dateSelector}</div>

@@ -28,12 +28,20 @@ function getName(raw: Record<string, unknown>): string {
   return String(fallback ?? "Unknown").trim() || "Unknown";
 }
 
+export interface CsrKpiFilters {
+  startDate?: string;
+  endDate?: string;
+}
+
 /**
- * Get office staff (CSR) list for the organization.
+ * Get office staff (CSR) list for the organization with KPIs from call_records.
  * Office staff are employees/pros with role "office staff" etc. in Housecall Pro.
- * KPI values are placeholders until webhooks integration provides call/appointment data.
+ * Booking rate and avg call duration come from GoHighLevel call webhooks.
  */
-export async function getCsrKpiList(organizationId: string): Promise<CsrKpiEntry[]> {
+export async function getCsrKpiList(
+  organizationId: string,
+  filters?: CsrKpiFilters
+): Promise<CsrKpiEntry[]> {
   const org = await getOrganizationById(organizationId);
   const companyId = org?.hcp_company_id ?? "default";
 
@@ -104,11 +112,61 @@ export async function getCsrKpiList(organizationId: string): Promise<CsrKpiEntry
   // Sort by name
   csrList.sort((a, b) => a.name.localeCompare(b.name));
 
-  return csrList.map((c) => ({
-    csrId: c.id,
-    csrName: c.name,
-    bookingRate: null,
-    avgCallDurationMinutes: null,
-    leadResponseTimeMinutes: null,
-  }));
+  const officeStaffIds = new Set(csrList.map((c) => c.id));
+  if (officeStaffIds.size === 0) {
+    return csrList.map((c) => ({
+      csrId: c.id,
+      csrName: c.name,
+      bookingRate: null,
+      avgCallDurationMinutes: null,
+      leadResponseTimeMinutes: null,
+    }));
+  }
+
+  const { startDate, endDate } = filters ?? {};
+  const start = startDate ?? "2000-01-01";
+  const end = endDate ?? "2100-12-31";
+
+  const callResult = await sql`
+    SELECT
+      hcp_employee_id,
+      COUNT(*) FILTER (WHERE booking_value IN ('won','lost'))::int AS opportunity_calls,
+      COUNT(*) FILTER (WHERE booking_value = 'won')::int AS won,
+      AVG(duration_seconds) FILTER (WHERE duration_seconds IS NOT NULL) AS avg_duration
+    FROM call_records
+    WHERE organization_id = ${organizationId}::uuid
+      AND call_date >= ${start}
+      AND call_date <= ${end}
+      AND hcp_employee_id IS NOT NULL
+    GROUP BY hcp_employee_id
+  `;
+
+  const callStats = new Map<string, { bookingRate: number | null; avgDurationMinutes: number | null }>();
+  for (const row of callResult.rows ?? []) {
+    const r = row as {
+      hcp_employee_id: string;
+      opportunity_calls: number;
+      won: number;
+      avg_duration: string | null;
+    };
+    if (!officeStaffIds.has(r.hcp_employee_id)) continue;
+    const oppCalls = Number(r.opportunity_calls) || 0;
+    const won = Number(r.won) || 0;
+    let bookingRate: number | null = null;
+    if (oppCalls > 0) bookingRate = (won / oppCalls) * 100;
+    const avgSec = r.avg_duration != null ? parseFloat(r.avg_duration) : null;
+    const avgMinutes = avgSec != null ? avgSec / 60 : null;
+    callStats.set(r.hcp_employee_id, { bookingRate, avgDurationMinutes: avgMinutes });
+  }
+
+  return csrList.map((c) => {
+    const stats = callStats.get(c.id);
+    return {
+      csrId: c.id,
+      csrName: c.name,
+      bookingRate: stats?.bookingRate ?? null,
+      avgCallDurationMinutes: stats?.avgDurationMinutes ?? null,
+      leadResponseTimeMinutes: null,
+    };
+  });
 }

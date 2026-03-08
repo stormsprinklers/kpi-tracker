@@ -57,7 +57,7 @@ export async function persistWebhookEvent(
   organizationId: string,
   companyId: string
 ): Promise<void> {
-  console.log("[HCP Webhook] persistWebhookEvent start", { event, organizationId });
+  console.log("[Webhook] persistWebhookEvent start", { event, organizationId });
 
   const data = getWebhookData(payload);
 
@@ -96,7 +96,7 @@ export async function persistWebhookEvent(
         `;
       }
     } catch (persistErr) {
-      console.warn("[HCP Webhook] job.appointment.scheduled persist failed:", persistErr);
+      console.warn("[Webhook] job.appointment.scheduled persist failed:", persistErr);
     }
   } else if (event.startsWith("job.")) {
     const record = (data.job ?? data.data ?? data) as Record<string, unknown>;

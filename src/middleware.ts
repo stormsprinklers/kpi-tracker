@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const protectedPaths = ["/debug", "/settings", "/timesheets", "/time-insights"];
+const protectedPaths = ["/debug", "/settings", "/timesheets", "/time-insights", "/call-insights"];
 const authPaths = ["/login", "/setup"];
 
 export async function middleware(request: NextRequest) {

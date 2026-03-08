@@ -20,3 +20,19 @@ export function getWebhookUrl(organizationId: string): string {
 export function getHcpWebhookUrl(organizationId: string): string {
   return getWebhookUrl(organizationId);
 }
+
+/**
+ * Build the GoHighLevel webhook URL for call completion webhooks.
+ * Use in GHL workflow (after inbound call complete) to send transcripts and notes.
+ */
+export function getGhlWebhookUrl(organizationId: string): string {
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "http://localhost:3000";
+  let url = `${baseUrl}/api/webhooks/ghl/${organizationId}`;
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (bypass) {
+    url += `?x-vercel-protection-bypass=${encodeURIComponent(bypass)}`;
+  }
+  return url;
+}

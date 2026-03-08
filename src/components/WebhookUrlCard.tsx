@@ -4,9 +4,15 @@ import { useState } from "react";
 
 interface WebhookUrlCardProps {
   webhookUrl: string;
+  title?: string;
+  description?: string;
 }
 
-export function WebhookUrlCard({ webhookUrl }: WebhookUrlCardProps) {
+export function WebhookUrlCard({
+  webhookUrl,
+  title = "Webhook URL",
+  description = "Use in Housecall Pro, GoHighLevel, Zapier, Make, or any automation platform",
+}: WebhookUrlCardProps) {
   const [copied, setCopied] = useState(false);
   const [showTroubleshoot, setShowTroubleshoot] = useState(false);
 
@@ -19,10 +25,10 @@ export function WebhookUrlCard({ webhookUrl }: WebhookUrlCardProps) {
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-        Webhook URL
+        {title}
       </h3>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        Use in Housecall Pro, GoHighLevel, Zapier, Make, or any automation platform
+        {description}
       </p>
       <div className="mt-3 flex gap-2">
         <input

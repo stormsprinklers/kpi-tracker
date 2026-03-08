@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { getOrganizationById } from "@/lib/db/queries";
-import { getWebhookUrl } from "@/lib/webhook";
+import { getWebhookUrl, getGhlWebhookUrl } from "@/lib/webhook";
 import { SettingsPageClient } from "./SettingsPageClient";
 import { WebhookUrlCard } from "@/components/WebhookUrlCard";
 import { SyncStatusSection } from "@/components/SyncStatusSection";
@@ -20,6 +20,7 @@ export default async function SettingsPage() {
   const org = await getOrganizationById(session.user.organizationId);
   const connected = !!org?.hcp_access_token;
   const webhookUrl = getWebhookUrl(session.user.organizationId);
+  const ghlWebhookUrl = getGhlWebhookUrl(session.user.organizationId);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
@@ -56,6 +57,12 @@ export default async function SettingsPage() {
         <NightShiftToggle />
 
         <WebhookUrlCard webhookUrl={webhookUrl} />
+
+        <WebhookUrlCard
+          webhookUrl={ghlWebhookUrl}
+          title="GoHighLevel Webhook URL"
+          description="Use this URL in GoHighLevel workflow (after call completion) to send call transcripts and notes."
+        />
 
         <SyncStatusSection />
 

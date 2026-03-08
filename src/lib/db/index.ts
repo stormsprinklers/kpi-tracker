@@ -213,4 +213,34 @@ export async function initSchema(): Promise<void> {
     ON technician_profiles (organization_id, hcp_employee_id)
   `;
 
+  // GHL call records - inbound call completion data from GoHighLevel webhooks
+  await sql`
+    CREATE TABLE IF NOT EXISTS call_records (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      company_id TEXT NOT NULL,
+      hcp_employee_id TEXT,
+      csr_first_name_raw TEXT,
+      booking_value TEXT NOT NULL,
+      call_date DATE NOT NULL,
+      call_time TIME,
+      duration_seconds INTEGER,
+      transcript TEXT,
+      customer_phone TEXT,
+      customer_name TEXT,
+      customer_city TEXT,
+      customer_hcp_id TEXT,
+      raw_payload JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_call_records_org_date
+    ON call_records (organization_id, call_date)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_call_records_hcp_employee
+    ON call_records (organization_id, hcp_employee_id)
+  `;
+
 }
