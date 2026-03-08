@@ -18,6 +18,21 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Protect /api/debug - require auth, return 401 JSON for API routes
+  if (pathname.startsWith("/api/debug")) {
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (token.role === "investor") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    return NextResponse.next();
+  }
+
   // Allow login and setup without auth
   if (authPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();

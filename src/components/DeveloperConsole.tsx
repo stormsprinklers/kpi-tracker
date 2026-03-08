@@ -106,16 +106,22 @@ export function DeveloperConsole() {
 
   async function fetchWebhookLogs() {
     setWebhookLogsLoading(true);
+    setWebhookLogsError(null);
     try {
-      const res = await fetch("/api/debug/webhook-logs?limit=50", { cache: "no-store" });
+      const res = await fetch("/api/debug/webhook-logs?limit=50", {
+        cache: "no-store",
+        credentials: "include",
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to fetch");
+      if (!res.ok) throw new Error(data.error ?? `Failed to fetch (${res.status})`);
       const logs = data.logs ?? [];
       setWebhookLogs(logs);
       setSelectedWebhookLog(logs[0] ?? null);
+      setWebhookOrgId(data.organizationId ?? null);
     } catch (err) {
       setWebhookLogs([]);
       setSelectedWebhookLog(null);
+      setWebhookLogsError(err instanceof Error ? err.message : String(err));
     } finally {
       setWebhookLogsLoading(false);
     }
@@ -184,6 +190,11 @@ export function DeveloperConsole() {
         {webhookLogsError && (
           <p className="mt-2 text-sm text-red-600 dark:text-red-400">
             {webhookLogsError}
+          </p>
+        )}
+        {webhookOrgId && webhookLogs.length === 0 && !webhookLogsLoading && (
+          <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
+            No webhook logs for org {webhookOrgId}. Ensure HCP/GHL use these exact URLs from Settings (same org ID in path).
           </p>
         )}
         {webhookLogs.length > 0 && (
