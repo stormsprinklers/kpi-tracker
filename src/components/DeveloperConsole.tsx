@@ -3,6 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 
+type WebhookLogEntry = {
+  id: string;
+  organization_id: string;
+  source: string;
+  raw_body: string | null;
+  headers: Record<string, string>;
+  status: string;
+  skip_reason: string | null;
+  created_at: string;
+};
+
 type LogEntry = {
   id: string;
   timestamp: string;
@@ -20,6 +31,7 @@ const QUICK_ACTIONS = [
   { label: "HCP Raw Pagination (diagnose 10-only)", path: "/api/debug/hcp-raw-pagination" },
   { label: "Technician KPIs", path: "/api/metrics/technician-revenue" },
   { label: "Webhook Status (GET)", path: "/api/webhooks/hcp/status" },
+  { label: "Webhook Logs (raw payloads)", path: "/api/debug/webhook-logs" },
 ];
 
 export function DeveloperConsole() {
@@ -27,6 +39,9 @@ export function DeveloperConsole() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
+  const [webhookLogs, setWebhookLogs] = useState<WebhookLogEntry[]>([]);
+  const [webhookLogsLoading, setWebhookLogsLoading] = useState(false);
+  const [selectedWebhookLog, setSelectedWebhookLog] = useState<WebhookLogEntry | null>(null);
 
   async function fetchEndpoint(path: string) {
     const start = performance.now();
@@ -87,6 +102,27 @@ export function DeveloperConsole() {
     );
   }
 
+  async function fetchWebhookLogs() {
+    setWebhookLogsLoading(true);
+    try {
+      const res = await fetch("/api/debug/webhook-logs?limit=50");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to fetch");
+      setWebhookLogs(data.logs ?? []);
+      setSelectedWebhookLog(data.logs?.[0] ?? null);
+    } catch (err) {
+      setWebhookLogs([]);
+      setSelectedWebhookLog(null);
+    } finally {
+      setWebhookLogsLoading(false);
+    }
+  }
+
+  function copyWebhookPayload(log: WebhookLogEntry) {
+    const obj = { headers: log.headers, raw_body: log.raw_body };
+    navigator.clipboard.writeText(JSON.stringify(obj, null, 2));
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -118,6 +154,111 @@ export function DeveloperConsole() {
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+          Webhook Logs
+        </h3>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Raw payload and headers of incoming GHL webhooks (including skipped). Use to debug booking_value_not_valid, etc.
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={fetchWebhookLogs}
+            disabled={webhookLogsLoading}
+            className="rounded border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-200 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
+            {webhookLogsLoading ? "Loading…" : "Load Webhook Logs"}
+          </button>
+        </div>
+        {webhookLogs.length > 0 && (
+          <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <ul className="max-h-64 space-y-1 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/50">
+              {webhookLogs.map((entry) => (
+                <li key={entry.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWebhookLog(entry)}
+                    className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700 ${
+                      selectedWebhookLog?.id === entry.id
+                        ? "bg-zinc-200 dark:bg-zinc-700"
+                        : ""
+                    }`}
+                  >
+                    <span className="font-mono text-zinc-700 dark:text-zinc-300">
+                      {entry.source} — {new Date(entry.created_at).toLocaleString()}
+                    </span>
+                    <span
+                      className={
+                        entry.status === "skipped"
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-zinc-500 dark:text-zinc-400"
+                      }
+                    >
+                      {entry.status}
+                      {entry.skip_reason ? `: ${entry.skip_reason}` : ""}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="lg:col-span-2">
+              {selectedWebhookLog && (
+                <div className="space-y-2 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
+                  <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {selectedWebhookLog.source} • {selectedWebhookLog.status}
+                      {selectedWebhookLog.skip_reason
+                        ? ` — ${selectedWebhookLog.skip_reason}`
+                        : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => copyWebhookPayload(selectedWebhookLog)}
+                      className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-400"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <div className="max-h-72 overflow-auto p-3">
+                    <div className="space-y-3">
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                          Headers
+                        </div>
+                        <pre className="whitespace-pre-wrap break-words rounded bg-zinc-100 p-2 font-mono text-xs text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                          {JSON.stringify(selectedWebhookLog.headers, null, 2)}
+                        </pre>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                          Raw Payload
+                        </div>
+                        <pre className="whitespace-pre-wrap break-words rounded bg-zinc-100 p-2 font-mono text-xs text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                          {selectedWebhookLog.raw_body != null
+                            ? (() => {
+                                try {
+                                  return JSON.stringify(
+                                    JSON.parse(selectedWebhookLog.raw_body),
+                                    null,
+                                    2
+                                  );
+                                } catch {
+                                  return selectedWebhookLog.raw_body;
+                                }
+                              })()
+                            : "(empty)"}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">

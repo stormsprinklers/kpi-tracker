@@ -492,3 +492,47 @@ export async function deleteTimeEntryForAdmin(id: string, organizationId: string
   `;
   return (result.rowCount ?? 0) > 0;
 }
+
+// Webhook logs (debug)
+export async function insertWebhookLog(params: {
+  organizationId: string;
+  source: string;
+  rawBody: string | null;
+  headers: Record<string, string>;
+  status: "processed" | "skipped";
+  skipReason?: string | null;
+}) {
+  await sql`
+    INSERT INTO webhook_logs (organization_id, source, raw_body, headers, status, skip_reason)
+    VALUES (
+      ${params.organizationId}::uuid,
+      ${params.source},
+      ${params.rawBody},
+      ${JSON.stringify(params.headers)}::jsonb,
+      ${params.status},
+      ${params.skipReason ?? null}
+    )
+  `;
+}
+
+export interface WebhookLog {
+  id: string;
+  organization_id: string;
+  source: string;
+  raw_body: string | null;
+  headers: Record<string, string>;
+  status: string;
+  skip_reason: string | null;
+  created_at: string;
+}
+
+export async function getWebhookLogs(organizationId: string, limit = 50): Promise<WebhookLog[]> {
+  const result = await sql`
+    SELECT id, organization_id, source, raw_body, headers, status, skip_reason, created_at
+    FROM webhook_logs
+    WHERE organization_id = ${organizationId}::uuid
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+  return (result.rows ?? []) as WebhookLog[];
+}

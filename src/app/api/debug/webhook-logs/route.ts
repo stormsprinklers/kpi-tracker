@@ -1,0 +1,30 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { getWebhookLogs } from "@/lib/db/queries";
+
+/**
+ * GET /api/debug/webhook-logs
+ * Returns recent webhook logs (raw payload, headers) for the current organization.
+ * Requires auth. Used by Developer Console for debugging GHL/webhook issues.
+ */
+export async function GET(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.organizationId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const limit = Math.min(Math.max(parseInt(searchParams.get("limit") ?? "50", 10) || 50, 1), 100);
+
+  try {
+    const logs = await getWebhookLogs(session.user.organizationId, limit);
+    return NextResponse.json({ logs, ok: true });
+  } catch (err) {
+    console.error("[webhook-logs] Error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to fetch webhook logs" },
+      { status: 500 }
+    );
+  }
+}

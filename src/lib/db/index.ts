@@ -243,4 +243,22 @@ export async function initSchema(): Promise<void> {
     ON call_records (organization_id, hcp_employee_id)
   `;
 
+  // Webhook logs - raw payload/headers for debugging (GHL, HCP, etc.)
+  await sql`
+    CREATE TABLE IF NOT EXISTS webhook_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      source TEXT NOT NULL,
+      raw_body TEXT,
+      headers JSONB,
+      status TEXT NOT NULL CHECK (status IN ('processed', 'skipped')),
+      skip_reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_webhook_logs_org_created
+    ON webhook_logs (organization_id, created_at DESC)
+  `;
+
 }
