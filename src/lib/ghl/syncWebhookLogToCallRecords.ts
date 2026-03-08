@@ -149,7 +149,7 @@ export async function syncWebhookLogToCallRecords(
       companyId,
       payload,
       rawPayload,
-      { fallbackCity }
+      { fallbackCity, callHeaders: log.headers ?? {} }
     );
     return {
       ok: true,

@@ -80,7 +80,7 @@ export async function persistGhlCallRecord(
   companyId: string,
   payload: GhlCallPayload,
   rawPayload: Record<string, unknown>,
-  options?: { fallbackCity?: string | null }
+  options?: { fallbackCity?: string | null; callHeaders?: Record<string, string> | null }
 ): Promise<{ ok: boolean; skipped?: string }> {
   const bookingValue = (payload.booking_value ?? "").toString().toLowerCase().trim();
   if (!VALID_BOOKING_VALUES.has(bookingValue)) {
@@ -148,6 +148,7 @@ export async function persistGhlCallRecord(
       customer_hcp_id,
       job_hcp_id,
       raw_payload,
+      call_headers,
       created_at
     )
     VALUES (
@@ -166,6 +167,7 @@ export async function persistGhlCallRecord(
       ${customer_hcp_id},
       ${job_hcp_id},
       ${JSON.stringify(rawPayload)}::jsonb,
+      ${options?.callHeaders ? JSON.stringify(options.callHeaders) : null}::jsonb,
       NOW()
     )
   `;

@@ -110,7 +110,7 @@ export async function POST(
         customer_phone: payload.customer_phone ?? "",
       },
       rawPayload,
-      { fallbackCity }
+      { fallbackCity, callHeaders: headersObj }
     );
     if (result.skipped) {
       console.log("[GHL Webhook] Skipped:", result.skipped);

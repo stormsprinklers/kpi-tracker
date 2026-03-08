@@ -221,7 +221,7 @@ export async function handleWebhookPOST(
         companyId,
         { csr: payload.csr ?? "", booking_value: payload.booking_value ?? "", date: payload.date ?? "", time: payload.time ?? "", duration: payload.duration ?? "", transcript: payload.transcript ?? "", customer_phone: payload.customer_phone ?? "" },
         rawPayload,
-        { fallbackCity }
+        { fallbackCity, callHeaders: headersObj }
       );
       if (result.skipped) {
         console.log(`${logPrefix} GHL persist skipped:`, result.skipped);

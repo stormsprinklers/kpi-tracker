@@ -322,7 +322,7 @@ export function CsrCallDetailClient({
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
                         <td colSpan={10} className="bg-sky-50/50 py-2 pl-4 dark:bg-sky-950/20">
-                          <div className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">Call (from call_records.raw_payload / GHL webhook)</div>
+                          <div className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">Call headers (from GHL webhook)</div>
                           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                             {JSON.stringify(r.call_debug, null, 2)}
                           </pre>

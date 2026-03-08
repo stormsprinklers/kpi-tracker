@@ -686,7 +686,7 @@ export async function getCallRecordsForCsr(
       c.booking_value,
       c.customer_phone,
       c.job_hcp_id,
-      c.raw_payload AS call_debug,
+      c.call_headers AS call_debug,
       j.raw AS job_debug
     FROM call_records c
     LEFT JOIN jobs j ON j.hcp_id = c.job_hcp_id AND j.company_id = c.company_id
