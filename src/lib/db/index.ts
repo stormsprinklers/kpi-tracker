@@ -242,6 +242,18 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_call_records_hcp_employee
     ON call_records (organization_id, hcp_employee_id)
   `;
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='call_records' AND column_name='job_hcp_id') THEN
+        ALTER TABLE call_records ADD COLUMN job_hcp_id TEXT;
+      END IF;
+    END $$
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_call_records_job
+    ON call_records (organization_id, job_hcp_id)
+  `;
 
   // Webhook logs - raw payload/headers for debugging (GHL, HCP, etc.)
   await sql`

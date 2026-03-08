@@ -1,6 +1,7 @@
 import { sql } from "@vercel/postgres";
 import { matchCsrByFirstName } from "./csrMatcher";
 import { matchCustomerByPhone } from "./customerMatcher";
+import { matchJobByCustomerPhone } from "./jobMatcher";
 
 const VALID_BOOKING_VALUES = new Set(["won", "lost", "non-opportunity"]);
 
@@ -109,13 +110,27 @@ export async function persistGhlCallRecord(
       fallbackCity = String(options.fallbackCity).replace(/\+/g, " ");
     }
   }
-  const { customer_hcp_id, customer_name, customer_city } = await matchCustomerByPhone(
-    companyId,
-    (payload.customer_phone ?? "").toString(),
-    fallbackCity
-  );
 
-  console.log("[GHL] Inserting call_record", { organizationId, call_date: callDate.toISOString().slice(0, 10), csr: payload.csr, booking_value: bookingValue });
+  const customerPhone = (payload.customer_phone ?? "").toString().trim();
+
+  // Prefer city + job link from recent job.appointment.booked / job.scheduled (mobile_number match)
+  let job_hcp_id: string | null = null;
+  let customer_city: string | null = null;
+  const jobMatch = await matchJobByCustomerPhone(companyId, customerPhone);
+  if (jobMatch) {
+    job_hcp_id = jobMatch.job_hcp_id;
+    customer_city = jobMatch.customer_city;
+  }
+
+  const { customer_hcp_id, customer_name, customer_city: custCity } = await matchCustomerByPhone(
+    companyId,
+    customerPhone,
+    jobMatch ? undefined : fallbackCity
+  );
+  // Use job city when available; else customer table city; else fallback
+  const finalCity = customer_city ?? custCity ?? fallbackCity ?? null;
+
+  console.log("[GHL] Inserting call_record", { organizationId, call_date: callDate.toISOString().slice(0, 10), csr: payload.csr, booking_value: bookingValue, job_hcp_id });
   await sql`
     INSERT INTO call_records (
       organization_id,
@@ -131,6 +146,7 @@ export async function persistGhlCallRecord(
       customer_name,
       customer_city,
       customer_hcp_id,
+      job_hcp_id,
       raw_payload,
       created_at
     )
@@ -144,10 +160,11 @@ export async function persistGhlCallRecord(
       ${callTime},
       ${durationSeconds},
       ${(payload.transcript ?? "").toString().trim() || null},
-      ${(payload.customer_phone ?? "").toString().trim() || null},
+      ${customerPhone || null},
       ${customer_name},
-      ${customer_city},
+      ${finalCity},
       ${customer_hcp_id},
+      ${job_hcp_id},
       ${JSON.stringify(rawPayload)}::jsonb,
       NOW()
     )

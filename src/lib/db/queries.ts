@@ -644,6 +644,22 @@ export interface CallRecordForCsr {
   transcript: string | null;
   booking_value: string;
   customer_phone: string | null;
+  job_hcp_id?: string | null;
+}
+
+/** Get recent jobs (from job.appointment.booked / job.scheduled etc.) for phone-to-job matching. */
+export async function getRecentJobsForPhoneMatch(
+  companyId: string,
+  limit = 20
+): Promise<{ hcp_id: string; raw: Record<string, unknown> }[]> {
+  const result = await sql`
+    SELECT hcp_id, raw
+    FROM jobs
+    WHERE company_id = ${companyId}
+    ORDER BY updated_at DESC
+    LIMIT ${limit}
+  `;
+  return (result.rows ?? []) as { hcp_id: string; raw: Record<string, unknown> }[];
 }
 
 export async function getCallRecordsForCsr(
@@ -654,7 +670,7 @@ export async function getCallRecordsForCsr(
   const start = filters?.startDate ?? "2000-01-01";
   const end = filters?.endDate ?? "2100-12-31";
   const result = await sql`
-    SELECT id, call_date::text, call_time::text, duration_seconds, customer_name, customer_city, transcript, booking_value, customer_phone
+    SELECT id, call_date::text, call_time::text, duration_seconds, customer_name, customer_city, transcript, booking_value, customer_phone, job_hcp_id
     FROM call_records
     WHERE organization_id = ${organizationId}::uuid
       AND hcp_employee_id = ${hcpEmployeeId}

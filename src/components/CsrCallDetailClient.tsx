@@ -13,6 +13,7 @@ interface CallRecord {
   transcript: string | null;
   booking_value: string;
   customer_phone: string | null;
+  job_hcp_id?: string | null;
 }
 
 type DatePreset = "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "all" | "custom";
@@ -193,6 +194,7 @@ export function CsrCallDetailClient({
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">City</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Duration</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Booking</th>
+                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job</th>
               </tr>
             </thead>
             <tbody>
@@ -231,6 +233,15 @@ export function CsrCallDetailClient({
                         {r.booking_value}
                       </span>
                     </td>
+                    <td className="py-2 text-zinc-600 dark:text-zinc-400">
+                      {r.job_hcp_id ? (
+                        <span className="font-mono text-xs" title="Linked to HCP job for revenue tracking">
+                          ✓ {r.job_hcp_id.slice(0, 8)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className="py-2">
                       <button
                         type="button"
@@ -249,7 +260,7 @@ export function CsrCallDetailClient({
                         key={`${r.id}-transcript`}
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
-                        <td colSpan={7} className="bg-zinc-50 py-2 pl-4 dark:bg-zinc-900/50">
+                        <td colSpan={8} className="bg-zinc-50 py-2 pl-4 dark:bg-zinc-900/50">
                           <p className="whitespace-pre-wrap text-xs text-zinc-600 dark:text-zinc-400">
                             {r.transcript}
                           </p>
