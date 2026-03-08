@@ -39,9 +39,18 @@ function getCityFromCustomer(customer: Record<string, unknown>): string | null {
   return null;
 }
 
+function getNameFromCustomer(customer: Record<string, unknown>): string | null {
+  const first = String(customer.first_name ?? customer.firstName ?? "").trim();
+  const last = String(customer.last_name ?? customer.lastName ?? customer.family_name ?? "").trim();
+  if (first || last) return [first, last].filter(Boolean).join(" ").trim() || null;
+  const name = String(customer.name ?? customer.display_name ?? customer.full_name ?? "").trim();
+  return name || null;
+}
+
 export interface JobMatchResult {
   job_hcp_id: string;
   customer_city: string | null;
+  customer_name: string | null;
 }
 
 /**
@@ -67,6 +76,7 @@ export async function matchJobByCustomerPhone(
       return {
         job_hcp_id: hcp_id,
         customer_city: getCityFromCustomer(cust),
+        customer_name: getNameFromCustomer(cust),
       };
     }
   }

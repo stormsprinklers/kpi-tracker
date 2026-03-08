@@ -262,6 +262,21 @@ export async function initSchema(): Promise<void> {
       END IF;
     END $$
   `;
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='call_records' AND column_name='call_key') THEN
+        ALTER TABLE call_records ADD COLUMN call_key TEXT;
+        UPDATE call_records SET call_key = md5(
+          organization_id::text || company_id || call_date::text || COALESCE(call_time::text,'') ||
+          COALESCE(customer_phone,'') || COALESCE(hcp_employee_id,'') || COALESCE(duration_seconds::text,'0') ||
+          COALESCE(LEFT(transcript, 500), '') || id::text
+        ) WHERE call_key IS NULL;
+        ALTER TABLE call_records ALTER COLUMN call_key SET NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_call_records_call_key ON call_records (call_key);
+      END IF;
+    END $$
+  `;
 
   // Webhook logs - raw payload/headers for debugging (GHL, HCP, etc.)
   await sql`
