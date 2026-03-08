@@ -1,13 +1,28 @@
 /**
+ * Stable base URL for webhooks. Uses VERCEL_PROJECT_PRODUCTION_URL so webhook links
+ * don't change on every deploy. Set WEBHOOK_BASE_URL to override (e.g. custom domain).
+ */
+function getWebhookBaseUrl(): string {
+  if (process.env.WEBHOOK_BASE_URL) {
+    return process.env.WEBHOOK_BASE_URL.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return "http://localhost:3000";
+}
+
+/**
  * Build the universal webhook URL for an organization.
- * Use this single URL for Housecall Pro, GoHighLevel, Zapier, Make, or any automation platform.
+ * Uses stable production URL so HCP/GHL config doesn't need updates on each deploy.
  * When VERCEL_AUTOMATION_BYPASS_SECRET is set, appends the bypass query param
  * so webhook requests can pass Vercel Deployment Protection.
  */
 export function getWebhookUrl(organizationId: string): string {
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
+  const baseUrl = getWebhookBaseUrl();
   let url = `${baseUrl}/api/webhooks/${organizationId}`;
   const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   if (bypass) {
@@ -23,12 +38,10 @@ export function getHcpWebhookUrl(organizationId: string): string {
 
 /**
  * Build the GoHighLevel webhook URL for call completion webhooks.
- * Use in GHL workflow (after inbound call complete) to send transcripts and notes.
+ * Uses stable production URL so GHL config doesn't need updates on each deploy.
  */
 export function getGhlWebhookUrl(organizationId: string): string {
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
+  const baseUrl = getWebhookBaseUrl();
   let url = `${baseUrl}/api/webhooks/ghl/${organizationId}`;
   const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   if (bypass) {
