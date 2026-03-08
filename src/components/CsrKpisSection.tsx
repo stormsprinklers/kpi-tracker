@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 interface CsrKpiEntry {
   csrId: string;
@@ -9,6 +10,7 @@ interface CsrKpiEntry {
   bookingRate: number | null;
   avgCallDurationMinutes: number | null;
   leadResponseTimeMinutes: number | null;
+  photoUrl?: string | null;
 }
 
 type DatePreset = "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "all";
@@ -37,10 +39,13 @@ function formatDuration(minutes: number): string {
 }
 
 export function CsrKpisSection() {
+  const { data: session } = useSession();
   const [datePreset, setDatePreset] = useState<DatePreset>("14d");
   const [cards, setCards] = useState<CsrKpiEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -87,7 +92,12 @@ export function CsrKpisSection() {
       const res = await fetch(`/api/metrics/csr-kpis?${params}`);
       if (!res.ok) throw new Error("Failed to load CSR KPIs");
       const data: CsrKpiEntry[] = await res.json();
-      setCards(data);
+      const csrIds = data.map((c) => c.csrId);
+      const photosRes = csrIds.length > 0 ? await fetch(`/api/technicians/photos?ids=${csrIds.join(",")}`) : null;
+      const photosData = photosRes?.ok ? await photosRes.json() : {};
+      const photos: Record<string, string> = photosData.photos ?? {};
+      const merged = data.map((c) => ({ ...c, photoUrl: photos[c.csrId] ?? null }));
+      setCards(merged);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -98,6 +108,30 @@ export function CsrKpisSection() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handlePhotoUpload = async (csrId: string, file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    setUploadingId(csrId);
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch(`/api/technicians/${csrId}/photo`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      await fetchData();
+    } catch {
+      setError("Photo upload failed");
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  const canUploadPhoto = (csrId: string) => {
+    if (!session?.user) return false;
+    return session.user.role === "admin" || (session.user.role === "employee" && session.user.hcpEmployeeId === csrId);
+  };
 
   const dateSelector = (
     <select
@@ -146,11 +180,44 @@ export function CsrKpisSection() {
               className="flex flex-col rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900/50"
             >
               <div className="flex items-center gap-3">
-                <div
-                  className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-zinc-300 text-lg font-semibold text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300"
-                  title={card.csrName}
-                >
-                  {getInitials(card.csrName)}
+                <div className="relative shrink-0">
+                  <div
+                    className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-zinc-300 text-lg font-semibold text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300"
+                    title={card.csrName}
+                  >
+                    {card.photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={card.photoUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      getInitials(card.csrName)
+                    )}
+                  </div>
+                  {canUploadPhoto(card.csrId) && (
+                    <button
+                      type="button"
+                      className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-primary)] text-xs text-white shadow-md transition-colors hover:bg-[var(--color-primary-hover)]"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        fileInputRefs.current[card.csrId]?.click();
+                      }}
+                      aria-label="Upload photo"
+                      disabled={!!uploadingId}
+                    >
+                      {uploadingId === card.csrId ? "..." : "+"}
+                    </button>
+                  )}
+                  <input
+                    ref={(el) => { fileInputRefs.current[card.csrId] = el; }}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handlePhotoUpload(card.csrId, file);
+                      e.target.value = "";
+                    }}
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate font-medium text-zinc-900 dark:text-zinc-50">

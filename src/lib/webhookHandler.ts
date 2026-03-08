@@ -346,7 +346,6 @@ export async function handleWebhookPOST(
   console.log("[WH-DBG] verified path, about to logInboundWebhook", JSON.stringify({ organizationId, event }));
   // #endregion
 
-  const companyId = org.hcp_company_id ?? "default";
   const payloadObj = (payload ?? {}) as Record<string, unknown>;
 
   // Log webhook FIRST (before persist) so we capture it even if persist hangs or times out
