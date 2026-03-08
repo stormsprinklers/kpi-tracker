@@ -39,6 +39,16 @@ function getCityFromCustomer(customer: Record<string, unknown>): string | null {
   return null;
 }
 
+/** Job-level address (service location) often has city when customer doesn't. */
+function getCityFromJobAddress(job: Record<string, unknown>): string | null {
+  const addr = job.address;
+  if (!addr || typeof addr !== "object" || addr === null) return null;
+  const a = addr as Record<string, unknown>;
+  const city = a.city ?? a.locality ?? a.town;
+  if (city != null && String(city).trim()) return String(city).trim();
+  return null;
+}
+
 function getNameFromCustomer(customer: Record<string, unknown>): string | null {
   const first = String(customer.first_name ?? customer.firstName ?? "").trim();
   const last = String(customer.last_name ?? customer.lastName ?? customer.family_name ?? "").trim();
@@ -73,9 +83,10 @@ export async function matchJobByCustomerPhone(
     if (!phone) continue;
     const custNorm = normalizePhone(phone);
     if (custNorm && custNorm === normalized) {
+      const city = getCityFromCustomer(cust) ?? getCityFromJobAddress(raw);
       return {
         job_hcp_id: hcp_id,
-        customer_city: getCityFromCustomer(cust),
+        customer_city: city,
         customer_name: getNameFromCustomer(cust),
       };
     }
