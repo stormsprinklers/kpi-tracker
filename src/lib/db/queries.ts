@@ -647,7 +647,8 @@ export interface CallRecordForCsr {
   job_hcp_id?: string | null;
 }
 
-/** Get recent jobs (from job.appointment.booked / job.scheduled etc.) for phone-to-job matching. */
+/** Get recent jobs (from job.appointment.booked / job.scheduled etc.) for phone-to-job matching.
+ * Uses payload's updated_at (not table column) so full-sync doesn't skew ordering. */
 export async function getRecentJobsForPhoneMatch(
   companyId: string,
   limit = 20
@@ -656,7 +657,7 @@ export async function getRecentJobsForPhoneMatch(
     SELECT hcp_id, raw
     FROM jobs
     WHERE company_id = ${companyId}
-    ORDER BY updated_at DESC
+    ORDER BY (raw->>'updated_at') DESC NULLS LAST, (raw->>'created_at') DESC NULLS LAST
     LIMIT ${limit}
   `;
   return (result.rows ?? []) as { hcp_id: string; raw: Record<string, unknown> }[];
