@@ -7,6 +7,45 @@ import crypto from "crypto";
 import { getOrganizationById, insertWebhookLog } from "@/lib/db/queries";
 import { initSchema } from "@/lib/db";
 import { persistWebhookEvent } from "@/lib/sync/webhookPersist";
+import { persistGhlCallRecord } from "@/lib/ghl/persistCallRecord";
+
+const GHL_KEYS = ["csr", "booking_value", "date", "time", "duration", "transcript", "customer_phone"] as const;
+
+function getGhlValue(request: Request, rawBody: string, key: string): string {
+  const headerKey = key.replace(/_/g, "-");
+  const variants = [headerKey, headerKey.toLowerCase(), `x-${headerKey}`, `x-${headerKey.toLowerCase()}`];
+  for (const v of variants) {
+    const header = request.headers.get(v);
+    if (header != null && header !== "") return header;
+  }
+  try {
+    const parsed = JSON.parse(rawBody || "{}") as Record<string, unknown>;
+    const lower = key.toLowerCase();
+    for (const k of Object.keys(parsed)) {
+      if (k.toLowerCase() === lower) {
+        const val = parsed[k];
+        return val != null ? String(val) : "";
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return "";
+}
+
+function looksLikeGhlCall(request: Request, rawBody: string): boolean {
+  const csr = getGhlValue(request, rawBody, "csr");
+  const booking = getGhlValue(request, rawBody, "booking_value");
+  const hasEvent = (() => {
+    try {
+      const p = JSON.parse(rawBody || "{}") as { event?: string };
+      return typeof p?.event === "string";
+    } catch {
+      return false;
+    }
+  })();
+  return !hasEvent && !!csr.trim() && !!booking.trim();
+}
 
 /** Verify HMAC using api-signature + api-timestamp format (timestamp.body). Tries hex and base64. */
 function verifyHcpSignatureTimestamp(
@@ -150,6 +189,49 @@ export async function handleWebhookPOST(
   if (!org) {
     return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   }
+
+  const companyId = org.hcp_company_id ?? "default";
+  if (looksLikeGhlCall(request, rawBody)) {
+    console.log(`${logPrefix} GHL call detected on main webhook route - persisting to call_records`);
+    try {
+      await initSchema();
+      const headersObj: Record<string, string> = {};
+      request.headers.forEach((v, k) => { headersObj[k] = v; });
+      await insertWebhookLog({
+        organizationId,
+        source: "ghl",
+        rawBody: rawBody || null,
+        headers: headersObj,
+        status: "processed",
+        skipReason: null,
+      });
+      const payload: Record<string, string> = {};
+      for (const key of GHL_KEYS) {
+        payload[key] = getGhlValue(request, rawBody, key);
+      }
+      let rawPayload: Record<string, unknown> = {};
+      try {
+        rawPayload = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {};
+      } catch {
+        rawPayload = { _raw: rawBody };
+      }
+      const fallbackCity = request.headers.get("x-vercel-ip-city") ?? undefined;
+      const result = await persistGhlCallRecord(
+        organizationId,
+        companyId,
+        { csr: payload.csr ?? "", booking_value: payload.booking_value ?? "", date: payload.date ?? "", time: payload.time ?? "", duration: payload.duration ?? "", transcript: payload.transcript ?? "", customer_phone: payload.customer_phone ?? "" },
+        rawPayload,
+        { fallbackCity }
+      );
+      if (result.skipped) {
+        console.log(`${logPrefix} GHL persist skipped:`, result.skipped);
+      }
+    } catch (err) {
+      console.error(`${logPrefix} GHL persist error:`, err);
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const apiSignature = request.headers.get("api-signature");
   const apiTimestamp = request.headers.get("api-timestamp");
   const housecallSignature = request.headers.get("x-housecall-signature");

@@ -83,12 +83,13 @@ export async function persistGhlCallRecord(
 ): Promise<{ ok: boolean; skipped?: string }> {
   const bookingValue = (payload.booking_value ?? "").toString().toLowerCase().trim();
   if (!VALID_BOOKING_VALUES.has(bookingValue)) {
+    console.warn("[GHL] Skipped: booking_value_not_valid", { booking_value: payload.booking_value });
     return { ok: true, skipped: "booking_value_not_valid" };
   }
 
   const callDate = parseDate(payload.date);
   if (!callDate) {
-    console.warn("[GHL] Invalid DATE, skipping:", payload.date);
+    console.warn("[GHL] Skipped: invalid_date", { date: payload.date });
     return { ok: true, skipped: "invalid_date" };
   }
 
@@ -114,6 +115,7 @@ export async function persistGhlCallRecord(
     fallbackCity
   );
 
+  console.log("[GHL] Inserting call_record", { organizationId, call_date: callDate.toISOString().slice(0, 10), csr: payload.csr, booking_value: bookingValue });
   await sql`
     INSERT INTO call_records (
       organization_id,
@@ -150,6 +152,6 @@ export async function persistGhlCallRecord(
       NOW()
     )
   `;
-
+  console.log("[GHL] call_record inserted successfully");
   return { ok: true };
 }
