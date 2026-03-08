@@ -39,17 +39,17 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   }
 
   return (
-    <header className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "#0B1F33", backgroundColor: "#F8FAFC" }}>
+    <header className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-6 py-4 dark:border-zinc-800 dark:bg-black">
       <div className="flex items-center gap-3">
         <img src="/logo.png" alt="Home Services Analytics" className="h-10 w-10 object-contain" />
         <a
           href="/"
           className="block hover:opacity-80 transition-opacity"
         >
-          <h1 className="text-xl font-semibold" style={{ color: "#0B1F33" }}>
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
             {title}
           </h1>
-          <p className="mt-1 text-sm opacity-80" style={{ color: "#0B1F33" }}>
+          <p className="mt-1 text-sm opacity-80 text-zinc-600 dark:text-zinc-400">
             {subtitle}
           </p>
         </a>

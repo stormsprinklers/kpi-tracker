@@ -6,6 +6,7 @@ import { getWebhookUrl } from "@/lib/webhook";
 import { SettingsPageClient } from "./SettingsPageClient";
 import { WebhookUrlCard } from "@/components/WebhookUrlCard";
 import { SyncStatusSection } from "@/components/SyncStatusSection";
+import { NightShiftToggle } from "@/components/NightShiftToggle";
 
 export default async function SettingsPage() {
   const session = await getServerSession(authOptions);
@@ -51,6 +52,8 @@ export default async function SettingsPage() {
             </p>
           )}
         </section>
+
+        <NightShiftToggle />
 
         <WebhookUrlCard webhookUrl={webhookUrl} />
 
