@@ -90,7 +90,7 @@ export async function POST(
       source: "ghl",
       rawBody: rawBody || null,
       headers: headersObj,
-      status: "received",
+      status: "processed",
       skipReason: null,
     });
     // #region agent log

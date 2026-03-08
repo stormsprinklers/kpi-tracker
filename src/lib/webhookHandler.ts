@@ -196,6 +196,7 @@ export async function handleWebhookPOST(
   // Setup/test: no signing headers at all, accept unsigned requests
   if (!apiSignature && !housecallSignature && !bypassSignatureCheck) {
     console.log(`${logPrefix} Unsigned setup/test request accepted for org`, organizationId);
+    await logInboundWebhook(organizationId, rawBody, request, "skipped", "unsigned_setup");
     return NextResponse.json({ ok: true, setup: true });
   }
 
@@ -259,12 +260,15 @@ export async function handleWebhookPOST(
 
   const event = (payload as { event?: string })?.event;
   console.log(`${logPrefix} Verified event:`, event ?? payload, "org:", organizationId);
+  // #region agent log
+  console.log("[WH-DBG] verified path, about to logInboundWebhook", JSON.stringify({ organizationId, event }));
+  // #endregion
 
   const companyId = org.hcp_company_id ?? "default";
   const payloadObj = (payload ?? {}) as Record<string, unknown>;
 
   // Log webhook FIRST (before persist) so we capture it even if persist hangs or times out
-  await logInboundWebhook(organizationId, rawBody, request, "received");
+  await logInboundWebhook(organizationId, rawBody, request, "processed");
 
   try {
     await persistWebhookEvent(event ?? "unknown", payloadObj, organizationId, companyId);
