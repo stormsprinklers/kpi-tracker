@@ -325,10 +325,17 @@ export async function getOrganizationsCount(): Promise<number> {
 
 export async function getOrganizationById(id: string) {
   const result = await sql`
-    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, created_at, updated_at
+    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, created_at, updated_at
     FROM organizations WHERE id = ${id}
   `;
-  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; created_at: string; updated_at: string } | undefined;
+  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; logo_url: string | null; created_at: string; updated_at: string } | undefined;
+}
+
+export async function upsertOrganizationLogo(organizationId: string, logoUrl: string): Promise<void> {
+  await sql`
+    UPDATE organizations SET logo_url = ${logoUrl}, updated_at = NOW()
+    WHERE id = ${organizationId}::uuid
+  `;
 }
 
 export async function getOrganizationsWithTokens() {
@@ -380,7 +387,7 @@ export async function updateOrganizationSettings(
 
 export async function getUserByEmail(email: string) {
   const result = await sql`
-    SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id
+    SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id, o.logo_url as org_logo_url
     FROM users u
     JOIN organizations o ON o.id = u.organization_id
     WHERE LOWER(u.email) = LOWER(${email})
@@ -394,6 +401,7 @@ export async function getUserByEmail(email: string) {
     hcp_employee_id: string | null;
     org_name: string;
     hcp_company_id: string | null;
+    org_logo_url: string | null;
   } | undefined;
 }
 

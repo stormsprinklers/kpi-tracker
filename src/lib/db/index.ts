@@ -175,6 +175,14 @@ export async function initSchema(): Promise<void> {
       NULL;
     END $$
   `;
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='logo_url') THEN
+        ALTER TABLE organizations ADD COLUMN logo_url TEXT;
+      END IF;
+    END $$
+  `;
 
   // Time entries (timesheets) - employee time tracking, scoped by hcp_employee_id
   await sql`

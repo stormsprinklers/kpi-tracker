@@ -2,6 +2,8 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { NavDropdown } from "./NavDropdown";
 
 interface AppHeaderProps {
   title?: string;
@@ -9,9 +11,38 @@ interface AppHeaderProps {
   extra?: React.ReactNode;
 }
 
+const navLinkClass =
+  "rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800";
+
 export function AppHeader({ title = "Home Services Analytics", subtitle = "Analytics and insights for home services", extra }: AppHeaderProps) {
   const { data: session } = useSession();
   const pathname = usePathname();
+  const [logoUrl, setLogoUrl] = useState<string | null>(session?.user?.organizationLogoUrl ?? null);
+
+  function fetchLogo() {
+    if (!session?.user?.organizationId) return;
+    fetch("/api/organizations/logo")
+      .then((r) => r.json())
+      .then((d: { logoUrl?: string | null }) => setLogoUrl(d.logoUrl ?? null))
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    if (session?.user?.organizationLogoUrl) {
+      setLogoUrl(session.user.organizationLogoUrl);
+    } else if (session?.user?.organizationId) {
+      fetchLogo();
+    }
+  }, [session?.user?.organizationId, session?.user?.organizationLogoUrl]);
+
+  useEffect(() => {
+    function onLogoUpdated(e: CustomEvent<{ logoUrl?: string | null }>) {
+      setLogoUrl(e.detail?.logoUrl ?? null);
+    }
+    window.addEventListener("logoUpdated", onLogoUpdated as EventListener);
+    return () => window.removeEventListener("logoUpdated", onLogoUpdated as EventListener);
+  }, []);
+
   if (pathname === "/login" || pathname === "/setup") return null;
 
   const isLanding = pathname === "/" && !session?.user;
@@ -38,90 +69,86 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
     );
   }
 
+  const isAdmin = session?.user?.role === "admin";
+  const isInvestor = session?.user?.role === "investor";
+  const isEmployee = session?.user?.role === "employee";
+  const hasHcpEmployeeId = !!session?.user?.hcpEmployeeId;
+  const companyName = session?.user?.organizationName ?? "Company";
+
+  const insightsItems = [
+    { label: "Calls", href: "/call-insights" },
+    { label: "Time", href: "/time-insights" },
+    { label: "Profit", href: "/insights/profit" },
+    { label: "Marketing", href: "/insights/marketing" },
+  ];
+
+  const teamItems = [];
+  if (!isInvestor) {
+    if (isAdmin || hasHcpEmployeeId) teamItems.push({ label: "Timesheets", href: "/timesheets" });
+    if (isAdmin) {
+      teamItems.push({ label: "Performance Pay", href: "/team/performance-pay" });
+      teamItems.push({ label: "Users", href: "/team/users" });
+    }
+  }
+
+  const companyItems = [];
+  if (isAdmin) {
+    companyItems.push({ label: "Settings", href: "/settings" });
+    companyItems.push({ label: "Billing", href: "/billing" });
+  }
+  if (!isInvestor) {
+    companyItems.push({ label: "Developer Console", href: "/debug" });
+  }
+
   return (
     <header className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-6 py-4 dark:border-zinc-800 dark:bg-black">
       <div className="flex items-center gap-3">
         <img src="/logo.png" alt="Home Services Analytics" className="h-10 w-10 object-contain" />
-        <a
-          href="/"
-          className="block hover:opacity-80 transition-opacity"
-        >
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-            {title}
-          </h1>
-          <p className="mt-1 text-sm opacity-80 text-zinc-600 dark:text-zinc-400">
-            {subtitle}
-          </p>
+        <a href="/" className="block hover:opacity-80 transition-opacity">
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">{title}</h1>
+          <p className="mt-1 text-sm opacity-80 text-zinc-600 dark:text-zinc-400">{subtitle}</p>
         </a>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         {extra}
         {session?.user && (
           <>
-            <span className="text-sm text-zinc-600 dark:text-zinc-400">
-              {session.user.email}
-            </span>
+            <a href="/" className={navLinkClass}>Dashboard</a>
+            <NavDropdown label="Insights" items={insightsItems} navLinkClass={navLinkClass} />
+            {teamItems.length > 0 && (
+              <NavDropdown label="Team" items={teamItems} navLinkClass={navLinkClass} />
+            )}
+            {companyItems.length > 0 && (
+              <NavDropdown
+                label={
+                  <span className="flex items-center gap-2">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
+                    ) : (
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
+                        {companyName.slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                    {companyName}
+                  </span>
+                }
+                items={companyItems}
+                navLinkClass={navLinkClass}
+              />
+            )}
             <span
               className={`rounded px-2 py-0.5 text-xs ${
-                session.user.role === "admin"
-                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                  : session.user.role === "investor"
-                    ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
-                    : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                isAdmin ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" :
+                isInvestor ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400" :
+                "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
               }`}
             >
               {session.user.role}
             </span>
-            <a
-              href="/"
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              Dashboard
-            </a>
-            {session.user.role === "admin" && (
-              <a
-                href="/settings"
-                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Settings
-              </a>
-            )}
-            {(session.user.role === "admin" || session.user.hcpEmployeeId) && (
-              <a
-                href="/timesheets"
-                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Timesheets
-              </a>
-            )}
-            {(session.user.role === "admin" || session.user.role === "investor" || session.user.hcpEmployeeId) && (
-              <a
-                href="/time-insights"
-                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Time Insights
-              </a>
-            )}
-            {(session.user.role === "admin" || session.user.role === "investor" || session.user.hcpEmployeeId) && (
-              <a
-                href="/call-insights"
-                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Call Insights
-              </a>
-            )}
-            {session.user.role !== "investor" && (
-              <a
-                href="/debug"
-                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Developer Console
-              </a>
-            )}
             <button
               type="button"
               onClick={() => signOut({ callbackUrl: "/login" })}
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className={navLinkClass}
             >
               Log out
             </button>

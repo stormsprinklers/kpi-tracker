@@ -2,7 +2,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const protectedPaths = ["/debug", "/settings", "/timesheets", "/time-insights", "/call-insights"];
+const protectedPaths = [
+  "/debug",
+  "/settings",
+  "/timesheets",
+  "/time-insights",
+  "/call-insights",
+  "/billing",
+  "/team",
+  "/insights",
+];
 const authPaths = ["/login", "/setup"];
 
 export async function middleware(request: NextRequest) {
@@ -49,8 +58,14 @@ export async function middleware(request: NextRequest) {
       loginUrl.searchParams.set("callbackUrl", pathname);
       return NextResponse.redirect(loginUrl);
     }
-    // Investor: read-only access; block Settings, Developer Console, Timesheets
-    const investorBlockedPaths = ["/settings", "/debug", "/timesheets"];
+    // Investor: read-only access; block Settings, Developer Console, Timesheets, Team, Billing
+    const investorBlockedPaths = [
+      "/settings",
+      "/debug",
+      "/timesheets",
+      "/team",
+      "/billing",
+    ];
     if (
       token.role === "investor" &&
       investorBlockedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
