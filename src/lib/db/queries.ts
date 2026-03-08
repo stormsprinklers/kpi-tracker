@@ -621,6 +621,19 @@ export async function getWebhookLogs(organizationId: string, limit = 50): Promis
   return rows;
 }
 
+export async function getWebhookLogById(
+  organizationId: string,
+  id: string
+): Promise<WebhookLog | null> {
+  const result = await sql`
+    SELECT id, organization_id, source, raw_body, headers, status, skip_reason, created_at
+    FROM webhook_logs
+    WHERE organization_id = ${organizationId}::uuid AND id = ${id}::uuid
+  `;
+  const row = (result.rows ?? [])[0] as WebhookLog | undefined;
+  return row ?? null;
+}
+
 export interface CallRecordForCsr {
   id: string;
   call_date: string;

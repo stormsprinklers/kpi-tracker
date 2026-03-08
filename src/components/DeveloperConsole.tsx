@@ -43,6 +43,9 @@ export function DeveloperConsole() {
   const [webhookLogsError, setWebhookLogsError] = useState<string | null>(null);
   const [webhookOrgId, setWebhookOrgId] = useState<string | null>(null);
   const [selectedWebhookLog, setSelectedWebhookLog] = useState<WebhookLogEntry | null>(null);
+  const [selectedWebhookIds, setSelectedWebhookIds] = useState<Set<string>>(new Set());
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ results: Array<{ webhookLogId: string; synced: boolean; skipped?: string; error?: string }> } | null>(null);
 
   async function fetchEndpoint(path: string) {
     const start = performance.now();
@@ -131,6 +134,52 @@ export function DeveloperConsole() {
     navigator.clipboard.writeText(JSON.stringify(obj, null, 2));
   }
 
+  function toggleWebhookSelection(id: string) {
+    setSelectedWebhookIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllWebhooks() {
+    setSelectedWebhookIds(new Set(webhookLogs.map((e) => e.id)));
+  }
+
+  function clearWebhookSelection() {
+    setSelectedWebhookIds(new Set());
+    setSyncResult(null);
+  }
+
+  async function syncToCallRecords() {
+    const ids = selectedWebhookIds.size > 0
+      ? Array.from(selectedWebhookIds)
+      : selectedWebhookLog
+        ? [selectedWebhookLog.id]
+        : [];
+    if (ids.length === 0) return;
+    setSyncLoading(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/debug/sync-webhook-to-call-records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhookLogIds: ids }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Failed (${res.status})`);
+      setSyncResult({ results: data.results ?? [] });
+    } catch (err) {
+      setSyncResult({
+        results: [{ webhookLogId: "", synced: false, error: err instanceof Error ? err.message : String(err) }],
+      });
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
@@ -161,7 +210,7 @@ export function DeveloperConsole() {
           Webhook Logs
         </h3>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          Raw payload and headers of incoming webhooks (GHL and HCP). Includes skipped/rejected requests. Use to debug booking_value_not_valid, signature failures, etc.
+          Raw payload and headers of incoming webhooks (GHL and HCP). Includes skipped/rejected requests. Select logs and click &quot;Sync to call_records&quot; to re-post GHL call webhooks to Postgres (avoids fake calls for testing).
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
@@ -176,6 +225,32 @@ export function DeveloperConsole() {
             <span className="text-xs text-zinc-500 dark:text-zinc-400">
               Org: {webhookOrgId} — ensure your GHL URL uses this ID
             </span>
+          )}
+          {webhookLogs.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={selectAllWebhooks}
+                className="rounded border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={clearWebhookSelection}
+                className="rounded border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={syncToCallRecords}
+                disabled={syncLoading || (selectedWebhookIds.size === 0 && !selectedWebhookLog)}
+                className="rounded border border-emerald-600 bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600"
+              >
+                {syncLoading ? "Syncing…" : `Sync to call_records${selectedWebhookIds.size > 0 ? ` (${selectedWebhookIds.size})` : selectedWebhookLog ? " (1)" : ""}`}
+              </button>
+            </>
           )}
         </div>
         {webhookLogsError && (
@@ -192,11 +267,19 @@ export function DeveloperConsole() {
           <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <ul className="max-h-64 space-y-1 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/50">
               {webhookLogs.map((entry) => (
-                <li key={entry.id}>
+                <li key={entry.id} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedWebhookIds.has(entry.id)}
+                    onChange={() => toggleWebhookSelection(entry.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-1.5 shrink-0 rounded border-zinc-300"
+                    aria-label={`Select ${entry.source} ${entry.created_at}`}
+                  />
                   <button
                     type="button"
                     onClick={() => setSelectedWebhookLog(entry)}
-                    className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700 ${
+                    className={`flex flex-1 flex-col gap-0.5 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700 ${
                       selectedWebhookLog?.id === entry.id
                         ? "bg-zinc-200 dark:bg-zinc-700"
                         : ""
@@ -221,7 +304,30 @@ export function DeveloperConsole() {
                 </li>
               ))}
             </ul>
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-2 space-y-3">
+              {syncResult && (
+                <div className="rounded border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/50">
+                  <div className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Sync result</div>
+                  <ul className="space-y-1 text-sm">
+                    {syncResult.results.map((r, i) => (
+                      <li key={i} className="flex gap-2">
+                        {r.synced ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">✓ Synced</span>
+                        ) : r.skipped ? (
+                          <span className="text-amber-600 dark:text-amber-400">Skipped: {r.skipped}</span>
+                        ) : r.error ? (
+                          <span className="text-red-600 dark:text-red-400">Error: {r.error}</span>
+                        ) : (
+                          <span className="text-zinc-500 dark:text-zinc-400">—</span>
+                        )}
+                        {r.webhookLogId && (
+                          <span className="font-mono text-xs text-zinc-400">{r.webhookLogId.slice(0, 8)}…</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {selectedWebhookLog && (
                 <div className="space-y-2 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
                   <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
