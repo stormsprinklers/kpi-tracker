@@ -32,10 +32,12 @@ export interface CustomerMatchResult {
 
 /**
  * Match customer phone from GHL to HCP customers.
+ * When no match, uses fallbackCity for customer_city if provided (e.g. x-vercel-ip-city).
  */
 export async function matchCustomerByPhone(
   companyId: string,
-  customerPhone: string
+  customerPhone: string,
+  fallbackCity?: string | null
 ): Promise<CustomerMatchResult> {
   const normalized = normalizePhone(customerPhone);
   if (!normalized) {
@@ -64,5 +66,6 @@ export async function matchCustomerByPhone(
     }
   }
 
-  return { customer_hcp_id: null, customer_name: null, customer_city: null };
+  const city = fallbackCity?.trim() || null;
+  return { customer_hcp_id: null, customer_name: null, customer_city: city };
 }

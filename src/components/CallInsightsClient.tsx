@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 interface EmployeeCallStats {
   hcpEmployeeId: string | null;
@@ -210,7 +211,16 @@ export function CallInsightsClient() {
                     className="border-b border-zinc-100 dark:border-zinc-800"
                   >
                     <td className="py-2 text-zinc-900 dark:text-zinc-50">
-                      {row.employeeName}
+                      {row.hcpEmployeeId ? (
+                        <Link
+                          href={`/call-insights/csr/${row.hcpEmployeeId}`}
+                          className="font-medium hover:underline"
+                        >
+                          {row.employeeName}
+                        </Link>
+                      ) : (
+                        row.employeeName
+                      )}
                     </td>
                     <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
                       {row.totalOpportunityCalls}

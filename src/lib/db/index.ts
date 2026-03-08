@@ -270,4 +270,12 @@ export async function initSchema(): Promise<void> {
     ON webhook_logs (organization_id, created_at DESC)
   `;
 
+  // CSR selections - admin picks which employees appear in CSR KPIs / Call Insights
+  await sql`
+    CREATE TABLE IF NOT EXISTS csr_selections (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      hcp_employee_id TEXT NOT NULL,
+      PRIMARY KEY (organization_id, hcp_employee_id)
+    )
+  `;
 }

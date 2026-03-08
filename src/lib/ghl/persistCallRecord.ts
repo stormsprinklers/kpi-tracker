@@ -17,6 +17,10 @@ export interface GhlCallPayload {
 function parseDate(s: string): Date | null {
   if (!s || typeof s !== "string") return null;
   const trimmed = s.trim();
+  // Try HTTP date / ISO 8601 first (e.g. "Sun, 08 Mar 2026 16:06:44 GMT")
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+  // Fallback: MM/DD/YYYY or similar
   const parts = trimmed.split(/[\/\-\.]/);
   if (parts.length !== 3) return null;
   const [a, b, c] = parts.map((p) => parseInt(p, 10));
@@ -74,7 +78,8 @@ export async function persistGhlCallRecord(
   organizationId: string,
   companyId: string,
   payload: GhlCallPayload,
-  rawPayload: Record<string, unknown>
+  rawPayload: Record<string, unknown>,
+  options?: { fallbackCity?: string | null }
 ): Promise<{ ok: boolean; skipped?: string }> {
   const bookingValue = (payload.booking_value ?? "").toString().toLowerCase().trim();
   if (!VALID_BOOKING_VALUES.has(bookingValue)) {
@@ -95,9 +100,18 @@ export async function persistGhlCallRecord(
     (payload.csr ?? "").toString().trim()
   );
 
+  let fallbackCity: string | undefined;
+  if (options?.fallbackCity) {
+    try {
+      fallbackCity = decodeURIComponent(String(options.fallbackCity).replace(/\+/g, " "));
+    } catch {
+      fallbackCity = String(options.fallbackCity).replace(/\+/g, " ");
+    }
+  }
   const { customer_hcp_id, customer_name, customer_city } = await matchCustomerByPhone(
     companyId,
-    (payload.customer_phone ?? "").toString()
+    (payload.customer_phone ?? "").toString(),
+    fallbackCity
   );
 
   await sql`

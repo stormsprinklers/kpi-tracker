@@ -95,6 +95,17 @@ export async function persistWebhookEvent(
             raw = EXCLUDED.raw,
             updated_at = NOW()
         `;
+        if (jobRecord.customer && typeof jobRecord.customer === "object" && jobRecord.customer !== null) {
+          const cust = jobRecord.customer as Record<string, unknown>;
+          const custId = extractId(cust);
+          if (custId) {
+            await sql`
+              INSERT INTO customers (hcp_id, company_id, raw, updated_at)
+              VALUES (${custId}, ${companyId}, ${JSON.stringify(cust)}::jsonb, NOW())
+              ON CONFLICT (hcp_id, company_id) DO UPDATE SET raw = EXCLUDED.raw, updated_at = NOW()
+            `;
+          }
+        }
       }
     } catch (persistErr) {
       console.warn("[Webhook] job.appointment.scheduled persist failed:", persistErr);
@@ -117,6 +128,17 @@ export async function persistWebhookEvent(
         raw = EXCLUDED.raw,
         updated_at = NOW()
     `;
+    if (record.customer && typeof record.customer === "object" && record.customer !== null) {
+      const cust = record.customer as Record<string, unknown>;
+      const custId = extractId(cust);
+      if (custId) {
+        await sql`
+          INSERT INTO customers (hcp_id, company_id, raw, updated_at)
+          VALUES (${custId}, ${companyId}, ${JSON.stringify(cust)}::jsonb, NOW())
+          ON CONFLICT (hcp_id, company_id) DO UPDATE SET raw = EXCLUDED.raw, updated_at = NOW()
+        `;
+      }
+    }
   } else if (event.startsWith("customer.")) {
     const record = (data.customer ?? data.data ?? data) as Record<string, unknown>;
     const hcpId = extractId(record);

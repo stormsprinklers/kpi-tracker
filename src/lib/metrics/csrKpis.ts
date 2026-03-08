@@ -1,5 +1,5 @@
 import { getHcpClient } from "../housecallpro";
-import { getOrganizationById } from "../db/queries";
+import { getOrganizationById, getCsrSelections, getEmployeesAndProsForCsrSelector } from "../db/queries";
 import { sql } from "@vercel/postgres";
 
 export interface CsrKpiEntry {
@@ -34,9 +34,8 @@ export interface CsrKpiFilters {
 }
 
 /**
- * Get office staff (CSR) list for the organization with KPIs from call_records.
- * Office staff are employees/pros with role "office staff" etc. in Housecall Pro.
- * Booking rate and avg call duration come from GoHighLevel call webhooks.
+ * Get CSR list for the organization with KPIs from call_records.
+ * Uses admin-selected csr_selections when non-empty; else office staff role.
  */
 export async function getCsrKpiList(
   organizationId: string,
@@ -45,10 +44,18 @@ export async function getCsrKpiList(
   const org = await getOrganizationById(organizationId);
   const companyId = org?.hcp_company_id ?? "default";
 
-  const csrList: { id: string; name: string }[] = [];
+  const selections = await getCsrSelections(organizationId);
+  let csrList: { id: string; name: string }[] = [];
 
-  // Get employees with hcp_id and raw for role check
-  const empResult = await sql`
+  if (selections.length > 0) {
+    const candidates = await getEmployeesAndProsForCsrSelector(companyId);
+    const selectionSet = new Set(selections);
+    csrList = candidates.filter((c) => selectionSet.has(c.id));
+  }
+
+  if (csrList.length === 0) {
+    // Fallback: office staff role
+    const empResult = await sql`
     SELECT hcp_id, raw FROM employees
     WHERE company_id = ${companyId}
   `;
@@ -108,8 +115,8 @@ export async function getCsrKpiList(
       /* skip - return empty or what we have */
     }
   }
+  }
 
-  // Sort by name
   csrList.sort((a, b) => a.name.localeCompare(b.name));
 
   const officeStaffIds = new Set(csrList.map((c) => c.id));

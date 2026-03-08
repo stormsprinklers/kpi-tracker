@@ -249,6 +249,74 @@ export async function upsertTechnicianPhoto(
   `;
 }
 
+// CSR selections - admin picks which employees appear in CSR KPIs / Call Insights
+export async function getCsrSelections(organizationId: string): Promise<string[]> {
+  const result = await sql`
+    SELECT hcp_employee_id FROM csr_selections
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+  return (result.rows ?? []).map((r) => (r as { hcp_employee_id: string }).hcp_employee_id);
+}
+
+export async function setCsrSelections(
+  organizationId: string,
+  hcpEmployeeIds: string[]
+): Promise<void> {
+  await sql`DELETE FROM csr_selections WHERE organization_id = ${organizationId}::uuid`;
+  for (const id of hcpEmployeeIds) {
+    if (!id || typeof id !== "string") continue;
+    await sql`
+      INSERT INTO csr_selections (organization_id, hcp_employee_id)
+      VALUES (${organizationId}::uuid, ${id.trim()})
+    `;
+  }
+}
+
+/** Returns { id, name } for employees + pros, for CSR selector. */
+export async function getEmployeesAndProsForCsrSelector(
+  companyId: string
+): Promise<{ id: string; name: string }[]> {
+  const seen = new Set<string>();
+  const list: { id: string; name: string }[] = [];
+
+  const empResult = await sql`
+    SELECT hcp_id, raw FROM employees
+    WHERE company_id = ${companyId}
+    ORDER BY COALESCE(raw->>'first_name', raw->>'last_name', raw->>'email', '') ASC
+  `;
+  for (const row of empResult.rows ?? []) {
+    const r = row as { hcp_id: string; raw: Record<string, unknown> };
+    if (seen.has(r.hcp_id)) continue;
+    seen.add(r.hcp_id);
+    const raw = r.raw ?? {};
+    const first = String(raw.first_name ?? raw.firstName ?? "").trim();
+    const last = String(raw.last_name ?? raw.lastName ?? "").trim();
+    const name = [first, last].filter(Boolean).join(" ").trim()
+      || String(raw.email ?? raw.email_address ?? r.hcp_id ?? "Unknown");
+    list.push({ id: r.hcp_id, name });
+  }
+
+  const prosResult = await sql`
+    SELECT hcp_id, raw FROM pros
+    WHERE company_id = ${companyId}
+    ORDER BY COALESCE(raw->>'first_name', raw->>'last_name', raw->>'email', '') ASC
+  `;
+  for (const row of prosResult.rows ?? []) {
+    const r = row as { hcp_id: string; raw: Record<string, unknown> };
+    if (seen.has(r.hcp_id)) continue;
+    seen.add(r.hcp_id);
+    const raw = r.raw ?? {};
+    const first = String(raw.first_name ?? raw.firstName ?? "").trim();
+    const last = String(raw.last_name ?? raw.lastName ?? "").trim();
+    const name = [first, last].filter(Boolean).join(" ").trim()
+      || String(raw.email ?? raw.email_address ?? r.hcp_id ?? "Unknown");
+    list.push({ id: r.hcp_id, name });
+  }
+
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  return list;
+}
+
 // Auth queries
 export async function getOrganizationsCount(): Promise<number> {
   const result = await sql`SELECT COUNT(*)::int as count FROM organizations`;
@@ -551,4 +619,35 @@ export async function getWebhookLogs(organizationId: string, limit = 50): Promis
   console.log("[WH-DBG] H3 getWebhookLogs result", JSON.stringify({ hypothesisId: "H3", organizationId, rowCount: rows.length, firstId: rows[0]?.id }));
   // #endregion
   return rows;
+}
+
+export interface CallRecordForCsr {
+  id: string;
+  call_date: string;
+  call_time: string | null;
+  duration_seconds: number | null;
+  customer_name: string | null;
+  customer_city: string | null;
+  transcript: string | null;
+  booking_value: string;
+  customer_phone: string | null;
+}
+
+export async function getCallRecordsForCsr(
+  organizationId: string,
+  hcpEmployeeId: string,
+  filters?: { startDate?: string; endDate?: string }
+): Promise<CallRecordForCsr[]> {
+  const start = filters?.startDate ?? "2000-01-01";
+  const end = filters?.endDate ?? "2100-12-31";
+  const result = await sql`
+    SELECT id, call_date::text, call_time::text, duration_seconds, customer_name, customer_city, transcript, booking_value, customer_phone
+    FROM call_records
+    WHERE organization_id = ${organizationId}::uuid
+      AND hcp_employee_id = ${hcpEmployeeId}
+      AND call_date >= ${start}
+      AND call_date <= ${end}
+    ORDER BY call_date DESC, call_time DESC NULLS LAST
+  `;
+  return (result.rows ?? []) as CallRecordForCsr[];
 }

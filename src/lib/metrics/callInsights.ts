@@ -1,5 +1,5 @@
 import { sql } from "@vercel/postgres";
-import { getOrganizationById } from "../db/queries";
+import { getOrganizationById, getCsrSelections } from "../db/queries";
 
 export interface CallInsightsFilters {
   startDate?: string;
@@ -108,6 +108,16 @@ export async function getCallInsights(
   }
 
   byEmployee.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+
+  // Filter to CSR list when admin has selections
+  const selections = await getCsrSelections(organizationId);
+  if (selections.length > 0) {
+    const selectionSet = new Set(selections);
+    const filtered = byEmployee.filter(
+      (e) => e.hcpEmployeeId && selectionSet.has(e.hcpEmployeeId)
+    );
+    return { byEmployee: filtered };
+  }
 
   return { byEmployee };
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 interface CsrKpiEntry {
   csrId: string;
@@ -139,8 +140,9 @@ export function CsrKpisSection() {
       {!loading && !error && cards.length > 0 && (
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {cards.map((card) => (
-            <div
+            <Link
               key={card.csrId}
+              href={`/call-insights/csr/${card.csrId}`}
               className="flex flex-col rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900/50"
             >
               <div className="flex items-center gap-3">
@@ -180,7 +182,7 @@ export function CsrKpisSection() {
                   </dd>
                 </div>
               </dl>
-            </div>
+            </Link>
           ))}
         </div>
       )}
