@@ -8,17 +8,23 @@ import { persistGhlCallRecord } from "./persistCallRecord";
 const GHL_KEYS = ["csr", "booking_value", "date", "time", "duration", "transcript", "customer_phone"] as const;
 
 function getHeader(headers: Record<string, string>, key: string): string {
-  const headerKey = key.replace(/_/g, "-");
-  const lower = key.toLowerCase();
+  // GHL sends call data in headers: csr, booking_value, date, time, duration, transcript, customer_phone
   const variants = [
-    headerKey,
-    headerKey.toLowerCase(),
-    `x-${headerKey}`,
-    `x-${headerKey.toLowerCase()}`,
+    key,
+    key.replace(/_/g, "-"),
+    `x-${key}`,
+    `x-${key.replace(/_/g, "-")}`,
   ];
+  const seen = new Set<string>();
   for (const v of variants) {
+    const vLo = v.toLowerCase();
+    if (seen.has(vLo)) continue;
+    seen.add(vLo);
     for (const [k, val] of Object.entries(headers)) {
-      if (k.toLowerCase() === v.toLowerCase() && val != null && val !== "") return val;
+      const kLo = k.toLowerCase();
+      const kNorm = kLo.replace(/-/g, "_");
+      const vNorm = vLo.replace(/-/g, "_");
+      if ((kLo === vLo || kNorm === vNorm) && val != null && val !== "") return val;
     }
   }
   return "";
@@ -135,13 +141,15 @@ export async function syncWebhookLogToCallRecords(
     (rawPayload as Record<string, unknown>)._raw = log.raw_body;
   }
 
+  const fallbackCity = getHeader(log.headers ?? {}, "x-vercel-ip-city") || undefined;
+
   try {
     const result = await persistGhlCallRecord(
       log.organization_id,
       companyId,
       payload,
       rawPayload,
-      {} // No fallback city from stored logs
+      { fallbackCity }
     );
     return {
       ok: true,
