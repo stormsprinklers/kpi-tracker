@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface ActivityFeedEvent {
   type: "job_completed" | "csr_booking";
@@ -39,16 +39,43 @@ export function ActivityFeed({ connected }: { connected: boolean }) {
   const [events, setEvents] = useState<ActivityFeedEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!connected) {
-      setLoading(false);
-      return;
-    }
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchFeed = () => {
     fetch("/api/activity-feed")
       .then((res) => res.json())
       .then((data) => setEvents(Array.isArray(data) ? data : []))
       .catch(() => setEvents([]))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (!connected) {
+      setLoading(false);
+      return;
+    }
+    fetchFeed();
+
+    pollRef.current = setInterval(fetchFeed, 60_000);
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      } else {
+        fetchFeed();
+        pollRef.current = setInterval(fetchFeed, 60_000);
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [connected]);
 
   if (!connected) return null;
@@ -76,10 +103,10 @@ export function ActivityFeed({ connected }: { connected: boolean }) {
         </p>
       ) : (
         <ul className="mt-4 space-y-2">
-          {events.map((e, i) => (
+          {events.map((e) => (
             <li
-              key={i}
-              className="flex items-start justify-between gap-2 rounded border border-zinc-100 p-3 text-sm dark:border-zinc-800"
+              key={`${e.type}-${e.timestamp}`}
+              className="flex items-start justify-between gap-2 rounded border border-zinc-100 p-3 text-sm animate-activity-fade-in dark:border-zinc-800"
             >
               <span className="text-zinc-900 dark:text-zinc-50">
                 {e.type === "job_completed" ? (
