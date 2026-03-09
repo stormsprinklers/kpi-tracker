@@ -46,16 +46,27 @@ export default {
       if (existing?.organization_id) return true;
       return "/signup";
     },
-    async session({ session, user }) {
-      if (session.user) {
+    async jwt({ token, user, account }) {
+      if (user) {
         const u = user as { id: string; role?: string; organization_id?: string; organizationId?: string; organizationName?: string; organizationLogoUrl?: string | null; hcp_employee_id?: string | null; hcpEmployeeId?: string | null };
-        const orgId = u.organization_id ?? u.organizationId ?? "";
-        session.user.id = u.id;
-        session.user.role = u.role ?? "employee";
-        session.user.organizationId = orgId;
-        session.user.organizationName = u.organizationName;
-        session.user.organizationLogoUrl = u.organizationLogoUrl ?? null;
-        session.user.hcpEmployeeId = u.hcp_employee_id ?? u.hcpEmployeeId ?? null;
+        token.id = u.id;
+        token.role = u.role ?? "employee";
+        token.organizationId = u.organization_id ?? u.organizationId ?? "";
+        token.organizationName = u.organizationName;
+        token.organizationLogoUrl = u.organizationLogoUrl ?? null;
+        token.hcpEmployeeId = u.hcp_employee_id ?? u.hcpEmployeeId ?? null;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.role = (token.role as string) ?? "employee";
+        session.user.organizationId = (token.organizationId as string) ?? "";
+        session.user.organizationName = token.organizationName as string | undefined;
+        session.user.organizationLogoUrl = (token.organizationLogoUrl as string | null) ?? null;
+        session.user.hcpEmployeeId = (token.hcpEmployeeId as string | null) ?? null;
+        const orgId = session.user.organizationId;
         if (orgId) {
           const org = await getOrganizationById(orgId);
           if (org) {

@@ -9,6 +9,6 @@ const pool = new Pool({
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   adapter: NeonAdapter(pool),
-  session: { strategy: "database", maxAge: 30 * 24 * 60 * 60 },
+  session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   ...authConfig,
 });
