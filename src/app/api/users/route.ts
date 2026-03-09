@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hash } from "bcryptjs";
-import { getUsersByOrganizationId, createUser, getOrganizationById, getEmployeeHcpIdByEmail } from "@/lib/db/queries";
+import {
+  getUsersByOrganizationId,
+  createUser,
+  getOrganizationById,
+  getEmployeeHcpIdByEmail,
+  getUserPermissions,
+} from "@/lib/db/queries";
 
 export async function GET() {
   const session = await auth();
@@ -13,7 +19,13 @@ export async function GET() {
   }
 
   const users = await getUsersByOrganizationId(session.user.organizationId);
-  return NextResponse.json(users);
+  const withPerms = await Promise.all(
+    users.map(async (u) => ({
+      ...u,
+      permissions: await getUserPermissions(u.id),
+    }))
+  );
+  return NextResponse.json(withPerms);
 }
 
 export async function POST(request: Request) {

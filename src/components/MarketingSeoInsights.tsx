@@ -8,6 +8,8 @@ interface SeoData {
   configured: boolean;
   message?: string;
   error?: string;
+  cachedAt?: string;
+  fromCache?: boolean;
   locations?: { value: string; name: string }[];
   serviceAreas?: { id: string; name: string; locationCount: number }[];
   organic?: Array<{
@@ -62,7 +64,8 @@ export function MarketingSeoInsights() {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const res = await fetch("/api/marketing/seo");
+      const url = isRefresh ? "/api/marketing/seo?force_refresh=1" : "/api/marketing/seo";
+      const res = await fetch(url);
       const json = (await res.json()) as SeoData;
       setData(json);
     } catch {
@@ -174,6 +177,12 @@ export function MarketingSeoInsights() {
       </div>
       <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
         Google Organic, Local Finder (GBP), and AI Mode rankings via DataForSEO.
+        {data.cachedAt && (
+          <span className="ml-1">
+            Data as of {new Date(data.cachedAt).toLocaleDateString()}.
+            {data.fromCache && " Cached to limit API costs; refresh for fresh data."}
+          </span>
+        )}
       </p>
 
       {serviceAreaNames.length > 0 && keywords.length > 0 && (

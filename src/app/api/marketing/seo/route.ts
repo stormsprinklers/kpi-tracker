@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
@@ -5,6 +6,10 @@ import {
   getOrganizationById,
   getSeoConfig,
   getSeoServiceAreas,
+  getLatestSeoResults,
+  insertSeoResults,
+  getLocationsCache,
+  setLocationsCache,
 } from "@/lib/db/queries";
 import {
   fetchOrganicLive,
@@ -13,6 +18,21 @@ import {
   fetchLocations,
   type LocationParam,
 } from "@/lib/dataforseo";
+
+function configFingerprint(
+  website: string,
+  keywords: string[],
+  locationValues: string[],
+  serviceAreas: { name: string; location_values: string[] }[]
+): string {
+  const parts = [
+    (website ?? "").toLowerCase().trim(),
+    [...keywords].sort().join("|"),
+    [...locationValues].sort().join("|"),
+    ...serviceAreas.map((a) => `${a.name}:${[...a.location_values].sort().join(",")}`).sort(),
+  ];
+  return createHash("sha256").update(parts.join("::")).digest("hex");
+}
 
 function parseLocation(
   value: string,
@@ -35,11 +55,13 @@ function parseLocation(
   return { param: { locationCode: code }, key: name };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const forceRefresh = new URL(request.url).searchParams.get("force_refresh") === "1";
 
   await initSchema();
   const orgId = session.user.organizationId;
@@ -70,18 +92,38 @@ export async function GET() {
     });
   }
 
+  const fingerprint = configFingerprint(website, keywords, locationValues, serviceAreas);
+
+  if (!forceRefresh) {
+    const cached = await getLatestSeoResults(orgId, fingerprint);
+    if (cached?.payload) {
+      return NextResponse.json({
+        ...(cached.payload as Record<string, unknown>),
+        cachedAt: cached.snapshot_at,
+        fromCache: true,
+      });
+    }
+  }
+
   const businessName = org?.seo_business_name?.trim() || org?.name || "";
   const domain = website.replace(/^https?:\/\//, "").replace(/^www\./, "");
 
   const locationNames: Record<number, string> = {};
-  try {
-    const locs = await fetchLocations("us");
-    locs.forEach((l) => {
-      locationNames[l.location_code] = l.location_name;
-    });
-  } catch {
-    // use fallbacks
+  let locs: Array<{ location_code: number; location_name: string }> = [];
+  const locationsCache = await getLocationsCache("locations:us");
+  if (locationsCache != null && Array.isArray(locationsCache)) {
+    locs = locationsCache as Array<{ location_code: number; location_name: string }>;
+  } else {
+    try {
+      locs = await fetchLocations("us");
+      await setLocationsCache("locations:us", locs);
+    } catch {
+      // use fallbacks
+    }
   }
+  locs.forEach((l) => {
+    locationNames[l.location_code] = l.location_name;
+  });
 
   const parsedLocations: { param: LocationParam; key: string; locValue: string }[] = [];
   for (const v of locationValues) {
@@ -187,8 +229,6 @@ export async function GET() {
     }
   }
 
-  const locationSet = new Set(locationValues);
-
   const avgRank = (ranks: (number | null)[]): number | null => {
     const valid = ranks.filter((r): r is number => r != null && r > 0);
     if (valid.length === 0) return null;
@@ -245,7 +285,7 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({
+  const payload = {
     configured: true,
     locations: parsedLocations.map((p) => ({ value: p.locValue, name: p.key })),
     serviceAreas: serviceAreas.map((a) => ({
@@ -258,5 +298,14 @@ export async function GET() {
     ai,
     serviceAreaLocal,
     serviceAreaOrganic,
+  };
+
+  await insertSeoResults(orgId, fingerprint, payload);
+  const snapshotAt = new Date().toISOString();
+
+  return NextResponse.json({
+    ...payload,
+    cachedAt: snapshotAt,
+    fromCache: false,
   });
 }

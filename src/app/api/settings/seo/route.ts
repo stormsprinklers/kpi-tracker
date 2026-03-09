@@ -8,6 +8,7 @@ import {
   updateOrganizationSeoSettings,
   setSeoConfig,
   setSeoServiceAreas,
+  invalidateSeoCache,
 } from "@/lib/db/queries";
 
 const MAX_KEYWORDS = 10;
@@ -101,6 +102,8 @@ export async function PATCH(request: Request) {
   if (body.serviceAreas !== undefined) {
     await setSeoServiceAreas(orgId, body.serviceAreas);
   }
+
+  await invalidateSeoCache(orgId);
 
   return NextResponse.json({ success: true });
 }

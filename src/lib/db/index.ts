@@ -271,6 +271,37 @@ export async function initSchema(): Promise<void> {
     ON seo_service_area_locations (service_area_id)
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_permissions (
+      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      permissions JSONB NOT NULL DEFAULT '{}'
+    )
+  `;
+
+  // SEO results cache - stores rankings to avoid costly DataForSEO calls (limit ~once/week)
+  await sql`
+    CREATE TABLE IF NOT EXISTS seo_results_cache (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      config_fingerprint TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      snapshot_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_seo_results_cache_org_fingerprint
+    ON seo_results_cache (organization_id, config_fingerprint, snapshot_at DESC)
+  `;
+
+  // DataForSEO locations list cache (changes rarely, 7-day TTL)
+  await sql`
+    CREATE TABLE IF NOT EXISTS seo_locations_cache (
+      cache_key TEXT PRIMARY KEY,
+      payload JSONB NOT NULL,
+      cached_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
   // Extend users for Auth.js/OAuth
   await sql`
     DO $$

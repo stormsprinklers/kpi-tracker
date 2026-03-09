@@ -503,6 +503,63 @@ export async function setSeoServiceAreas(
   }
 }
 
+export async function getLatestSeoResults(
+  organizationId: string,
+  configFingerprint: string
+): Promise<{ payload: Record<string, unknown>; snapshot_at: string } | null> {
+  const result = await sql`
+    SELECT payload, snapshot_at
+    FROM seo_results_cache
+    WHERE organization_id = ${organizationId}::uuid
+      AND config_fingerprint = ${configFingerprint}
+      AND snapshot_at >= NOW() - INTERVAL '7 days'
+    ORDER BY snapshot_at DESC
+    LIMIT 1
+  `;
+  const row = (result.rows ?? [])[0] as { payload: Record<string, unknown>; snapshot_at: string } | undefined;
+  return row ?? null;
+}
+
+export async function insertSeoResults(
+  organizationId: string,
+  configFingerprint: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await sql`
+    INSERT INTO seo_results_cache (organization_id, config_fingerprint, payload)
+    VALUES (${organizationId}::uuid, ${configFingerprint}, ${JSON.stringify(payload)}::jsonb)
+  `;
+}
+
+export async function invalidateSeoCache(organizationId: string): Promise<void> {
+  await sql`
+    DELETE FROM seo_results_cache
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+}
+
+export async function getLocationsCache(cacheKey: string): Promise<unknown[] | null> {
+  const result = await sql`
+    SELECT payload
+    FROM seo_locations_cache
+    WHERE cache_key = ${cacheKey}
+      AND cached_at >= NOW() - INTERVAL '7 days'
+  `;
+  const row = (result.rows ?? [])[0] as { payload: unknown } | undefined;
+  if (!row?.payload) return null;
+  return Array.isArray(row.payload) ? row.payload : null;
+}
+
+export async function setLocationsCache(cacheKey: string, payload: unknown[]): Promise<void> {
+  await sql`
+    INSERT INTO seo_locations_cache (cache_key, payload)
+    VALUES (${cacheKey}, ${JSON.stringify(payload)}::jsonb)
+    ON CONFLICT (cache_key) DO UPDATE SET
+      payload = EXCLUDED.payload,
+      cached_at = NOW()
+  `;
+}
+
 export async function getUserByEmail(email: string) {
   const result = await sql`
     SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id, o.logo_url as org_logo_url
@@ -552,6 +609,156 @@ export async function deleteUser(id: string, organizationId: string) {
   await sql`
     DELETE FROM users
     WHERE id = ${id} AND organization_id = ${organizationId}
+  `;
+}
+
+export type PermissionKey =
+  | "dashboard"
+  | "timesheets"
+  | "call_insights"
+  | "time_insights"
+  | "profit"
+  | "marketing"
+  | "performance_pay"
+  | "users"
+  | "settings"
+  | "billing"
+  | "developer_console"
+  | "can_edit";
+
+export type UserPermissions = Record<PermissionKey, boolean>;
+
+const PERMISSION_KEYS: PermissionKey[] = [
+  "dashboard",
+  "timesheets",
+  "call_insights",
+  "time_insights",
+  "profit",
+  "marketing",
+  "performance_pay",
+  "users",
+  "settings",
+  "billing",
+  "developer_console",
+  "can_edit",
+];
+
+function isOfficeStaffRole(role: unknown): boolean {
+  const r = (role ?? "").toString().toLowerCase().replace(/\s+/g, " ");
+  return ["office staff", "office_staff", "officestaff"].some(
+    (o) => r === o || (r.includes("office") && r.includes("staff"))
+  );
+}
+
+export async function getEmployeeHcpRole(
+  companyId: string,
+  hcpId: string
+): Promise<"technician" | "office_staff" | null> {
+  const result = await sql`
+    SELECT raw->>'role' as role, raw->>'employee_type' as employee_type
+    FROM employees
+    WHERE company_id = ${companyId} AND hcp_id = ${hcpId}
+    LIMIT 1
+  `;
+  const row = (result.rows ?? [])[0] as { role?: string; employee_type?: string } | undefined;
+  if (!row) return null;
+  const r = row.role ?? row.employee_type ?? "";
+  return isOfficeStaffRole(r) ? "office_staff" : "technician";
+}
+
+export function getDefaultPermissionsForRole(
+  role: string,
+  isCsr: boolean
+): UserPermissions {
+  const allFalse = Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false])) as UserPermissions;
+  if (role === "admin") {
+    return {
+      ...allFalse,
+      dashboard: true,
+      timesheets: true,
+      call_insights: true,
+      time_insights: true,
+      profit: true,
+      marketing: true,
+      performance_pay: true,
+      users: true,
+      settings: true,
+      billing: true,
+      developer_console: true,
+      can_edit: true,
+    };
+  }
+  if (role === "investor") {
+    return {
+      ...allFalse,
+      dashboard: true,
+      timesheets: true,
+      call_insights: true,
+      time_insights: true,
+      profit: true,
+      marketing: true,
+      performance_pay: true,
+      users: true,
+      billing: true,
+      developer_console: true,
+      can_edit: false,
+    };
+  }
+  if (role === "employee") {
+    const base = { ...allFalse, dashboard: true, timesheets: true, can_edit: true };
+    if (isCsr) {
+      base.call_insights = true;
+    }
+    return base;
+  }
+  return { ...allFalse, dashboard: true };
+}
+
+export async function getUserPermissions(userId: string): Promise<UserPermissions> {
+  const result = await sql`
+    SELECT permissions FROM user_permissions WHERE user_id = ${userId}::uuid
+  `;
+  const row = (result.rows ?? [])[0] as { permissions: Record<string, unknown> } | undefined;
+  if (row?.permissions && typeof row.permissions === "object") {
+    const stored = row.permissions as Record<string, boolean>;
+    const out = {} as UserPermissions;
+    for (const k of PERMISSION_KEYS) {
+      out[k] = stored[k] === true;
+    }
+    return out;
+  }
+  const userResult = await sql`
+    SELECT u.role, u.hcp_employee_id, o.hcp_company_id
+    FROM users u
+    LEFT JOIN organizations o ON o.id = u.organization_id
+    WHERE u.id = ${userId}::uuid
+  `;
+  const userRow = (userResult.rows ?? [])[0] as {
+    role: string;
+    hcp_employee_id: string | null;
+    hcp_company_id: string | null;
+  } | undefined;
+  if (!userRow) return getDefaultPermissionsForRole("employee", false);
+
+  let isCsr = false;
+  if (userRow.role === "employee" && userRow.hcp_employee_id && userRow.hcp_company_id) {
+    const hcpRole = await getEmployeeHcpRole(userRow.hcp_company_id, userRow.hcp_employee_id);
+    isCsr = hcpRole === "office_staff";
+  }
+
+  return getDefaultPermissionsForRole(userRow.role, isCsr);
+}
+
+export async function setUserPermissions(
+  userId: string,
+  permissions: Partial<UserPermissions>
+): Promise<void> {
+  const current = await getUserPermissions(userId);
+  const merged = { ...current, ...permissions };
+  await sql`
+    INSERT INTO user_permissions (user_id, permissions)
+    VALUES (${userId}::uuid, ${JSON.stringify(merged)}::jsonb)
+    ON CONFLICT (user_id) DO UPDATE SET permissions = EXCLUDED.permissions
   `;
 }
 

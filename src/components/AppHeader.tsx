@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NavDropdown } from "./NavDropdown";
+import { HeaderNightShiftToggle } from "./HeaderNightShiftToggle";
 
 interface AppHeaderProps {
   title?: string;
@@ -72,37 +73,53 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
     );
   }
 
-  const isAdmin = session?.user?.role === "admin";
-  const isInvestor = session?.user?.role === "investor";
-  const isEmployee = session?.user?.role === "employee";
-  const hasHcpEmployeeId = !!session?.user?.hcpEmployeeId;
-  const companyName = session?.user?.organizationName ?? "Company";
+  const p = session?.user?.permissions;
+  const usePermissions = !!p;
+
+  const can = (key: keyof NonNullable<typeof p>) => {
+    if (usePermissions && p) return p[key] === true;
+    const isAdmin = session?.user?.role === "admin";
+    const isInvestor = session?.user?.role === "investor";
+    const hasHcpEmployeeId = !!session?.user?.hcpEmployeeId;
+    if (isAdmin) {
+      if (key === "settings" || key === "can_edit") return true;
+      return true;
+    }
+    if (isInvestor) {
+      if (key === "settings") return false;
+      if (key === "can_edit") return false;
+      return true;
+    }
+    if (key === "timesheets") return hasHcpEmployeeId;
+    if (key === "performance_pay" || key === "users" || key === "settings" || key === "billing") return false;
+    if (key === "call_insights") return true;
+    if (key === "time_insights" || key === "profit" || key === "marketing") return true;
+    if (key === "developer_console") return true;
+    if (key === "dashboard") return true;
+    return false;
+  };
 
   const insightsItems = [
-    { label: "Calls", href: "/call-insights" },
-    { label: "Time", href: "/time-insights" },
-    { label: "Profit", href: "/insights/profit" },
-    { label: "Marketing", href: "/insights/marketing" },
+    ...(can("call_insights") ? [{ label: "Calls", href: "/call-insights" }] : []),
+    ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
+    ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
+    ...(can("marketing") ? [{ label: "Marketing", href: "/insights/marketing" }] : []),
   ];
 
   const teamItems = [];
-  if (!isInvestor) {
-    if (isAdmin || hasHcpEmployeeId) teamItems.push({ label: "Timesheets", href: "/timesheets" });
-    if (isAdmin) {
-      teamItems.push({ label: "Performance Pay", href: "/team/performance-pay" });
-      teamItems.push({ label: "Users", href: "/team/users" });
-    }
-  }
+  if (can("timesheets")) teamItems.push({ label: "Timesheets", href: "/timesheets" });
+  if (can("performance_pay")) teamItems.push({ label: "Performance Pay", href: "/team/performance-pay" });
+  if (can("users")) teamItems.push({ label: "Users", href: "/team/users" });
 
   const companyItems: { label: string; href?: string; onClick?: () => void }[] = [];
-  if (isAdmin) {
-    companyItems.push({ label: "Settings", href: "/settings" });
-    companyItems.push({ label: "Billing", href: "/billing" });
-  }
-  if (!isInvestor) {
-    companyItems.push({ label: "Developer Console", href: "/debug" });
-  }
+  if (can("settings")) companyItems.push({ label: "Settings", href: "/settings" });
+  if (can("billing")) companyItems.push({ label: "Billing", href: "/billing" });
+  if (can("developer_console")) companyItems.push({ label: "Developer Console", href: "/debug" });
   companyItems.push({ label: "Log Out", onClick: () => signOut({ callbackUrl: "/login" }) });
+
+  const isAdmin = session?.user?.role === "admin";
+  const isInvestor = session?.user?.role === "investor";
+  const companyName = session?.user?.organizationName ?? "Company";
 
   const toggleMobileSection = (section: "insights" | "team" | "company") => {
     setMobileExpanded((prev) => (prev === section ? null : section));
@@ -128,6 +145,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
         {extra}
         {session?.user && (
           <>
+            <HeaderNightShiftToggle />
             <a href="/" className={navLinkClass}>Dashboard</a>
             <NavDropdown label="Insights" items={insightsItems} navLinkClass={navLinkClass} />
             {teamItems.length > 0 && (
@@ -164,7 +182,8 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
 
       {/* Mobile hamburger and menu */}
       {session?.user && (
-        <div className="flex items-center gap-2 md:hidden">
+        <div className="flex items-center gap-1 md:hidden">
+          <HeaderNightShiftToggle />
           <span
             className={`rounded px-2 py-0.5 text-xs ${
               isAdmin ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" :

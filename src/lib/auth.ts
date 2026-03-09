@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import type { UserPermissions } from "@/lib/db/queries";
 
 export interface SessionUser {
   id: string;
@@ -8,6 +9,7 @@ export interface SessionUser {
   organizationName?: string;
   organizationLogoUrl?: string | null;
   hcpEmployeeId?: string | null;
+  permissions?: UserPermissions;
 }
 
 declare module "next-auth" {

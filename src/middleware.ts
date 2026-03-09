@@ -51,19 +51,48 @@ export default auth((req) => {
       loginUrl.searchParams.set("callbackUrl", pathname);
       return NextResponse.redirect(loginUrl);
     }
-    // Investor: read-only access; block Settings, Developer Console, Timesheets, Team, Billing
-    const investorBlockedPaths = [
-      "/settings",
-      "/debug",
-      "/timesheets",
-      "/team",
-      "/billing",
-    ];
-    if (
-      session.user.role === "investor" &&
-      investorBlockedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
-    ) {
-      return NextResponse.redirect(new URL("/", req.nextUrl));
+    const perms = (session.user as { permissions?: Record<string, boolean> }).permissions;
+    if (perms) {
+      const pathPermMap: { prefix: string; perm: string }[] = [
+        { prefix: "/settings", perm: "settings" },
+        { prefix: "/debug", perm: "developer_console" },
+        { prefix: "/timesheets", perm: "timesheets" },
+        { prefix: "/team", perm: "performance_pay" },
+        { prefix: "/billing", perm: "billing" },
+      ];
+      for (const { prefix, perm } of pathPermMap) {
+        if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+          if (!perms[perm]) {
+            return NextResponse.redirect(new URL("/", req.nextUrl));
+          }
+          break;
+        }
+      }
+      const insightsPermMap: { prefix: string; perm: string }[] = [
+        { prefix: "/call-insights", perm: "call_insights" },
+        { prefix: "/time-insights", perm: "time_insights" },
+        { prefix: "/insights/profit", perm: "profit" },
+        { prefix: "/insights/marketing", perm: "marketing" },
+      ];
+      for (const { prefix, perm } of insightsPermMap) {
+        if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+          if (!perms[perm]) {
+            return NextResponse.redirect(new URL("/", req.nextUrl));
+          }
+          break;
+        }
+      }
+      if (pathname.startsWith("/team/users") && !perms["users"]) {
+        return NextResponse.redirect(new URL("/", req.nextUrl));
+      }
+    } else {
+      const investorBlockedPaths = ["/settings", "/debug", "/timesheets", "/team", "/billing"];
+      if (
+        session.user.role === "investor" &&
+        investorBlockedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+      ) {
+        return NextResponse.redirect(new URL("/", req.nextUrl));
+      }
     }
     return NextResponse.next();
   }

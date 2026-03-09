@@ -3,7 +3,7 @@ import Google from "next-auth/providers/google";
 import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
-import { getUserByEmail, getOrganizationById } from "@/lib/db/queries";
+import { getUserByEmail, getOrganizationById, getUserPermissions } from "@/lib/db/queries";
 import { initSchema } from "@/lib/db";
 
 export default {
@@ -72,6 +72,14 @@ export default {
           if (org) {
             session.user.organizationName = org.name;
             session.user.organizationLogoUrl = org.logo_url ?? null;
+          }
+        }
+        const userId = session.user.id;
+        if (userId) {
+          try {
+            session.user.permissions = await getUserPermissions(userId);
+          } catch {
+            session.user.permissions = undefined;
           }
         }
       }
