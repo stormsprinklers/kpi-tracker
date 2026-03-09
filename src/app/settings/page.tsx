@@ -1,7 +1,6 @@
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { authOptions } from "@/lib/auth";
 import { getOrganizationById } from "@/lib/db/queries";
 import { SettingsPageClient } from "./SettingsPageClient";
 import { CompanyLogoSection } from "@/components/CompanyLogoSection";
@@ -9,7 +8,7 @@ import { SyncStatusSection } from "@/components/SyncStatusSection";
 import { NightShiftToggle } from "@/components/NightShiftToggle";
 
 export default async function SettingsPage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     redirect("/login");
   }

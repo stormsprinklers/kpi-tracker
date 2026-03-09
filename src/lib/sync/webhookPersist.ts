@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db";
 
 function extractId(record: Record<string, unknown>): string | null {
   const id = record.id ?? record.uuid;

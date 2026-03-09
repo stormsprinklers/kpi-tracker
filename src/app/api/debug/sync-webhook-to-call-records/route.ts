@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { getOrganizationById, getWebhookLogById } from "@/lib/db/queries";
 import { syncWebhookLogToCallRecords } from "@/lib/ghl/syncWebhookLogToCallRecords";
 
@@ -11,7 +10,7 @@ import { syncWebhookLogToCallRecords } from "@/lib/ghl/syncWebhookLogToCallRecor
  * Returns: { results: SyncResult[], ok: boolean }
  */
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

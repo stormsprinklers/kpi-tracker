@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db";
 import { matchCsrByFirstName } from "./csrMatcher";
 import { matchCustomerByPhone } from "./customerMatcher";
 import { matchJobByCustomerPhone } from "./jobMatcher";

@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db";
 
 const PHONE_KEYS = ["phone", "phone_number", "mobile", "mobile_phone", "cell", "cell_phone", "telephone"];
 

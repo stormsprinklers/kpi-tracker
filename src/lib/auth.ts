@@ -1,8 +1,4 @@
-import type { NextAuthOptions } from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
-import { compare } from "bcryptjs";
-import { getUserByEmail } from "./db/queries";
-import { initSchema } from "./db";
+import { auth } from "@/auth";
 
 export interface SessionUser {
   id: string;
@@ -18,85 +14,6 @@ declare module "next-auth" {
   interface Session {
     user: SessionUser;
   }
-  interface User {
-    id?: string;
-    role?: string;
-    organizationId?: string;
-    organizationName?: string;
-    organizationLogoUrl?: string | null;
-    hcpEmployeeId?: string | null;
-  }
 }
 
-declare module "next-auth/jwt" {
-  interface JWT {
-    id: string;
-    role: string;
-    organizationId: string;
-    organizationName?: string;
-    organizationLogoUrl?: string | null;
-    hcpEmployeeId?: string | null;
-  }
-}
-
-export const authOptions: NextAuthOptions = {
-  providers: [
-    CredentialsProvider({
-      name: "credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
-        await initSchema();
-        const user = await getUserByEmail(credentials.email);
-        if (!user) return null;
-        const valid = await compare(credentials.password, user.password_hash);
-        if (!valid) return null;
-        return {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          organizationId: user.organization_id,
-          organizationName: user.org_name,
-          organizationLogoUrl: user.org_logo_url ?? null,
-          hcpEmployeeId: user.hcp_employee_id ?? null,
-        };
-      },
-    }),
-  ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        const u = user as SessionUser;
-        token.id = u.id;
-        token.role = u.role;
-        token.organizationId = u.organizationId;
-        token.organizationName = u.organizationName;
-        token.organizationLogoUrl = u.organizationLogoUrl ?? null;
-        token.hcpEmployeeId = u.hcpEmployeeId ?? null;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.id;
-        session.user.role = token.role;
-        session.user.organizationId = token.organizationId;
-        session.user.organizationName = token.organizationName;
-        session.user.organizationLogoUrl = token.organizationLogoUrl ?? null;
-        session.user.hcpEmployeeId = token.hcpEmployeeId ?? null;
-      }
-      return session;
-    },
-  },
-  pages: {
-    signIn: "/login",
-  },
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-  secret: process.env.NEXTAUTH_SECRET,
-};
+export { auth };

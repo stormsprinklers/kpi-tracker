@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 import { put } from "@vercel/blob";
-import { authOptions } from "@/lib/auth";
 import { upsertTechnicianPhoto } from "@/lib/db/queries";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
@@ -12,7 +11,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { initSchema } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
 import { getOrganizationsCount } from "@/lib/db/queries";
 import SetupForm from "./SetupForm";
 

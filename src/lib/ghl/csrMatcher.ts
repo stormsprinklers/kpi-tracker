@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db";
 
 const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
 

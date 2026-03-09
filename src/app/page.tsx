@@ -1,6 +1,5 @@
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import { getOrganizationById } from "@/lib/db/queries";
 import { KeyMetricsSection } from "@/components/KeyMetricsSection";
 import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
@@ -9,7 +8,7 @@ import { EmployeeDashboardBanner } from "@/components/EmployeeDashboardBanner";
 import { LandingPage } from "@/components/LandingPage";
 
 export default async function Home() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user) {
     return <LandingPage />;
   }

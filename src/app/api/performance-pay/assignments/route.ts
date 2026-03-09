@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import { upsertPerformancePayAssignment } from "@/lib/db/queries";
 
@@ -12,7 +11,7 @@ interface AssignmentInput {
 
 /** PUT /api/performance-pay/assignments - Update employee→role assignments (admin only). */
 export async function PUT(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

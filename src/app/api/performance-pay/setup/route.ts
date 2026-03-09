@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
   getOrganizationById,
@@ -11,7 +10,7 @@ import {
   ensureHcpPerformancePayRoles,
   upsertPerformancePayAssignment,
 } from "@/lib/db/queries";
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db";
 
 const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
 
@@ -22,7 +21,7 @@ function isOfficeStaff(role: unknown): boolean {
 
 /** GET /api/performance-pay/setup - Setup state, roles, assignments, configs (admin only). */
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import {
   getTimeEntriesByEmployee,
   getTimeEntriesByOrganization,
@@ -10,7 +9,7 @@ import { initSchema } from "@/lib/db";
 
 /** GET /api/timesheets - List time entries. Employee: own entries. Admin: all entries in date range (start_date/end_date required). */
 export async function GET(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -56,7 +55,7 @@ export async function GET(request: Request) {
 
 /** POST /api/timesheets - Create a time entry. Employee: own. Admin: hcp_employee_id in body required. */
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

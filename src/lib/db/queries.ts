@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { sql } from "./index";
 
 export interface SyncFilters {
   workStatus?: string;
@@ -59,7 +59,7 @@ export async function getCustomersFromDb(
     SELECT raw FROM customers
     WHERE company_id = ${companyId}
   `;
-  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+  return (result.rows ?? []).map((r) => (r as { raw: Record<string, unknown> }).raw);
 }
 
 export async function getInvoicesFromDb(
@@ -71,13 +71,13 @@ export async function getInvoicesFromDb(
       SELECT raw FROM invoices
       WHERE company_id = ${companyId} AND job_hcp_id = ${jobHcpId}
     `;
-    return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+    return (result.rows ?? []).map((r) => (r as { raw: Record<string, unknown> }).raw);
   }
   const result = await sql`
     SELECT raw FROM invoices
     WHERE company_id = ${companyId}
   `;
-  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+  return (result.rows ?? []).map((r) => (r as { raw: Record<string, unknown> }).raw);
 }
 
 export async function getEstimatesFromDb(
@@ -87,7 +87,7 @@ export async function getEstimatesFromDb(
     SELECT raw FROM estimates
     WHERE company_id = ${companyId}
   `;
-  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+  return (result.rows ?? []).map((r) => (r as { raw: Record<string, unknown> }).raw);
 }
 
 /** Get all line items for a company, grouped by job_hcp_id. Returns Map<jobHcpId, lineItems[]>. */
@@ -117,7 +117,7 @@ export async function getJobLineItemsFromDb(
     SELECT raw FROM job_line_items
     WHERE company_id = ${companyId} AND job_hcp_id = ${jobHcpId}
   `;
-  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+  return (result.rows ?? []).map((r) => (r as { raw: Record<string, unknown> }).raw);
 }
 
 /** Upsert line items for a job. Each line item has hcp_id (line item id), job_hcp_id. */
@@ -150,7 +150,7 @@ export async function getEmployeesFromDb(
     SELECT raw FROM employees
     WHERE company_id = ${companyId}
   `;
-  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+  return (result.rows ?? []).map((r) => (r as { raw: Record<string, unknown> }).raw);
 }
 
 /** Returns { id, name } for employee selector. Uses hcp_id from table for reliable id. */
@@ -200,7 +200,7 @@ export async function getProsFromDb(
     SELECT raw FROM pros
     WHERE company_id = ${companyId}
   `;
-  return (result.rows ?? []).map((r) => r.raw as Record<string, unknown>);
+  return (result.rows ?? []).map((r) => (r as { raw: Record<string, unknown> }).raw);
 }
 
 export async function getLastSyncAt(
@@ -325,10 +325,10 @@ export async function getOrganizationsCount(): Promise<number> {
 
 export async function getOrganizationById(id: string) {
   const result = await sql`
-    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, created_at, updated_at
+    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, trial_ends_at, created_at, updated_at
     FROM organizations WHERE id = ${id}
   `;
-  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; logo_url: string | null; created_at: string; updated_at: string } | undefined;
+  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; logo_url: string | null; trial_ends_at: string | null; created_at: string; updated_at: string } | undefined;
 }
 
 export async function upsertOrganizationLogo(organizationId: string, logoUrl: string): Promise<void> {
@@ -361,10 +361,11 @@ export async function createOrganization(params: {
   hcp_access_token?: string | null;
   hcp_webhook_secret?: string | null;
   hcp_company_id?: string | null;
+  trial_ends_at?: Date | string | null;
 }) {
   const result = await sql`
-    INSERT INTO organizations (name, hcp_access_token, hcp_webhook_secret, hcp_company_id, updated_at)
-    VALUES (${params.name}, ${params.hcp_access_token ?? null}, ${params.hcp_webhook_secret ?? null}, ${params.hcp_company_id ?? null}, NOW())
+    INSERT INTO organizations (name, hcp_access_token, hcp_webhook_secret, hcp_company_id, trial_ends_at, updated_at)
+    VALUES (${params.name}, ${params.hcp_access_token ?? null}, ${params.hcp_webhook_secret ?? null}, ${params.hcp_company_id ?? null}, ${params.trial_ends_at ?? null}, NOW())
     RETURNING id, name, hcp_company_id
   `;
   return result.rows?.[0] as { id: string; name: string; hcp_company_id: string | null };
@@ -389,17 +390,17 @@ export async function getUserByEmail(email: string) {
   const result = await sql`
     SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id, o.logo_url as org_logo_url
     FROM users u
-    JOIN organizations o ON o.id = u.organization_id
+    LEFT JOIN organizations o ON o.id = u.organization_id
     WHERE LOWER(u.email) = LOWER(${email})
   `;
   return result.rows?.[0] as {
     id: string;
     email: string;
-    password_hash: string;
-    organization_id: string;
+    password_hash: string | null;
+    organization_id: string | null;
     role: string;
     hcp_employee_id: string | null;
-    org_name: string;
+    org_name: string | null;
     hcp_company_id: string | null;
     org_logo_url: string | null;
   } | undefined;
@@ -434,6 +435,52 @@ export async function deleteUser(id: string, organizationId: string) {
   await sql`
     DELETE FROM users
     WHERE id = ${id} AND organization_id = ${organizationId}
+  `;
+}
+
+// Password reset tokens
+export async function createPasswordResetToken(userId: string, tokenHash: string, expiresAt: Date) {
+  await sql`
+    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+    VALUES (${userId}, ${tokenHash}, ${expiresAt.toISOString()})
+  `;
+}
+
+export interface PasswordResetTokenRow {
+  id: string;
+  user_id: string;
+  expires_at: string;
+}
+
+export async function findValidPasswordResetToken(
+  tokenHash: string
+): Promise<PasswordResetTokenRow | undefined> {
+  const result = await sql`
+    SELECT prt.id, prt.user_id, prt.expires_at
+    FROM password_reset_tokens prt
+    WHERE prt.token_hash = ${tokenHash}
+    AND prt.expires_at > NOW()
+    LIMIT 1
+  `;
+  const row = result.rows?.[0];
+  return row ? (row as PasswordResetTokenRow) : undefined;
+}
+
+export async function deletePasswordResetToken(id: string) {
+  await sql`
+    DELETE FROM password_reset_tokens WHERE id = ${id}
+  `;
+}
+
+export async function deletePasswordResetTokensForUser(userId: string) {
+  await sql`
+    DELETE FROM password_reset_tokens WHERE user_id = ${userId}
+  `;
+}
+
+export async function updateUserPassword(userId: string, passwordHash: string) {
+  await sql`
+    UPDATE users SET password_hash = ${passwordHash} WHERE id = ${userId}
   `;
 }
 
@@ -846,10 +893,10 @@ export async function getPerformancePayAssignments(organizationId: string): Prom
     FROM performance_pay_assignments
     WHERE organization_id = ${organizationId}::uuid
   `;
-  return (result.rows ?? []).map((r) => ({
-    ...r,
-    role_id: (r as { role_id: string | null }).role_id,
-  })) as PerformancePayAssignment[];
+  return (result.rows ?? []).map((r) => {
+    const row = r as Record<string, unknown> & { role_id: string | null };
+    return { ...row, role_id: row.role_id } as PerformancePayAssignment;
+  });
 }
 
 export async function upsertPerformancePayAssignment(

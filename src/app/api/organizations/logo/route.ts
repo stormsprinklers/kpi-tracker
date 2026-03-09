@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 import { put } from "@vercel/blob";
-import { authOptions } from "@/lib/auth";
 import { getOrganizationById, upsertOrganizationLogo } from "@/lib/db/queries";
 
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB for logo
@@ -9,7 +8,7 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 /** GET /api/organizations/logo - Get current org logo URL. */
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -19,7 +18,7 @@ export async function GET() {
 
 /** POST /api/organizations/logo - Upload company logo. Admin only. */
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

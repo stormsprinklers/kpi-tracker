@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db";
 import { getOrganizationById, getCsrSelections } from "../db/queries";
 
 export interface CallInsightsFilters {

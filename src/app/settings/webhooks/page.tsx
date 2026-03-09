@@ -1,11 +1,10 @@
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { authOptions } from "@/lib/auth";
 import { WebhooksSettingsClient } from "./WebhooksSettingsClient";
 
 export default async function WebhooksSettingsPage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     redirect("/login");
   }

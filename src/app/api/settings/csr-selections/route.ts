@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
   getOrganizationById,
@@ -11,7 +10,7 @@ import {
 
 /** GET /api/settings/csr-selections - Current selections + employees/pros for selector (admin only). */
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -33,7 +32,7 @@ export async function GET() {
 
 /** PUT /api/settings/csr-selections - Replace selections (admin only). */
 export async function PUT(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

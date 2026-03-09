@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 
 const protectedPaths = [
   "/debug",
@@ -12,10 +12,11 @@ const protectedPaths = [
   "/team",
   "/insights",
 ];
-const authPaths = ["/login", "/setup"];
+const authPaths = ["/login", "/setup", "/signup", "/forgot-password", "/reset-password"];
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+export default auth((req) => {
+  const { pathname } = req.nextUrl;
+  const session = req.auth;
 
   // Allow API auth routes, webhooks (no session), and static assets
   if (
@@ -29,32 +30,24 @@ export async function middleware(request: NextRequest) {
 
   // Protect /api/debug - require auth, return 401 JSON for API routes
   if (pathname.startsWith("/api/debug")) {
-    const token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET,
-    });
-    if (!token) {
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (token.role === "investor") {
+    if (session.user.role === "investor") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     return NextResponse.next();
   }
 
-  // Allow login and setup without auth
+  // Allow login, setup, signup, forgot-password, reset-password without auth
   if (authPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
 
   // Protect dashboard, debug, settings
   if (protectedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    const token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET,
-    });
-    if (!token) {
-      const loginUrl = new URL("/login", request.url);
+    if (!session?.user) {
+      const loginUrl = new URL("/login", req.nextUrl);
       loginUrl.searchParams.set("callbackUrl", pathname);
       return NextResponse.redirect(loginUrl);
     }
@@ -67,16 +60,16 @@ export async function middleware(request: NextRequest) {
       "/billing",
     ];
     if (
-      token.role === "investor" &&
+      session.user.role === "investor" &&
       investorBlockedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
     ) {
-      return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.redirect(new URL("/", req.nextUrl));
     }
     return NextResponse.next();
   }
 
   return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],

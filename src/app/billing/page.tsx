@@ -1,13 +1,20 @@
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { authOptions } from "@/lib/auth";
+import { getOrganizationById } from "@/lib/db/queries";
 
 export default async function BillingPage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     redirect("/login");
   }
+
+  const org = await getOrganizationById(session.user.organizationId);
+  const trialEndsAt = org?.trial_ends_at ? new Date(org.trial_ends_at) : null;
+  const isOnTrial = trialEndsAt && trialEndsAt > new Date();
+  const trialDaysRemaining = isOnTrial
+    ? Math.ceil((trialEndsAt!.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+    : 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
@@ -20,6 +27,15 @@ export default async function BillingPage() {
         </Link>
 
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Billing</h1>
+
+        {isOnTrial && (
+          <section className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
+            <h2 className="text-sm font-medium text-blue-800 dark:text-blue-200">14-day free trial</h2>
+            <p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
+              {trialDaysRemaining} day{trialDaysRemaining !== 1 ? "s" : ""} remaining
+            </p>
+          </section>
+        )}
 
         <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Plan</h2>

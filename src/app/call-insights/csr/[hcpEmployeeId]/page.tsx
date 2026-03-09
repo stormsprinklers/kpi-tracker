@@ -1,6 +1,5 @@
-import { getServerSession } from "next-auth";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import { getOrganizationById, getEmployeesAndProsForCsrSelector } from "@/lib/db/queries";
 import { CsrCallDetailClient } from "@/components/CsrCallDetailClient";
 
@@ -9,7 +8,7 @@ export default async function CsrCallDetailPage({
 }: {
   params: Promise<{ hcpEmployeeId: string }>;
 }) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     redirect("/login");
   }

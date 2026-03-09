@@ -1,5 +1,5 @@
 import { getHcpClient } from "../housecallpro";
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db";
 import { initSchema } from "../db";
 import { upsertJobLineItems } from "../db/queries";
 

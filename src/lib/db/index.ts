@@ -1,4 +1,27 @@
-import { sql } from "@vercel/postgres";
+import { neon } from "@neondatabase/serverless";
+
+const getNeon = () => {
+  const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+  if (!url) throw new Error("DATABASE_URL or POSTGRES_URL is required");
+  return neon(url);
+};
+
+/**
+ * SQL template tag compatible with @vercel/postgres. Neon returns an array;
+ * we normalize to { rows } for compatibility with existing queries.
+ */
+async function sql(
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+): Promise<{ rows: unknown[]; rowCount: number }> {
+  const client = getNeon();
+  const result = await (client as (strings: TemplateStringsArray, ...vals: unknown[]) => Promise<unknown[]>)(
+    strings,
+    ...values
+  );
+  const rows = Array.isArray(result) ? result : [];
+  return { rows, rowCount: rows.length };
+}
 
 export { sql };
 
@@ -182,6 +205,101 @@ export async function initSchema(): Promise<void> {
         ALTER TABLE organizations ADD COLUMN logo_url TEXT;
       END IF;
     END $$
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='trial_ends_at') THEN
+        ALTER TABLE organizations ADD COLUMN trial_ends_at TIMESTAMPTZ;
+      END IF;
+    END $$
+  `;
+
+  // Extend users for Auth.js/OAuth
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='name') THEN
+        ALTER TABLE users ADD COLUMN name TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='email_verified') THEN
+        ALTER TABLE users ADD COLUMN email_verified TIMESTAMPTZ;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND LOWER(column_name)=LOWER('emailVerified')) THEN
+        ALTER TABLE users ADD COLUMN "emailVerified" TIMESTAMPTZ;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='image') THEN
+        ALTER TABLE users ADD COLUMN image TEXT;
+      END IF;
+    END $$
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END $$
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      ALTER TABLE users ALTER COLUMN organization_id DROP NOT NULL;
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END $$
+  `;
+
+  // Auth.js adapter tables (use exact schema: verification_token singular, camelCase columns)
+  await sql`
+    CREATE TABLE IF NOT EXISTS verification_token (
+      identifier TEXT NOT NULL,
+      token TEXT NOT NULL,
+      expires TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (identifier, token)
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      "userId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      "providerAccountId" TEXT NOT NULL,
+      refresh_token TEXT,
+      access_token TEXT,
+      expires_at BIGINT,
+      token_type TEXT,
+      scope TEXT,
+      id_token TEXT,
+      session_state TEXT,
+      UNIQUE(provider, "providerAccountId")
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts ("userId")
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      "sessionToken" TEXT NOT NULL UNIQUE,
+      "userId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires TIMESTAMPTZ NOT NULL
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions ("userId")
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens (user_id)
   `;
 
   // Time entries (timesheets) - employee time tracking, scoped by hcp_employee_id

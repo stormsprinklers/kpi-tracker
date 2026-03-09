@@ -1,6 +1,6 @@
 import { getHcpClient } from "../housecallpro";
 import { getOrganizationById, getCsrSelections, getEmployeesAndProsForCsrSelector } from "../db/queries";
-import { sql } from "@vercel/postgres";
+import { sql } from "@/lib/db";
 
 export interface CsrKpiEntry {
   csrId: string;

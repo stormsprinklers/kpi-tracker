@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
   upsertPerformancePayConfig,
@@ -11,7 +10,7 @@ import {
 
 /** POST /api/performance-pay/config - Create/update config for role or employee (admin only). */
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -78,7 +77,7 @@ export async function POST(request: Request) {
 
 /** DELETE /api/performance-pay/config - Remove config (admin only). */
 export async function DELETE(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
