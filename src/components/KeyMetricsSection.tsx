@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { MetricTooltip } from "./MetricTooltip";
 
 type KeyMetricsRange = "7d" | "30d" | "all";
 
@@ -60,22 +61,30 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Jobs</h3>
+            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              <MetricTooltip label="Jobs" tooltip="Number of paid or completed jobs in the period. Counted by job date (completed, scheduled, or created)." />
+            </h3>
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect Housecall Pro to sync</p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Revenue</h3>
+            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              <MetricTooltip label="Revenue" tooltip="Total paid amount from jobs and invoices in the period. Uses job paid amount minus outstanding balance." />
+            </h3>
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect Housecall Pro to sync</p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Avg. Job Value</h3>
+            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              <MetricTooltip label="Avg. Job Value" tooltip="Average revenue per job. Calculated as total revenue divided by job count in the period." />
+            </h3>
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect Housecall Pro to sync</p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Conversion Rate</h3>
+            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              <MetricTooltip label="Conversion Rate" tooltip="Share of estimates that become approved jobs. Calculated as (estimates with approved option / total estimates) × 100." />
+            </h3>
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect Housecall Pro to sync</p>
           </div>
@@ -109,7 +118,9 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Jobs</h3>
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <MetricTooltip label="Jobs" tooltip="Number of paid or completed jobs in the period. Counted by job date (completed, scheduled, or created)." />
+          </h3>
           {loading ? (
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>
           ) : error ? (
@@ -124,7 +135,9 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
           )}
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Revenue</h3>
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <MetricTooltip label="Revenue" tooltip="Total paid amount from jobs and invoices in the period. Uses job paid amount minus outstanding balance." />
+          </h3>
           {loading ? (
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>
           ) : error ? (
@@ -139,7 +152,9 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
           )}
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Avg. Job Value</h3>
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <MetricTooltip label="Avg. Job Value" tooltip="Average revenue per job. Calculated as total revenue divided by job count in the period." />
+          </h3>
           {loading ? (
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>
           ) : error ? (
@@ -154,7 +169,9 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
           )}
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Conversion Rate</h3>
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <MetricTooltip label="Conversion Rate" tooltip="Share of estimates that become approved jobs. Calculated as (estimates with approved option / total estimates) × 100." />
+          </h3>
           {loading ? (
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>
           ) : error ? (

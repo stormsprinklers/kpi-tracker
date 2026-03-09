@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MetricTooltip } from "./MetricTooltip";
 import { useSession } from "next-auth/react";
 
 interface TechnicianRevenue {
@@ -262,9 +263,15 @@ export function TechnicianRevenueSection() {
               <thead>
                 <tr className="border-b border-zinc-200 dark:border-zinc-700">
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Technician</th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Revenue</th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Conversion Rate %</th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Rev/Hr</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                    <MetricTooltip label="Revenue" tooltip="Total paid revenue from jobs assigned to this technician. Uses job paid amount minus outstanding, split across co-assigned techs." />
+                  </th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                    <MetricTooltip label="Conversion Rate %" tooltip="Share of estimates with an approved option. Calculated as (approved estimates / total estimates) × 100 for this technician." />
+                  </th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                    <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. Total job revenue on days with time entries, divided by hours logged." />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -286,7 +293,9 @@ export function TechnicianRevenueSection() {
             </table>
           </div>
           <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
-            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Total: </span>
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <MetricTooltip label="Total" tooltip="Sum of revenue across all technicians in the period." />:{" "}
+            </span>
             <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
               {formatCurrency(data.totalRevenue)}
             </span>
@@ -356,25 +365,33 @@ export function TechnicianRevenueSection() {
                 </div>
                 <dl className="mt-4 space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <dt className="text-zinc-500 dark:text-zinc-400">Rev/Hr</dt>
+                    <dt className="text-zinc-500 dark:text-zinc-400">
+                      <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. Total job revenue on days with time entries, divided by hours logged." />
+                    </dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                       {card.revenuePerHour != null ? `${formatCurrency(card.revenuePerHour)}/hr` : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-zinc-500 dark:text-zinc-400">Total Revenue</dt>
+                    <dt className="text-zinc-500 dark:text-zinc-400">
+                      <MetricTooltip label="Total Revenue" tooltip="Total paid revenue from jobs assigned to this technician in the period." />
+                    </dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                       {formatCurrency(card.totalRevenue)}
                     </dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-zinc-500 dark:text-zinc-400">Conversion Rate</dt>
+                    <dt className="text-zinc-500 dark:text-zinc-400">
+                      <MetricTooltip label="Conversion Rate" tooltip="Share of estimates with an approved option. (approved / total) × 100 for this technician." />
+                    </dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                       {card.conversionRate != null ? `${card.conversionRate.toFixed(1)}%` : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-zinc-500 dark:text-zinc-400">5-star Reviews</dt>
+                    <dt className="text-zinc-500 dark:text-zinc-400">
+                      <MetricTooltip label="5-star Reviews" tooltip="Number of 5-star reviews attributed to this technician. Populated when review data is connected." />
+                    </dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                       {card.fiveStarReviews != null ? card.fiveStarReviews : "—"}
                     </dd>
@@ -384,7 +401,9 @@ export function TechnicianRevenueSection() {
             ))}
           </div>
           <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Total Revenue: </span>
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <MetricTooltip label="Total Revenue" tooltip="Sum of revenue across all technicians in the period." />:{" "}
+            </span>
             <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
               {formatCurrency(data?.totalRevenue ?? 0)}
             </span>

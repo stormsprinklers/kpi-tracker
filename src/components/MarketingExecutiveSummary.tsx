@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MetricTooltip } from "./MetricTooltip";
 
 type DatePreset = "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "all" | "custom";
 
@@ -66,7 +67,9 @@ export function MarketingExecutiveSummary() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Total ad spend</h3>
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <MetricTooltip label="Total ad spend" tooltip="Sum of advertising costs across all connected ad platforms in the period. Connect Meta, Google Ads, etc. to sync." />
+          </h3>
           <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect ad platforms to sync</p>
         </div>
@@ -76,12 +79,16 @@ export function MarketingExecutiveSummary() {
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Connect CRM to sync</p>
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Total jobs</h3>
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <MetricTooltip label="Total jobs" tooltip="Number of jobs created or completed in the period. From Housecall Pro sync." />
+          </h3>
           <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">From Housecall Pro</p>
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Total revenue</h3>
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <MetricTooltip label="Total revenue" tooltip="Sum of paid job revenue from booked jobs in the period. From Housecall Pro." />
+          </h3>
           <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">From booked jobs</p>
         </div>

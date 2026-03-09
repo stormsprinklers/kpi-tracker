@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { MetricTooltip } from "../MetricTooltip";
 
 interface ExpectedPayResult {
   hcpEmployeeId: string;
@@ -104,8 +105,8 @@ export function ExpectedPayTable() {
               <th className="pb-2 pl-4 text-left font-medium text-zinc-700 dark:text-zinc-300">
                 Employee
               </th>
-              <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
-                Expected pay
+                <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                <MetricTooltip label="Expected pay" tooltip="Estimated pay from Performance Pay config: timesheets × rate, revenue × commission, or metrics-based tiers." />
               </th>
             </tr>
           </thead>

@@ -1,5 +1,7 @@
 "use client";
 
+import { MetricTooltip } from "./MetricTooltip";
+
 const LEAD_SOURCES = [
   { id: "organic_search", label: "Organic Search", integratePlatform: "Organic Search" },
   { id: "google_business_profile", label: "Google Business Profile", integratePlatform: "Google Business Profile" },
@@ -23,12 +25,24 @@ export function MarketingLeadSourceTable() {
           <thead>
             <tr className="border-b border-zinc-200 dark:border-zinc-700">
               <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Lead source</th>
-              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Total spend</th>
-              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Cost per lead</th>
-              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Booking rate</th>
-              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Conversion rate</th>
-              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Avg revenue</th>
-              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Total revenue</th>
+              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                <MetricTooltip label="Total spend" tooltip="Total ad or marketing spend attributed to this lead source." />
+              </th>
+              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                <MetricTooltip label="Cost per lead" tooltip="Total spend divided by number of leads from this source." />
+              </th>
+              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                <MetricTooltip label="Booking rate" tooltip="Percentage of leads from this source that became booked appointments." />
+              </th>
+              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                <MetricTooltip label="Conversion rate" tooltip="Percentage of leads that became paying jobs." />
+              </th>
+              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                <MetricTooltip label="Avg revenue" tooltip="Average revenue per job attributed to this lead source." />
+              </th>
+              <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                <MetricTooltip label="Total revenue" tooltip="Sum of job revenue attributed to this lead source." />
+              </th>
             </tr>
           </thead>
           <tbody>

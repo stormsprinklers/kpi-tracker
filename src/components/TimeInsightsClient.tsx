@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { MetricTooltip } from "./MetricTooltip";
 
 interface TechnicianJobsPerDay {
   technicianId: string;
@@ -161,7 +162,10 @@ export function TimeInsightsClient() {
           {/* 1. Average Jobs per Day per Technician */}
           <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
             <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Average Jobs per Day per Technician
+              <MetricTooltip
+                label="Average Jobs per Day per Technician"
+                tooltip="Average number of jobs completed per working day per technician. Based on job assignments and job dates."
+              />
             </h3>
             {data.averageJobsPerDayPerTechnician.length === 0 ? (
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -173,7 +177,9 @@ export function TimeInsightsClient() {
                   <thead>
                     <tr className="border-b border-zinc-200 dark:border-zinc-700">
                       <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Technician</th>
-                      <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Avg Jobs/Day</th>
+                      <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                        <MetricTooltip label="Avg Jobs/Day" tooltip="Average jobs completed per working day for this technician in the period." />
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -194,7 +200,10 @@ export function TimeInsightsClient() {
           {/* 2. Average Drive Time */}
           <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
             <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Average Drive Time
+              <MetricTooltip
+                label="Average Drive Time"
+                tooltip="Average drive or travel time to jobs in minutes. Derived from job location and scheduling data when available."
+              />
             </h3>
             <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-5 dark:border-zinc-700 dark:bg-zinc-900/50">
               <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
@@ -211,7 +220,10 @@ export function TimeInsightsClient() {
           {/* 3. Average Job Time per Line Item */}
           <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
             <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Average Job Time per Line Item
+              <MetricTooltip
+                label="Average Job Time per Line Item"
+                tooltip="Average minutes spent per unit of each line item. Only jobs with a single line item type. Job duration divided by quantity."
+              />
             </h3>
             <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
               Only jobs with a single line item type. Job time divided by line item quantity.
@@ -227,8 +239,12 @@ export function TimeInsightsClient() {
                     <thead>
                       <tr className="border-b border-zinc-200 dark:border-zinc-700">
                         <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Line Item</th>
-                        <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Avg Min/Unit</th>
-                        <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Jobs</th>
+                        <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                          <MetricTooltip label="Avg Min/Unit" tooltip="Average minutes of job time per unit of this line item." />
+                        </th>
+                        <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                          <MetricTooltip label="Jobs" tooltip="Number of jobs included in this average." />
+                        </th>
                       </tr>
                     </thead>
                     <tbody>

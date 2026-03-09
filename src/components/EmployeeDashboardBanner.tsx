@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { MetricTooltip } from "./MetricTooltip";
 
 interface TimeEntry {
   id: string;
@@ -165,7 +166,10 @@ export function EmployeeDashboardBanner({ hcpEmployeeId }: { hcpEmployeeId: stri
         </div>
         <div className="border-l border-zinc-200 pl-4 dark:border-zinc-700">
           <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            Expected paycheck this period
+            <MetricTooltip
+              label="Expected paycheck this period"
+              tooltip="Estimated pay based on your Performance Pay config. Uses timesheets, technician revenue, or CSR KPIs depending on your role. Biweekly period."
+            />
           </p>
           <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
             {expectedPay != null ? `$${expectedPay.toFixed(2)}` : "—"}

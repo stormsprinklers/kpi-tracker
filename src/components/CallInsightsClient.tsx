@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { MetricTooltip } from "./MetricTooltip";
 
 interface EmployeeCallStats {
   hcpEmployeeId: string | null;
@@ -119,7 +120,10 @@ export function CallInsightsClient() {
     <>
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
         <h3 className="mb-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">
-          Average Waiting Window
+          <MetricTooltip
+            label="Average Waiting Window"
+            tooltip="Average days between when a customer called and their scheduled appointment date. From calls with linked jobs in the selected period."
+          />
         </h3>
         <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
           Avg. days between call date and appointment date (calls with linked jobs). Uses the date range selected below.
@@ -207,26 +211,24 @@ export function CallInsightsClient() {
             <table className="w-full min-w-[400px] text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">
-                    Employee
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Employee</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                    <MetricTooltip label="Opportunity Calls" tooltip="Calls where the customer had a decision (won or lost). From GoHighLevel call webhooks with booking_value won or lost." />
                   </th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    Opportunity Calls
+                    <MetricTooltip label="Won" tooltip="Number of opportunity calls that resulted in a booked appointment." />
                   </th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    Won
+                    <MetricTooltip label="Lost" tooltip="Number of opportunity calls that did not result in a booking." />
                   </th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    Lost
+                    <MetricTooltip label="Booking Rate" tooltip="Percentage of opportunity calls that turned into bookings. (Won / Opportunity Calls) × 100." />
                   </th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    Booking Rate
+                    <MetricTooltip label="Avg Duration" tooltip="Average call length in minutes and seconds. From duration_seconds on call records." />
                   </th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    Avg Duration
-                  </th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    Avg Booked Revenue
+                    <MetricTooltip label="Avg Booked Revenue" tooltip="Average job total_amount for won calls with linked jobs. Reflects value of booked calls." />
                   </th>
                 </tr>
               </thead>

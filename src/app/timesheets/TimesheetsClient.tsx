@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { MetricTooltip } from "@/components/MetricTooltip";
 
 interface TimeEntry {
   id: string;
@@ -292,7 +293,12 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
         <>
           {isAdmin && totalsByEmployee.size > 0 && (
             <div className="rounded border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
-              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Totals by employee</h3>
+              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <MetricTooltip
+                  label="Totals by employee"
+                  tooltip="Sum of hours logged per employee in the selected date range. Used for pay calculation and performance tracking."
+                />
+              </h3>
               <ul className="mt-2 space-y-1 text-sm">
                 {[...totalsByEmployee.entries()]
                   .sort((a, b) => (employeeMap[a[0]] ?? a[0]).localeCompare(employeeMap[b[0]] ?? b[0]))
@@ -319,7 +325,9 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
                   <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Date</th>
                   <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Start</th>
                   <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">End</th>
-                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Hours</th>
+                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">
+                    <MetricTooltip label="Hours" tooltip="Logged hours for this time entry. From clock in/out or manual entry. Used for pay calculation." />
+                  </th>
                   <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Notes</th>
                   <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
                 </tr>

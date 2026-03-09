@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { MetricTooltip } from "./MetricTooltip";
 import Link from "next/link";
 
 interface CallRecord {
@@ -196,8 +197,12 @@ export function CsrCallDetailClient({
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Time</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Customer</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">City</th>
-                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Duration</th>
-                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">Booking</th>
+                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                  <MetricTooltip label="Duration" tooltip="Length of the call in minutes and seconds. From GHL call webhook duration_seconds." />
+                </th>
+                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                  <MetricTooltip label="Booking" tooltip="Call outcome: won (booked), lost (no booking), or other. From GHL booking_value." />
+                </th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job (debug)</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Call (debug)</th>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MetricTooltip } from "./MetricTooltip";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 
@@ -237,13 +238,17 @@ export function CsrKpisSection() {
               </div>
               <dl className="mt-4 space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <dt className="text-zinc-500 dark:text-zinc-400">Booking Rate</dt>
+                  <dt className="text-zinc-500 dark:text-zinc-400">
+                    <MetricTooltip label="Booking Rate" tooltip="Percentage of opportunity calls (won + lost) that resulted in a booking. (Won / Opportunity Calls) × 100." />
+                  </dt>
                   <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                     {card.bookingRate != null ? `${card.bookingRate.toFixed(1)}%` : "—"}
                   </dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-zinc-500 dark:text-zinc-400">Avg Call Duration</dt>
+                  <dt className="text-zinc-500 dark:text-zinc-400">
+                    <MetricTooltip label="Avg Call Duration" tooltip="Average call length in minutes. From duration_seconds on GHL call records." />
+                  </dt>
                   <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                     {card.avgCallDurationMinutes != null
                       ? formatDuration(card.avgCallDurationMinutes)
@@ -259,7 +264,9 @@ export function CsrKpisSection() {
                   </dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-zinc-500 dark:text-zinc-400">Avg Booked Call Revenue</dt>
+                  <dt className="text-zinc-500 dark:text-zinc-400">
+                    <MetricTooltip label="Avg Booked Call Revenue" tooltip="Average job total_amount for won calls with linked jobs. Reflects value of calls that turned into appointments." />
+                  </dt>
                   <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                     {card.avgBookedCallRevenue != null
                       ? `$${card.avgBookedCallRevenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`

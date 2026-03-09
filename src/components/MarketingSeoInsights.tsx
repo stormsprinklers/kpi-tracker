@@ -1,5 +1,7 @@
 "use client";
 
+import { MetricTooltip } from "./MetricTooltip";
+
 export function MarketingSeoInsights() {
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -18,7 +20,10 @@ export function MarketingSeoInsights() {
         </div>
         <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
           <h3 className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-            Keyword rankings
+            <MetricTooltip
+              label="Keyword rankings"
+              tooltip="Search engine position for tracked keywords. Shows ranking position over time when SERP API is connected."
+            />
           </h3>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
             Connect SERP API to view keyword rankings.
