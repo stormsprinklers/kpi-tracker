@@ -1,8 +1,28 @@
 "use client";
 
+import { useState, useEffect } from "react";
+
 const NAV = "#0B1F33";
 const OFF_WHITE = "#F8FAFC";
 const NAVY_LIGHT = "rgba(11, 31, 51, 0.06)";
+
+/** True when it's 9:00pm–6:00am EST */
+function useIsNightShift() {
+  const [isNight, setIsNight] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const hour = parseInt(
+        new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }).format(new Date()),
+        10
+      );
+      setIsNight(hour >= 21 || hour < 6);
+    };
+    check();
+    const id = setInterval(check, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return isNight;
+}
 
 function IconChart({ className }: { className?: string }) {
   return (
@@ -28,24 +48,33 @@ function IconX({ className, style }: { className?: string; style?: React.CSSProp
   );
 }
 
-function CtaPrimary({ children, href = "#" }: { children: React.ReactNode; href?: string }) {
+const NIGHT = {
+  bg: "#0f172a",
+  bgCard: "#1e293b",
+  text: "#f8fafc",
+  textMuted: "rgba(248,250,252,0.8)",
+  border: "rgba(248,250,252,0.12)",
+  accent: "#38bdf8",
+};
+
+function CtaPrimary({ children, href = "#", night = false }: { children: React.ReactNode; href?: string; night?: boolean }) {
   return (
     <a
       href={href}
       className="inline-flex items-center justify-center rounded-lg px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
-      style={{ backgroundColor: NAV }}
+      style={{ backgroundColor: night ? NIGHT.accent : NAV }}
     >
       {children}
     </a>
   );
 }
 
-function CtaSecondary({ children, href = "#" }: { children: React.ReactNode; href?: string }) {
+function CtaSecondary({ children, href = "#", night = false }: { children: React.ReactNode; href?: string; night?: boolean }) {
   return (
     <a
       href={href}
-      className="inline-flex items-center justify-center rounded-lg border-2 px-6 py-3 text-sm font-semibold transition hover:bg-[rgba(11,31,51,0.04)]"
-      style={{ borderColor: NAV, color: NAV }}
+      className="inline-flex items-center justify-center rounded-lg border-2 px-6 py-3 text-sm font-semibold transition hover:opacity-90"
+      style={{ borderColor: night ? NIGHT.text : NAV, color: night ? NIGHT.text : NAV, backgroundColor: night ? "transparent" : undefined }}
     >
       {children}
     </a>
@@ -53,39 +82,48 @@ function CtaSecondary({ children, href = "#" }: { children: React.ReactNode; hre
 }
 
 export function LandingPage() {
+  const night = useIsNightShift();
+  const bg = night ? NIGHT.bg : OFF_WHITE;
+  const text = night ? NIGHT.text : NAV;
+  const cardBg = night ? NIGHT.bgCard : "white";
+  const border = night ? NIGHT.border : "rgba(11,31,51,0.1)";
+  const borderLight = night ? NIGHT.border : "rgba(11,31,51,0.12)";
+  const sectionAlt = night ? "rgba(30,41,59,0.5)" : NAVY_LIGHT;
+  const heroGradient = night
+    ? "linear-gradient(160deg, #0f172a 0%, #1e293b 50%, rgba(56,189,248,0.05) 100%)"
+    : "linear-gradient(160deg, #F8FAFC 0%, #F4F6F9 50%, rgba(11,31,51,0.03) 100%)";
+
   return (
-    <div className="min-h-screen font-sans" style={{ backgroundColor: OFF_WHITE, color: NAV }}>
+    <div className="min-h-screen font-sans" style={{ backgroundColor: bg, color: text }}>
       {/* 1. Header / Nav - rendered by AppHeader when on landing */}
       {/* Sections 2–13 are below */}
 
       {/* 2. Hero */}
       <section
         className="relative overflow-hidden px-6 pt-16 pb-24 md:px-12 lg:px-24"
-        style={{
-          background: "linear-gradient(160deg, #F8FAFC 0%, #F4F6F9 50%, rgba(11,31,51,0.03) 100%)",
-        }}
+        style={{ background: heroGradient }}
       >
         <div className="mx-auto max-w-6xl">
           <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
             <div>
-              <h1 className="text-4xl font-bold tracking-tight md:text-5xl lg:text-[3rem]" style={{ color: NAV }}>
+              <h1 className="text-4xl font-bold tracking-tight md:text-5xl lg:text-[3rem]" style={{ color: text }}>
                 Know your numbers. Grow with confidence.
               </h1>
-              <p className="mt-6 max-w-xl text-lg leading-relaxed opacity-90" style={{ color: NAV }}>
+              <p className="mt-6 max-w-xl text-lg leading-relaxed opacity-90" style={{ color: text }}>
                 A simple analytics dashboard for home service businesses that turns your CRM data into clear insights on revenue, booking rate, conversion rate, average ticket, lead source ROI, and team performance.
               </p>
               <div className="mt-10 flex flex-wrap gap-4">
-                <CtaPrimary>Book a demo</CtaPrimary>
-                <CtaSecondary>Join the waitlist</CtaSecondary>
+                <CtaPrimary night={night}>Book a demo</CtaPrimary>
+                <CtaSecondary night={night}>Join the waitlist</CtaSecondary>
               </div>
-              <p className="mt-6 text-sm opacity-75" style={{ color: NAV }}>
+              <p className="mt-6 text-sm opacity-75" style={{ color: text }}>
                 Built for home service companies that want clarity, accountability, and smarter growth.
               </p>
             </div>
             <div className="relative flex items-center justify-center">
               <div
                 className="w-full overflow-hidden rounded-xl border shadow-xl"
-                style={{ borderColor: "rgba(11,31,51,0.12)", backgroundColor: "white" }}
+                style={{ borderColor: borderLight, backgroundColor: cardBg }}
               >
                 <img
                   src="/hero-dashboard.png"
@@ -99,21 +137,21 @@ export function LandingPage() {
       </section>
 
       {/* 3. Trust strip */}
-      <section className="border-y py-6" style={{ borderColor: "rgba(11,31,51,0.12)", backgroundColor: "rgba(11,31,51,0.02)" }}>
+      <section className="border-y py-6" style={{ borderColor: borderLight, backgroundColor: night ? "rgba(30,41,59,0.3)" : "rgba(11,31,51,0.02)" }}>
         <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-8 px-6 text-center text-sm md:gap-12">
-          <span className="font-medium" style={{ color: NAV }}>Built for home service businesses</span>
-          <span className="opacity-70" style={{ color: NAV }}>Housecall Pro integration available now</span>
-          <span className="opacity-70" style={{ color: NAV }}>Jobber and more integrations coming soon</span>
+          <span className="font-medium" style={{ color: text }}>Built for home service businesses</span>
+          <span className="opacity-70" style={{ color: text }}>Housecall Pro integration available now</span>
+          <span className="opacity-70" style={{ color: text }}>Jobber and more integrations coming soon</span>
         </div>
       </section>
 
       {/* 4. Problem */}
       <section className="px-6 py-20 md:px-12 lg:px-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             Most home service owners are flying blind.
           </h2>
-          <p className="mt-6 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: NAV }}>
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: text }}>
             Your CRM collects data, but it usually doesn&apos;t show it in a way that helps you make better decisions. Owners end up digging through reports, guessing at marketing performance, and struggling to clearly see what their CSRs, technicians, and lead sources are actually producing.
           </p>
           <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -126,10 +164,10 @@ export function LandingPage() {
               <div
                 key={title}
                 className="rounded-xl border p-6"
-                style={{ backgroundColor: "white", borderColor: "rgba(11,31,51,0.1)" }}
+                style={{ backgroundColor: cardBg, borderColor: border }}
               >
-                <h3 className="font-semibold" style={{ color: NAV }}>{title}</h3>
-                <p className="mt-2 text-sm opacity-80" style={{ color: NAV }}>{desc}</p>
+                <h3 className="font-semibold" style={{ color: text }}>{title}</h3>
+                <p className="mt-2 text-sm opacity-80" style={{ color: text }}>{desc}</p>
               </div>
             ))}
           </div>
@@ -137,9 +175,9 @@ export function LandingPage() {
       </section>
 
       {/* 5. Features */}
-      <section id="features" className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: NAVY_LIGHT }}>
+      <section id="features" className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: sectionAlt }}>
         <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             Everything you need to see the health of your business.
           </h2>
           <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -157,11 +195,11 @@ export function LandingPage() {
               return (
                 <div
                   key={title}
-                  className="rounded-xl border bg-white p-6"
-                  style={{ borderColor: "rgba(11,31,51,0.1)" }}
+                  className="rounded-xl border p-6"
+                  style={{ backgroundColor: cardBg, borderColor: border }}
                 >
-                  <h3 className="font-semibold" style={{ color: NAV }}>{title}</h3>
-                  <p className="mt-2 text-sm opacity-80" style={{ color: NAV }}>{desc}</p>
+                  <h3 className="font-semibold" style={{ color: text }}>{title}</h3>
+                  <p className="mt-2 text-sm opacity-80" style={{ color: text }}>{desc}</p>
                 </div>
               );
             })}
@@ -172,10 +210,10 @@ export function LandingPage() {
       {/* 6. KPI / Insights */}
       <section className="px-6 py-20 md:px-12 lg:px-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             Turn raw CRM data into decisions.
           </h2>
-          <p className="mt-6 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: NAV }}>
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: text }}>
             Instead of hunting through reports, get a clean view of the numbers that matter most. See what is improving, what is slipping, and where to focus next.
           </p>
           <ul className="mt-8 space-y-3">
@@ -188,7 +226,7 @@ export function LandingPage() {
             ].map((item) => (
               <li key={item} className="flex items-center gap-3">
                 <IconCheck className="h-5 w-5 shrink-0" />
-                <span style={{ color: NAV }}>{item}</span>
+                <span style={{ color: text }}>{item}</span>
               </li>
             ))}
           </ul>
@@ -196,12 +234,12 @@ export function LandingPage() {
       </section>
 
       {/* 7. Housecall Pro */}
-      <section className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: NAVY_LIGHT }}>
+      <section className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: sectionAlt }}>
         <div className="mx-auto max-w-4xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             Housecall Pro integration available now.
           </h2>
-          <p className="mt-6 text-lg leading-relaxed opacity-90" style={{ color: NAV }}>
+          <p className="mt-6 text-lg leading-relaxed opacity-90" style={{ color: text }}>
             Connect your Housecall Pro account and start pulling key business data into one dashboard. No more piecing together reports manually.
           </p>
           <ul className="mt-8 space-y-3">
@@ -213,7 +251,7 @@ export function LandingPage() {
             ].map((item) => (
               <li key={item} className="flex items-center gap-3">
                 <IconCheck className="h-5 w-5 shrink-0" />
-                <span style={{ color: NAV }}>{item}</span>
+                <span style={{ color: text }}>{item}</span>
               </li>
             ))}
           </ul>
@@ -223,10 +261,10 @@ export function LandingPage() {
       {/* 8. Coming soon integrations */}
       <section id="integrations" className="px-6 py-20 md:px-12 lg:px-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             More integrations are on the way.
           </h2>
-          <p className="mt-6 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: NAV }}>
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: text }}>
             Housecall Pro is live now. Jobber is coming soon, with additional major home service CRMs planned after that.
           </p>
           <div className="mt-12 grid gap-6 sm:grid-cols-3">
@@ -238,10 +276,10 @@ export function LandingPage() {
               <div
                 key={name}
                 className="rounded-xl border p-6"
-                style={{ backgroundColor: "white", borderColor: "rgba(11,31,51,0.1)" }}
+                style={{ backgroundColor: cardBg, borderColor: border }}
               >
-                <h3 className="font-semibold" style={{ color: NAV }}>{name}</h3>
-                <p className={`mt-1 text-sm ${available ? "font-medium" : "opacity-70"}`} style={{ color: NAV }}>
+                <h3 className="font-semibold" style={{ color: text }}>{name}</h3>
+                <p className={`mt-1 text-sm ${available ? "font-medium" : "opacity-70"}`} style={{ color: text }}>
                   {status}
                 </p>
               </div>
@@ -251,9 +289,9 @@ export function LandingPage() {
       </section>
 
       {/* 9. How it works */}
-      <section className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: NAVY_LIGHT }}>
+      <section className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: sectionAlt }}>
         <div className="mx-auto max-w-4xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             Get set up in three simple steps.
           </h2>
           <div className="mt-12 space-y-8">
@@ -265,13 +303,13 @@ export function LandingPage() {
               <div key={step} className="flex gap-6">
                 <div
                   className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white"
-                  style={{ backgroundColor: NAV }}
+                  style={{ backgroundColor: night ? NIGHT.accent : NAV }}
                 >
                   {step}
                 </div>
                 <div>
-                  <h3 className="font-semibold" style={{ color: NAV }}>{title}</h3>
-                  <p className="mt-1 opacity-80" style={{ color: NAV }}>{desc}</p>
+                  <h3 className="font-semibold" style={{ color: text }}>{title}</h3>
+                  <p className="mt-1 opacity-80" style={{ color: text }}>{desc}</p>
                 </div>
               </div>
             ))}
@@ -282,28 +320,28 @@ export function LandingPage() {
       {/* 10. Pricing */}
       <section id="pricing" className="px-6 py-20 md:px-12 lg:px-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             Simple, transparent pricing.
           </h2>
-          <p className="mt-4 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: NAV }}>
+          <p className="mt-4 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: text }}>
             Choose the plan that fits your business. Upgrade anytime as you grow.
           </p>
           <div className="mt-12 overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse" style={{ borderColor: "rgba(11,31,51,0.12)" }}>
+            <table className="w-full min-w-[640px] border-collapse" style={{ borderColor: borderLight }}>
               <thead>
                 <tr>
-                  <th className="border-b-2 pb-4 text-left font-semibold" style={{ color: NAV, borderColor: "rgba(11,31,51,0.15)" }}>Feature</th>
-                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: NAV, borderColor: "rgba(11,31,51,0.15)" }}>
+                  <th className="border-b-2 pb-4 text-left font-semibold" style={{ color: text, borderColor: borderLight }}>Feature</th>
+                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: text, borderColor: borderLight }}>
                     <div>Base</div>
-                    <div className="mt-2 text-2xl" style={{ color: NAV }}>$39<span className="text-base font-normal opacity-75">/mo</span></div>
+                    <div className="mt-2 text-2xl" style={{ color: text }}>$39<span className="text-base font-normal opacity-75">/mo</span></div>
                   </th>
-                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: NAV, borderColor: "rgba(11,31,51,0.15)" }}>
+                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: text, borderColor: borderLight }}>
                     <div>Essential</div>
-                    <div className="mt-2 text-2xl" style={{ color: NAV }}>$99<span className="text-base font-normal opacity-75">/mo</span></div>
+                    <div className="mt-2 text-2xl" style={{ color: text }}>$99<span className="text-base font-normal opacity-75">/mo</span></div>
                   </th>
-                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: NAV, borderColor: "rgba(11,31,51,0.15)" }}>
+                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: text, borderColor: borderLight }}>
                     <div>Pro</div>
-                    <div className="mt-2 text-2xl" style={{ color: NAV }}>$499<span className="text-base font-normal opacity-75">/mo</span></div>
+                    <div className="mt-2 text-2xl" style={{ color: text }}>$499<span className="text-base font-normal opacity-75">/mo</span></div>
                   </th>
                 </tr>
               </thead>
@@ -320,16 +358,16 @@ export function LandingPage() {
                   { feature: "Custom integrations", base: false, essential: false, pro: true },
                   { feature: "Exclusive community of elite fast-growing home services business owners", base: false, essential: false, pro: true },
                 ].map(({ feature, base, essential, pro }) => (
-                  <tr key={feature} className="border-b" style={{ borderColor: "rgba(11,31,51,0.08)" }}>
-                    <td className="py-4 pr-4" style={{ color: NAV }}>{feature}</td>
+                  <tr key={feature} className="border-b" style={{ borderColor: border }}>
+                    <td className="py-4 pr-4" style={{ color: text }}>{feature}</td>
                     <td className="py-4 text-center">
-                      {base ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: NAV }} />}
+                      {base ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: text }} />}
                     </td>
                     <td className="py-4 text-center">
-                      {essential ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: NAV }} />}
+                      {essential ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: text }} />}
                     </td>
                     <td className="py-4 text-center">
-                      {pro ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: NAV }} />}
+                      {pro ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: text }} />}
                     </td>
                   </tr>
                 ))}
@@ -337,9 +375,9 @@ export function LandingPage() {
             </table>
           </div>
           <div className="mt-10 flex flex-wrap justify-center gap-4">
-            <CtaPrimary href="#">Get started — Base</CtaPrimary>
-            <CtaPrimary href="#">Get started — Essential</CtaPrimary>
-            <CtaSecondary href="#">Contact for Pro</CtaSecondary>
+            <CtaPrimary href="#" night={night}>Get started — Base</CtaPrimary>
+            <CtaPrimary href="#" night={night}>Get started — Essential</CtaPrimary>
+            <CtaSecondary href="#" night={night}>Contact for Pro</CtaSecondary>
           </div>
         </div>
       </section>
@@ -347,7 +385,7 @@ export function LandingPage() {
       {/* 11. Testimonials */}
       <section className="px-6 py-20 md:px-12 lg:px-24">
         <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             Built for operators who care about the numbers.
           </h2>
           <div className="mt-12 grid gap-6 md:grid-cols-3">
@@ -359,10 +397,10 @@ export function LandingPage() {
               <div
                 key={i}
                 className="rounded-xl border p-6"
-                style={{ backgroundColor: "white", borderColor: "rgba(11,31,51,0.1)" }}
+                style={{ backgroundColor: cardBg, borderColor: border }}
               >
-                <p className="italic opacity-90" style={{ color: NAV }}>&ldquo;{quote}&rdquo;</p>
-                <p className="mt-4 text-sm opacity-60" style={{ color: NAV }}>— Placeholder testimonial</p>
+                <p className="italic opacity-90" style={{ color: text }}>&ldquo;{quote}&rdquo;</p>
+                <p className="mt-4 text-sm opacity-60" style={{ color: text }}>— Placeholder testimonial</p>
               </div>
             ))}
           </div>
@@ -370,9 +408,9 @@ export function LandingPage() {
       </section>
 
       {/* 12. FAQ */}
-      <section id="faq" className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: NAVY_LIGHT }}>
+      <section id="faq" className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: sectionAlt }}>
         <div className="mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             Frequently asked questions
           </h2>
           <dl className="mt-12 space-y-8">
@@ -385,8 +423,8 @@ export function LandingPage() {
               { q: "Can I join if my CRM is not supported yet?", a: "Yes. Add a waitlist form for businesses that want updates when new integrations launch." },
             ].map(({ q, a }) => (
               <div key={q}>
-                <dt className="font-semibold" style={{ color: NAV }}>{q}</dt>
-                <dd className="mt-2 opacity-80" style={{ color: NAV }}>{a}</dd>
+                <dt className="font-semibold" style={{ color: text }}>{q}</dt>
+                <dd className="mt-2 opacity-80" style={{ color: text }}>{a}</dd>
               </div>
             ))}
           </dl>
@@ -396,34 +434,34 @@ export function LandingPage() {
       {/* 13. Final CTA */}
       <section className="px-6 py-24 md:px-12 lg:px-24">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: text }}>
             See your business more clearly.
           </h2>
-          <p className="mt-6 text-lg opacity-90" style={{ color: NAV }}>
+          <p className="mt-6 text-lg opacity-90" style={{ color: text }}>
             Stop guessing and start managing with better numbers.
           </p>
           <div className="mt-10 flex flex-wrap justify-center gap-4">
-            <CtaPrimary>Book a demo</CtaPrimary>
-            <CtaSecondary>Join the waitlist</CtaSecondary>
+            <CtaPrimary night={night}>Book a demo</CtaPrimary>
+            <CtaSecondary night={night}>Join the waitlist</CtaSecondary>
           </div>
         </div>
       </section>
 
       {/* 14. Footer */}
-      <footer className="border-t px-6 py-12 md:px-12 lg:px-24" style={{ borderColor: "rgba(11,31,51,0.12)", backgroundColor: NAVY_LIGHT }}>
+      <footer className="border-t px-6 py-12 md:px-12 lg:px-24" style={{ borderColor: borderLight, backgroundColor: sectionAlt }}>
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 md:flex-row">
           <div>
-            <p className="font-semibold" style={{ color: NAV }}>Home Services Analytics</p>
-            <p className="mt-1 text-sm opacity-70" style={{ color: NAV }}>
+            <p className="font-semibold" style={{ color: text }}>Home Services Analytics</p>
+            <p className="mt-1 text-sm opacity-70" style={{ color: text }}>
               Analytics and insights for home service businesses.
             </p>
           </div>
           <nav className="flex flex-wrap justify-center gap-6 text-sm">
-            <a href="#features" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>Features</a>
-            <a href="#pricing" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>Pricing</a>
-            <a href="#integrations" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>Integrations</a>
-            <a href="#faq" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>FAQ</a>
-            <a href="mailto:contact@example.com" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>Contact</a>
+            <a href="#features" className="opacity-80 hover:opacity-100" style={{ color: text }}>Features</a>
+            <a href="#pricing" className="opacity-80 hover:opacity-100" style={{ color: text }}>Pricing</a>
+            <a href="#integrations" className="opacity-80 hover:opacity-100" style={{ color: text }}>Integrations</a>
+            <a href="#faq" className="opacity-80 hover:opacity-100" style={{ color: text }}>FAQ</a>
+            <a href="mailto:contact@example.com" className="opacity-80 hover:opacity-100" style={{ color: text }}>Contact</a>
           </nav>
         </div>
       </footer>

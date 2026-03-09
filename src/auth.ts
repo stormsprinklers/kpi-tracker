@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
-import NeonAdapter from "@auth/neon-adapter";
 import { Pool } from "@neondatabase/serverless";
+import { createAuthAdapter } from "@/lib/auth-adapter";
 import authConfig from "./auth.config";
 
 const pool = new Pool({
@@ -8,7 +8,7 @@ const pool = new Pool({
 });
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
-  adapter: NeonAdapter(pool),
+  adapter: createAuthAdapter(pool),
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   ...authConfig,
 });
