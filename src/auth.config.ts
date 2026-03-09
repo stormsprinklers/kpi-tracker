@@ -32,8 +32,8 @@ export default {
         };
       },
     }),
-    Google,
-    Apple,
+    Google({ allowDangerousEmailAccountLinking: true }),
+    Apple({ allowDangerousEmailAccountLinking: true }),
   ],
   pages: {
     signIn: "/login",
