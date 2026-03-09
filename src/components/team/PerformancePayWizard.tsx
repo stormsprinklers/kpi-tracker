@@ -16,7 +16,8 @@ type StructureType =
   | "hourly_commission_tiers"
   | "hourly_to_commission"
   | "pure_commission"
-  | "hourly_metrics";
+  | "hourly_metrics"
+  | "csr_hourly_booking_rate";
 
 const STRUCTURE_LABELS: Record<StructureType, string> = {
   pure_hourly: "Pure hourly",
@@ -24,6 +25,7 @@ const STRUCTURE_LABELS: Record<StructureType, string> = {
   hourly_to_commission: "Base or commission (whichever is higher)",
   pure_commission: "Pure commission",
   hourly_metrics: "Hourly tied to metrics",
+  csr_hourly_booking_rate: "CSR base + booking rate increase",
 };
 
 const BONUS_TYPES = [
@@ -413,6 +415,69 @@ export function PerformancePayWizard({
                 }
                 className="mt-1 w-32 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
               />
+            </div>
+          )}
+
+          {structureType === "csr_hourly_booking_rate" && (
+            <div className="space-y-4">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Base hourly plus increase for booking rate above 50%: +$X/hr per 10% above threshold (prorated).
+                Uses 2‑week rolling period.
+              </p>
+              <div>
+                <label className="block text-sm text-zinc-600 dark:text-zinc-400">Base hourly rate ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={(config.base_hourly as number) ?? ""}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      base_hourly: e.target.value ? parseFloat(e.target.value) : 0,
+                    }))
+                  }
+                  className="mt-1 w-32 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-zinc-600 dark:text-zinc-400">Booking rate threshold (%)</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  placeholder="50"
+                  value={(config.threshold_pct as number) ?? 50}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      threshold_pct: e.target.value ? parseInt(e.target.value, 10) : 50,
+                    }))
+                  }
+                  className="mt-1 w-32 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-zinc-600 dark:text-zinc-400">$ per hour added per 10% above threshold</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={(config.increment_per_10_pct as number) ?? ""}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      increment_per_10_pct: e.target.value ? parseFloat(e.target.value) : 0,
+                    }))
+                  }
+                  placeholder="2"
+                  className="mt-1 w-32 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  e.g. 2 → 51% = +$0.20/hr, 60% = +$2/hr
+                </p>
+              </div>
             </div>
           )}
 

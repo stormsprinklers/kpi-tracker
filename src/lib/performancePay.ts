@@ -14,7 +14,8 @@ export type StructureType =
   | "hourly_commission_tiers"
   | "hourly_to_commission"
   | "pure_commission"
-  | "hourly_metrics";
+  | "hourly_metrics"
+  | "csr_hourly_booking_rate";
 
 export type BonusType =
   | "5_star_review"
@@ -248,6 +249,20 @@ export async function calculateExpectedPay(
         }
         basePay = hours * rate;
         breakdown.base = basePay;
+        break;
+      }
+      case "csr_hourly_booking_rate": {
+        const baseHourly = (cfg.base_hourly as number) ?? 0;
+        const thresholdPct = (cfg.threshold_pct as number) ?? 50;
+        const incrementPer10Pct = (cfg.increment_per_10_pct as number) ?? 2;
+        const pctAboveThreshold = Math.max(0, (bookingRate ?? 0) - thresholdPct);
+        const increasePerHr = pctAboveThreshold * (incrementPer10Pct / 10);
+        const effectiveHourly = baseHourly + increasePerHr;
+        basePay = hours * effectiveHourly;
+        breakdown.base = hours * baseHourly;
+        if (increasePerHr > 0) {
+          breakdown.booking_rate_bump = hours * increasePerHr;
+        }
         break;
       }
       default:

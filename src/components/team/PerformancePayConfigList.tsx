@@ -16,6 +16,7 @@ const STRUCTURE_LABELS: Record<string, string> = {
   hourly_to_commission: "Base or commission (whichever higher)",
   pure_commission: "Pure commission",
   hourly_metrics: "Hourly tied to metrics",
+  csr_hourly_booking_rate: "CSR base + booking rate increase",
 };
 
 export function PerformancePayConfigList({
