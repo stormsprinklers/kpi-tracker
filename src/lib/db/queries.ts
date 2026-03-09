@@ -325,10 +325,10 @@ export async function getOrganizationsCount(): Promise<number> {
 
 export async function getOrganizationById(id: string) {
   const result = await sql`
-    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, trial_ends_at, created_at, updated_at
+    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, trial_ends_at, website, seo_business_name, seo_domain, created_at, updated_at
     FROM organizations WHERE id = ${id}
   `;
-  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; logo_url: string | null; trial_ends_at: string | null; created_at: string; updated_at: string } | undefined;
+  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; logo_url: string | null; trial_ends_at: string | null; website: string | null; seo_business_name: string | null; seo_domain: string | null; created_at: string; updated_at: string } | undefined;
 }
 
 export async function upsertOrganizationLogo(organizationId: string, logoUrl: string): Promise<void> {
@@ -384,6 +384,57 @@ export async function updateOrganizationSettings(
       updated_at = NOW()
     WHERE id = ${id}
   `;
+}
+
+export async function updateOrganizationSeoSettings(
+  id: string,
+  params: { website?: string | null; seo_business_name?: string | null; seo_domain?: string | null }
+) {
+  if (params.website !== undefined) {
+    await sql`
+      UPDATE organizations SET website = ${params.website?.trim() || null}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.seo_business_name !== undefined) {
+    await sql`
+      UPDATE organizations SET seo_business_name = ${params.seo_business_name?.trim() || null}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.seo_domain !== undefined) {
+    await sql`
+      UPDATE organizations SET seo_domain = ${params.seo_domain?.trim() || null}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+}
+
+export async function getSeoConfig(organizationId: string) {
+  const result = await sql`
+    SELECT config_type, value, sort_order
+    FROM seo_config
+    WHERE organization_id = ${organizationId}::uuid
+    ORDER BY config_type, sort_order ASC
+  `;
+  const rows = (result.rows ?? []) as { config_type: string; value: string; sort_order: number }[];
+  return {
+    keywords: rows.filter((r) => r.config_type === "keywords").map((r) => r.value),
+    locations: rows.filter((r) => r.config_type === "locations").map((r) => r.value),
+  };
+}
+
+export async function setSeoConfig(
+  organizationId: string,
+  params: { keywords?: string[]; locations?: string[] }
+) {
+  await sql`DELETE FROM seo_config WHERE organization_id = ${organizationId}::uuid`;
+  const inserts: { config_type: string; value: string; sort_order: number }[] = [];
+  (params.keywords ?? []).forEach((v, i) => inserts.push({ config_type: "keywords", value: v, sort_order: i }));
+  (params.locations ?? []).forEach((v, i) => inserts.push({ config_type: "locations", value: v, sort_order: i }));
+  for (const row of inserts) {
+    await sql`
+      INSERT INTO seo_config (organization_id, config_type, value, sort_order)
+      VALUES (${organizationId}::uuid, ${row.config_type}, ${row.value}, ${row.sort_order})
+    `;
+  }
 }
 
 export async function getUserByEmail(email: string) {

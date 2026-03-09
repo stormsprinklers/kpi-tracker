@@ -214,6 +214,35 @@ export async function initSchema(): Promise<void> {
       END IF;
     END $$
   `;
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='website') THEN
+        ALTER TABLE organizations ADD COLUMN website TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='seo_business_name') THEN
+        ALTER TABLE organizations ADD COLUMN seo_business_name TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='seo_domain') THEN
+        ALTER TABLE organizations ADD COLUMN seo_domain TEXT;
+      END IF;
+    END $$
+  `;
+
+  // SEO config - keywords and locations per organization
+  await sql`
+    CREATE TABLE IF NOT EXISTS seo_config (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      config_type TEXT NOT NULL CHECK (config_type IN ('keywords', 'locations')),
+      value TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_seo_config_organization_type
+    ON seo_config (organization_id, config_type)
+  `;
 
   // Extend users for Auth.js/OAuth
   await sql`
