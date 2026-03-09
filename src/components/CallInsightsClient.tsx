@@ -11,6 +11,7 @@ interface EmployeeCallStats {
   lost: number;
   bookingRatePercent: number | null;
   avgDurationSeconds: number | null;
+  avgBookedCallRevenue: number | null;
 }
 
 interface CallInsightsResult {
@@ -202,6 +203,9 @@ export function CallInsightsClient() {
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                     Avg Duration
                   </th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                    Avg Booked Revenue
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -239,6 +243,11 @@ export function CallInsightsClient() {
                     <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
                       {row.avgDurationSeconds != null
                         ? formatDuration(row.avgDurationSeconds)
+                        : "—"}
+                    </td>
+                    <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
+                      {row.avgBookedCallRevenue != null
+                        ? `$${row.avgBookedCallRevenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                         : "—"}
                     </td>
                   </tr>

@@ -10,6 +10,7 @@ interface CsrKpiEntry {
   bookingRate: number | null;
   avgCallDurationMinutes: number | null;
   leadResponseTimeMinutes: number | null;
+  avgBookedCallRevenue: number | null;
   photoUrl?: string | null;
 }
 
@@ -29,6 +30,15 @@ function getInitials(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/** Display name with last initial only, e.g. "John Smith" → "John S." */
+function toLastInitialOnly(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return name;
+  const last = parts[parts.length - 1];
+  const lastInitial = last.charAt(0).toUpperCase();
+  return parts.slice(0, -1).join(" ") + " " + lastInitial + ".";
 }
 
 function formatDuration(minutes: number): string {
@@ -183,7 +193,7 @@ export function CsrKpisSection() {
                 <div className="relative shrink-0">
                   <div
                     className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-zinc-300 text-lg font-semibold text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300"
-                    title={card.csrName}
+                    title={toLastInitialOnly(card.csrName)}
                   >
                     {card.photoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -221,7 +231,7 @@ export function CsrKpisSection() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate font-medium text-zinc-900 dark:text-zinc-50">
-                    {card.csrName}
+                    {toLastInitialOnly(card.csrName)}
                   </h3>
                 </div>
               </div>
@@ -245,6 +255,14 @@ export function CsrKpisSection() {
                   <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                     {card.leadResponseTimeMinutes != null
                       ? formatDuration(card.leadResponseTimeMinutes)
+                      : "—"}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500 dark:text-zinc-400">Avg Booked Call Revenue</dt>
+                  <dd className="font-medium text-zinc-900 dark:text-zinc-50">
+                    {card.avgBookedCallRevenue != null
+                      ? `$${card.avgBookedCallRevenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                       : "—"}
                   </dd>
                 </div>

@@ -18,6 +18,8 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   const { data: session } = useSession();
   const pathname = usePathname();
   const [logoUrl, setLogoUrl] = useState<string | null>(session?.user?.organizationLogoUrl ?? null);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState<"insights" | "team" | "company" | null>(null);
 
   function fetchLogo() {
     if (!session?.user?.organizationId) return;
@@ -58,6 +60,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
         </div>
         <nav className="flex flex-wrap items-center gap-4 md:gap-6">
           <a href="#features" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Features</a>
+          <a href="#pricing" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Pricing</a>
           <a href="#integrations" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Integrations</a>
           <a href="#faq" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>FAQ</a>
           <a href="mailto:contact@example.com" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Contact</a>
@@ -91,7 +94,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
     }
   }
 
-  const companyItems = [];
+  const companyItems: { label: string; href?: string; onClick?: () => void }[] = [];
   if (isAdmin) {
     companyItems.push({ label: "Settings", href: "/settings" });
     companyItems.push({ label: "Billing", href: "/billing" });
@@ -99,6 +102,16 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   if (!isInvestor) {
     companyItems.push({ label: "Developer Console", href: "/debug" });
   }
+  companyItems.push({ label: "Log Out", onClick: () => signOut({ callbackUrl: "/login" }) });
+
+  const toggleMobileSection = (section: "insights" | "team" | "company") => {
+    setMobileExpanded((prev) => (prev === section ? null : section));
+  };
+
+  const closeMobile = () => {
+    setMobileOpen(false);
+    setMobileExpanded(null);
+  };
 
   return (
     <header className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-6 py-4 dark:border-zinc-800 dark:bg-black">
@@ -106,10 +119,12 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
         <img src="/logo.png" alt="Home Services Analytics" className="h-10 w-10 object-contain" />
         <a href="/" className="block hover:opacity-80 transition-opacity">
           <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">{title}</h1>
-          <p className="mt-1 text-sm opacity-80 text-zinc-600 dark:text-zinc-400">{subtitle}</p>
+          <p className="mt-1 hidden text-sm opacity-80 text-zinc-600 dark:text-zinc-400 sm:block">{subtitle}</p>
         </a>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+
+      {/* Desktop nav - hidden on mobile */}
+      <div className="hidden md:flex md:flex-wrap md:items-center md:gap-2">
         {extra}
         {session?.user && (
           <>
@@ -118,24 +133,22 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
             {teamItems.length > 0 && (
               <NavDropdown label="Team" items={teamItems} navLinkClass={navLinkClass} />
             )}
-            {companyItems.length > 0 && (
-              <NavDropdown
-                label={
-                  <span className="flex items-center gap-2">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
-                    ) : (
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
-                        {companyName.slice(0, 1).toUpperCase()}
-                      </span>
-                    )}
-                    {companyName}
-                  </span>
-                }
-                items={companyItems}
-                navLinkClass={navLinkClass}
-              />
-            )}
+            <NavDropdown
+              label={
+                <span className="flex items-center gap-2">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
+                      {companyName.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  {companyName}
+                </span>
+              }
+              items={companyItems}
+              navLinkClass={navLinkClass}
+            />
             <span
               className={`rounded px-2 py-0.5 text-xs ${
                 isAdmin ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" :
@@ -145,16 +158,204 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
             >
               {session.user.role}
             </span>
-            <button
-              type="button"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className={navLinkClass}
-            >
-              Log out
-            </button>
           </>
         )}
       </div>
+
+      {/* Mobile hamburger and menu */}
+      {session?.user && (
+        <div className="flex items-center gap-2 md:hidden">
+          <span
+            className={`rounded px-2 py-0.5 text-xs ${
+              isAdmin ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" :
+              isInvestor ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400" :
+              "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}
+          >
+            {session.user.role}
+          </span>
+          <button
+            type="button"
+            onClick={() => setMobileOpen((o) => !o)}
+            className="rounded p-2 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            aria-label="Open menu"
+            aria-expanded={mobileOpen}
+          >
+            {mobileOpen ? (
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            aria-hidden
+            onClick={closeMobile}
+          />
+          <div
+            className="fixed right-0 top-0 z-50 flex h-full w-full max-w-sm flex-col border-l border-zinc-200 bg-zinc-50 shadow-xl dark:border-zinc-800 dark:bg-zinc-950 md:hidden"
+            role="dialog"
+            aria-label="Navigation menu"
+          >
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
+              <span className="font-medium text-zinc-900 dark:text-zinc-50">Menu</span>
+              <button
+                type="button"
+                onClick={closeMobile}
+                className="rounded p-2 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                aria-label="Close menu"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <nav className="flex flex-1 flex-col overflow-y-auto p-4">
+              <a
+                href="/"
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                onClick={closeMobile}
+              >
+                Dashboard
+              </a>
+
+              {/* Insights section */}
+              <div className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => toggleMobileSection("insights")}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Insights
+                  <svg
+                    className={`h-4 w-4 transition-transform ${mobileExpanded === "insights" ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {mobileExpanded === "insights" && (
+                  <div className="ml-3 mt-1 space-y-0.5 border-l-2 border-zinc-200 pl-3 dark:border-zinc-700">
+                    {insightsItems.map((item) => (
+                      <a
+                        key={item.href ?? item.label}
+                        href={item.href ?? "#"}
+                        className="block rounded px-2 py-2 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                        onClick={closeMobile}
+                      >
+                        {item.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Team section */}
+              {teamItems.length > 0 && (
+                <div className="mt-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleMobileSection("team")}
+                    className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Team
+                    <svg
+                      className={`h-4 w-4 transition-transform ${mobileExpanded === "team" ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {mobileExpanded === "team" && (
+                    <div className="ml-3 mt-1 space-y-0.5 border-l-2 border-zinc-200 pl-3 dark:border-zinc-700">
+                      {teamItems.map((item) => (
+                        <a
+                          key={item.href ?? item.label}
+                          href={item.href ?? "#"}
+                          className="block rounded px-2 py-2 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                          onClick={closeMobile}
+                        >
+                          {item.label}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Company section */}
+              <div className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => toggleMobileSection("company")}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  <span className="flex items-center gap-2">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                    ) : (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
+                        {companyName.slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                    {companyName}
+                  </span>
+                  <svg
+                    className={`h-4 w-4 shrink-0 transition-transform ${mobileExpanded === "company" ? "rotate-180" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {mobileExpanded === "company" && (
+                  <div className="ml-3 mt-1 space-y-0.5 border-l-2 border-zinc-200 pl-3 dark:border-zinc-700">
+                    {companyItems.map((item) =>
+                      item.onClick ? (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => {
+                            item.onClick?.();
+                            closeMobile();
+                          }}
+                          className="block w-full rounded px-2 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                        >
+                          {item.label}
+                        </button>
+                      ) : (
+                        <a
+                          key={item.href ?? item.label}
+                          href={item.href ?? "#"}
+                          className="block rounded px-2 py-2 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                          onClick={closeMobile}
+                        >
+                          {item.label}
+                        </a>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            </nav>
+          </div>
+        </>
+      )}
     </header>
   );
 }

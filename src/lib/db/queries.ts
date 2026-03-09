@@ -642,6 +642,40 @@ export async function getWebhookLogById(
   return row ?? null;
 }
 
+/** Get webhook forwarding config for an organization. */
+export async function getWebhookForwarding(
+  organizationId: string
+): Promise<{ source: string; enabled: boolean; forward_url: string | null }[]> {
+  const result = await sql`
+    SELECT source, enabled, forward_url
+    FROM webhook_forwarding
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+  return (result.rows ?? []) as { source: string; enabled: boolean; forward_url: string | null }[];
+}
+
+/** Upsert webhook forwarding config for a source. */
+export async function upsertWebhookForwarding(
+  organizationId: string,
+  source: string,
+  params: { enabled: boolean; forward_url: string | null }
+): Promise<void> {
+  await sql`
+    INSERT INTO webhook_forwarding (organization_id, source, enabled, forward_url, updated_at)
+    VALUES (
+      ${organizationId}::uuid,
+      ${source},
+      ${params.enabled},
+      ${params.forward_url},
+      NOW()
+    )
+    ON CONFLICT (organization_id, source) DO UPDATE SET
+      enabled = ${params.enabled},
+      forward_url = ${params.forward_url},
+      updated_at = NOW()
+  `;
+}
+
 export interface CallRecordForCsr {
   id: string;
   call_date: string;
@@ -705,4 +739,198 @@ export async function getCallRecordsForCsr(
     ORDER BY c.call_date DESC, c.call_time DESC NULLS LAST
   `;
   return (result.rows ?? []) as CallRecordForCsr[];
+}
+
+// Performance pay
+export interface PerformancePayOrg {
+  organization_id: string;
+  setup_completed: boolean;
+  pay_period_start_weekday: number;
+  updated_at: string;
+}
+
+export interface PerformancePayRole {
+  id: string;
+  organization_id: string;
+  name: string;
+  source: "hcp" | "custom";
+}
+
+export interface PerformancePayAssignment {
+  organization_id: string;
+  hcp_employee_id: string;
+  role_id: string | null;
+  overridden: boolean;
+}
+
+export interface PerformancePayConfig {
+  organization_id: string;
+  scope_type: "role" | "employee";
+  scope_id: string;
+  structure_type: string;
+  config_json: Record<string, unknown>;
+  bonuses_json: Record<string, unknown>[];
+  updated_at: string;
+}
+
+export async function getPerformancePayOrg(organizationId: string): Promise<PerformancePayOrg | null> {
+  const result = await sql`
+    SELECT organization_id, setup_completed, pay_period_start_weekday, updated_at
+    FROM performance_pay_org
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+  return (result.rows?.[0] as PerformancePayOrg) ?? null;
+}
+
+export async function upsertPerformancePayOrg(
+  organizationId: string,
+  params: { setup_completed?: boolean; pay_period_start_weekday?: number }
+): Promise<void> {
+  await sql`
+    INSERT INTO performance_pay_org (organization_id, setup_completed, pay_period_start_weekday, updated_at)
+    VALUES (${organizationId}::uuid, ${params.setup_completed ?? false}, ${params.pay_period_start_weekday ?? 1}, NOW())
+    ON CONFLICT (organization_id) DO UPDATE SET
+      setup_completed = COALESCE(${params.setup_completed ?? null}::boolean, performance_pay_org.setup_completed),
+      pay_period_start_weekday = COALESCE(${params.pay_period_start_weekday ?? null}::int, performance_pay_org.pay_period_start_weekday),
+      updated_at = NOW()
+  `;
+}
+
+export async function getPerformancePayRoles(organizationId: string): Promise<PerformancePayRole[]> {
+  const result = await sql`
+    SELECT id, organization_id, name, source
+    FROM performance_pay_roles
+    WHERE organization_id = ${organizationId}::uuid
+    ORDER BY source ASC, name ASC
+  `;
+  return (result.rows ?? []) as PerformancePayRole[];
+}
+
+/** Ensure HCP roles (Technician, Office Staff) exist for the org. Returns all roles. */
+export async function ensureHcpPerformancePayRoles(organizationId: string): Promise<PerformancePayRole[]> {
+  const existing = await getPerformancePayRoles(organizationId);
+  const hasTechnician = existing.some((r) => r.source === "hcp" && r.name.toLowerCase() === "technician");
+  const hasOfficeStaff = existing.some((r) => r.source === "hcp" && r.name.toLowerCase() === "office staff");
+  if (!hasTechnician) {
+    await sql`
+      INSERT INTO performance_pay_roles (organization_id, name, source)
+      SELECT ${organizationId}::uuid, 'Technician', 'hcp'
+      WHERE NOT EXISTS (SELECT 1 FROM performance_pay_roles WHERE organization_id = ${organizationId}::uuid AND LOWER(name) = 'technician' AND source = 'hcp')
+    `;
+  }
+  if (!hasOfficeStaff) {
+    await sql`
+      INSERT INTO performance_pay_roles (organization_id, name, source)
+      SELECT ${organizationId}::uuid, 'Office Staff', 'hcp'
+      WHERE NOT EXISTS (SELECT 1 FROM performance_pay_roles WHERE organization_id = ${organizationId}::uuid AND LOWER(name) = 'office staff' AND source = 'hcp')
+    `;
+  }
+  return getPerformancePayRoles(organizationId);
+}
+
+export async function createPerformancePayRole(
+  organizationId: string,
+  name: string
+): Promise<PerformancePayRole> {
+  const result = await sql`
+    INSERT INTO performance_pay_roles (organization_id, name, source)
+    VALUES (${organizationId}::uuid, ${name}, 'custom')
+    RETURNING id, organization_id, name, source
+  `;
+  return result.rows?.[0] as PerformancePayRole;
+}
+
+export async function getPerformancePayAssignments(organizationId: string): Promise<PerformancePayAssignment[]> {
+  const result = await sql`
+    SELECT organization_id, hcp_employee_id, role_id::text, overridden
+    FROM performance_pay_assignments
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+  return (result.rows ?? []).map((r) => ({
+    ...r,
+    role_id: (r as { role_id: string | null }).role_id,
+  })) as PerformancePayAssignment[];
+}
+
+export async function upsertPerformancePayAssignment(
+  organizationId: string,
+  hcpEmployeeId: string,
+  params: { role_id: string | null; overridden?: boolean }
+): Promise<void> {
+  await sql`
+    INSERT INTO performance_pay_assignments (organization_id, hcp_employee_id, role_id, overridden)
+    VALUES (${organizationId}::uuid, ${hcpEmployeeId}, ${params.role_id}::uuid, ${params.overridden ?? false})
+    ON CONFLICT (organization_id, hcp_employee_id) DO UPDATE SET
+      role_id = ${params.role_id}::uuid,
+      overridden = COALESCE(${params.overridden ?? null}::boolean, performance_pay_assignments.overridden)
+  `;
+}
+
+export async function getPerformancePayConfigs(organizationId: string): Promise<PerformancePayConfig[]> {
+  const result = await sql`
+    SELECT organization_id, scope_type, scope_id, structure_type, config_json, bonuses_json, updated_at
+    FROM performance_pay_configs
+    WHERE organization_id = ${organizationId}::uuid
+    ORDER BY scope_type, scope_id
+  `;
+  return (result.rows ?? []).map((r) => {
+    const row = r as { config_json: unknown; bonuses_json: unknown };
+    return {
+      ...row,
+      config_json: (typeof row.config_json === "object" && row.config_json != null) ? row.config_json as Record<string, unknown> : {},
+      bonuses_json: Array.isArray(row.bonuses_json) ? (row.bonuses_json as Record<string, unknown>[]) : [],
+    };
+  }) as PerformancePayConfig[];
+}
+
+export async function getPerformancePayConfig(
+  organizationId: string,
+  scopeType: "role" | "employee",
+  scopeId: string
+): Promise<PerformancePayConfig | null> {
+  const result = await sql`
+    SELECT organization_id, scope_type, scope_id, structure_type, config_json, bonuses_json, updated_at
+    FROM performance_pay_configs
+    WHERE organization_id = ${organizationId}::uuid AND scope_type = ${scopeType} AND scope_id = ${scopeId}
+  `;
+  const row = result.rows?.[0];
+  if (!row) return null;
+  const r = row as { config_json: unknown; bonuses_json: unknown };
+  return {
+    ...r,
+    config_json: (typeof r.config_json === "object" && r.config_json != null) ? r.config_json as Record<string, unknown> : {},
+    bonuses_json: Array.isArray(r.bonuses_json) ? (r.bonuses_json as Record<string, unknown>[]) : [],
+  } as PerformancePayConfig;
+}
+
+export async function upsertPerformancePayConfig(
+  organizationId: string,
+  params: {
+    scope_type: "role" | "employee";
+    scope_id: string;
+    structure_type: string;
+    config_json: Record<string, unknown>;
+    bonuses_json: Record<string, unknown>[];
+  }
+): Promise<void> {
+  await sql`
+    INSERT INTO performance_pay_configs (organization_id, scope_type, scope_id, structure_type, config_json, bonuses_json, updated_at)
+    VALUES (${organizationId}::uuid, ${params.scope_type}, ${params.scope_id}, ${params.structure_type}, ${JSON.stringify(params.config_json)}::jsonb, ${JSON.stringify(params.bonuses_json)}::jsonb, NOW())
+    ON CONFLICT (organization_id, scope_type, scope_id) DO UPDATE SET
+      structure_type = ${params.structure_type},
+      config_json = ${JSON.stringify(params.config_json)}::jsonb,
+      bonuses_json = ${JSON.stringify(params.bonuses_json)}::jsonb,
+      updated_at = NOW()
+  `;
+}
+
+export async function deletePerformancePayConfig(
+  organizationId: string,
+  scopeType: "role" | "employee",
+  scopeId: string
+): Promise<void> {
+  await sql`
+    DELETE FROM performance_pay_configs
+    WHERE organization_id = ${organizationId}::uuid AND scope_type = ${scopeType} AND scope_id = ${scopeId}
+  `;
 }

@@ -2,6 +2,9 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { authOptions } from "@/lib/auth";
+import { MarketingExecutiveSummary } from "@/components/MarketingExecutiveSummary";
+import { MarketingLeadSourceTable } from "@/components/MarketingLeadSourceTable";
+import { MarketingSeoInsights } from "@/components/MarketingSeoInsights";
 
 export default async function InsightsMarketingPage() {
   const session = await getServerSession(authOptions);
@@ -21,28 +24,12 @@ export default async function InsightsMarketingPage() {
 
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Marketing</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          SEO, Google Business Profile, Meta Ads, Google Ads, Google Local Services Ads.
+          Ad spend, leads, revenue by source. SEO and keyword rankings.
         </p>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">SEO</h2>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Coming soon.</p>
-        </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Google Business Profile</h2>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Coming soon.</p>
-        </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Meta Ads</h2>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Coming soon.</p>
-        </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Google Ads</h2>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Coming soon.</p>
-        </section>
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Google Local Services Ads</h2>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Coming soon.</p>
-        </section>
+
+        <MarketingExecutiveSummary />
+        <MarketingLeadSourceTable />
+        <MarketingSeoInsights />
       </main>
     </div>
   );

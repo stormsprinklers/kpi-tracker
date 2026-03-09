@@ -2,9 +2,9 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { authOptions } from "@/lib/auth";
-import { PerformancePayPageClient } from "./PerformancePayPageClient";
+import { WebhooksSettingsClient } from "./WebhooksSettingsClient";
 
-export default async function PerformancePayPage() {
+export default async function WebhooksSettingsPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.organizationId) {
     redirect("/login");
@@ -17,20 +17,17 @@ export default async function PerformancePayPage() {
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
       <main className="flex flex-1 flex-col gap-6 p-6">
         <Link
-          href="/"
+          href="/settings"
           className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
         >
-          ← Back to Dashboard
+          ← Back to Settings
         </Link>
 
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Performance Pay
+          Webhooks
         </h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Configure pay structures for roles or individual employees. Uses biweekly pay periods.
-        </p>
 
-        <PerformancePayPageClient />
+        <WebhooksSettingsClient />
       </main>
     </div>
   );

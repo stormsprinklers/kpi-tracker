@@ -321,4 +321,59 @@ export async function initSchema(): Promise<void> {
       PRIMARY KEY (organization_id, hcp_employee_id)
     )
   `;
+
+  // Webhook forwarding - forward inbound webhooks to external URLs (Zapier, Make, etc.)
+  await sql`
+    CREATE TABLE IF NOT EXISTS webhook_forwarding (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      source TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT false,
+      forward_url TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, source)
+    )
+  `;
+
+  // Performance pay - admin-configurable pay structures
+  await sql`
+    CREATE TABLE IF NOT EXISTS performance_pay_org (
+      organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+      setup_completed BOOLEAN NOT NULL DEFAULT false,
+      pay_period_start_weekday INT NOT NULL DEFAULT 1,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS performance_pay_roles (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('hcp', 'custom'))
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_performance_pay_roles_org
+    ON performance_pay_roles (organization_id)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS performance_pay_assignments (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      hcp_employee_id TEXT NOT NULL,
+      role_id UUID REFERENCES performance_pay_roles(id) ON DELETE SET NULL,
+      overridden BOOLEAN NOT NULL DEFAULT false,
+      PRIMARY KEY (organization_id, hcp_employee_id)
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS performance_pay_configs (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      scope_type TEXT NOT NULL CHECK (scope_type IN ('role', 'employee')),
+      scope_id TEXT NOT NULL,
+      structure_type TEXT NOT NULL,
+      config_json JSONB NOT NULL DEFAULT '{}',
+      bonuses_json JSONB NOT NULL DEFAULT '[]',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, scope_type, scope_id)
+    )
+  `;
 }

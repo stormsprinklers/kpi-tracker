@@ -4,7 +4,8 @@
  */
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { getOrganizationById, insertWebhookLog } from "@/lib/db/queries";
+import { getOrganizationById, getWebhookForwarding, insertWebhookLog } from "@/lib/db/queries";
+import { forwardWebhook } from "@/lib/forwardWebhook";
 import { initSchema } from "@/lib/db";
 import { persistWebhookEvent } from "@/lib/sync/webhookPersist";
 import { persistGhlCallRecord } from "@/lib/ghl/persistCallRecord";
@@ -229,6 +230,12 @@ export async function handleWebhookPOST(
     } catch (err) {
       console.error(`${logPrefix} GHL persist error:`, err);
     }
+    const fwdConfig = (await getWebhookForwarding(organizationId)).find((c) => c.source === "ghl");
+    if (fwdConfig?.enabled && fwdConfig.forward_url?.trim()) {
+      forwardWebhook(rawBody, request, fwdConfig.forward_url, "ghl").catch((e) =>
+        console.error(`${logPrefix} GHL forward error:`, e)
+      );
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -355,6 +362,13 @@ export async function handleWebhookPOST(
     await persistWebhookEvent(event ?? "unknown", payloadObj, organizationId, companyId);
   } catch (err) {
     console.error(`${logPrefix} Persist error:`, err);
+  }
+
+  const fwdConfig = (await getWebhookForwarding(organizationId)).find((c) => c.source === "hcp");
+  if (fwdConfig?.enabled && fwdConfig.forward_url?.trim()) {
+    forwardWebhook(rawBody, request, fwdConfig.forward_url, "hcp").catch((e) =>
+      console.error(`${logPrefix} HCP forward error:`, e)
+    );
   }
 
   return NextResponse.json({ ok: true });

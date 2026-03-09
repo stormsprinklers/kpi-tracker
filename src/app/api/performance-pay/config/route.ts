@@ -1,0 +1,109 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { initSchema } from "@/lib/db";
+import {
+  upsertPerformancePayConfig,
+  upsertPerformancePayOrg,
+  deletePerformancePayConfig,
+  upsertPerformancePayAssignment,
+} from "@/lib/db/queries";
+
+/** POST /api/performance-pay/config - Create/update config for role or employee (admin only). */
+export async function POST(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.organizationId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.user.role !== "admin") {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
+
+  await initSchema();
+  const body = (await request.json()) as {
+    scope_type?: "role" | "employee";
+    scope_id?: string;
+    structure_type?: string;
+    config_json?: Record<string, unknown>;
+    bonuses_json?: Record<string, unknown>[];
+    setup_completed?: boolean;
+    pay_period_start_weekday?: number;
+  };
+
+  const scopeType = body.scope_type;
+  const scopeId = body.scope_id?.trim();
+  const structureType = body.structure_type?.trim();
+
+  if (!scopeType || !scopeId || !structureType) {
+    return NextResponse.json(
+      { error: "scope_type, scope_id, and structure_type are required" },
+      { status: 400 }
+    );
+  }
+  if (scopeType !== "role" && scopeType !== "employee") {
+    return NextResponse.json({ error: "scope_type must be 'role' or 'employee'" }, { status: 400 });
+  }
+
+  const configJson = typeof body.config_json === "object" ? body.config_json ?? {} : {};
+  const bonusesJson = Array.isArray(body.bonuses_json) ? body.bonuses_json : [];
+
+  if (scopeType === "employee") {
+    await upsertPerformancePayAssignment(session.user.organizationId, scopeId, {
+      role_id: null,
+      overridden: true,
+    });
+  }
+
+  await upsertPerformancePayConfig(session.user.organizationId, {
+    scope_type: scopeType,
+    scope_id: scopeId,
+    structure_type: structureType,
+    config_json: configJson,
+    bonuses_json: bonusesJson,
+  });
+
+  if (body.setup_completed === true || body.pay_period_start_weekday != null) {
+    await upsertPerformancePayOrg(session.user.organizationId, {
+      setup_completed: body.setup_completed,
+      pay_period_start_weekday: body.pay_period_start_weekday,
+    });
+  } else {
+    await upsertPerformancePayOrg(session.user.organizationId, {
+      setup_completed: true,
+    });
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+/** DELETE /api/performance-pay/config - Remove config (admin only). */
+export async function DELETE(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.organizationId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.user.role !== "admin") {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const scopeType = searchParams.get("scope_type");
+  const scopeId = searchParams.get("scope_id")?.trim();
+
+  if (!scopeType || !scopeId) {
+    return NextResponse.json(
+      { error: "scope_type and scope_id query params are required" },
+      { status: 400 }
+    );
+  }
+  if (scopeType !== "role" && scopeType !== "employee") {
+    return NextResponse.json({ error: "scope_type must be 'role' or 'employee'" }, { status: 400 });
+  }
+
+  await deletePerformancePayConfig(
+    session.user.organizationId,
+    scopeType as "role" | "employee",
+    scopeId
+  );
+  return NextResponse.json({ ok: true });
+}

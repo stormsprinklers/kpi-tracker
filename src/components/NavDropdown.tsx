@@ -2,9 +2,10 @@
 
 import { useRef, useEffect, useState } from "react";
 
-interface NavDropdownItem {
+export interface NavDropdownItem {
   label: string;
-  href: string;
+  href?: string;
+  onClick?: () => void;
 }
 
 interface NavDropdownProps {
@@ -42,16 +43,30 @@ export function NavDropdown({ label, items, navLinkClass }: NavDropdownProps) {
       </button>
       {open && items.length > 0 && (
         <div className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          {items.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              onClick={() => setOpen(false)}
-            >
-              {item.label}
-            </a>
-          ))}
+          {items.map((item, i) =>
+            item.onClick ? (
+              <button
+                key={item.label}
+                type="button"
+                className="block w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick?.();
+                }}
+              >
+                {item.label}
+              </button>
+            ) : (
+              <a
+                key={item.href ?? i}
+                href={item.href ?? "#"}
+                className="block px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                onClick={() => setOpen(false)}
+              >
+                {item.label}
+              </a>
+            )
+          )}
         </div>
       )}
     </div>

@@ -15,6 +15,8 @@ export interface EmployeeCallStats {
   lost: number;
   bookingRatePercent: number | null;
   avgDurationSeconds: number | null;
+  /** Average booked call revenue (from jobs with total_amount > 0). */
+  avgBookedCallRevenue: number | null;
 }
 
 export interface CallInsightsResult {
@@ -53,6 +55,27 @@ export async function getCallInsights(
       AND call_date <= ${end}
     GROUP BY hcp_employee_id, csr_first_name_raw
   `;
+
+  const revenueResult = await sql`
+    SELECT c.hcp_employee_id, AVG(j.total_amount)::double precision AS avg_revenue
+    FROM call_records c
+    INNER JOIN jobs j ON j.hcp_id = c.job_hcp_id AND j.company_id = c.company_id
+    WHERE c.organization_id = ${organizationId}::uuid
+      AND c.call_date >= ${start}
+      AND c.call_date <= ${end}
+      AND c.booking_value = 'won'
+      AND c.job_hcp_id IS NOT NULL
+      AND c.hcp_employee_id IS NOT NULL
+      AND j.total_amount IS NOT NULL
+      AND j.total_amount > 0
+    GROUP BY c.hcp_employee_id
+  `;
+  const revenueMap = new Map<string, number>();
+  for (const row of revenueResult.rows ?? []) {
+    const r = row as { hcp_employee_id: string; avg_revenue: number | string | null };
+    const val = r.avg_revenue != null ? (typeof r.avg_revenue === "string" ? parseFloat(r.avg_revenue) : r.avg_revenue) : null;
+    if (val != null && !Number.isNaN(val)) revenueMap.set(r.hcp_employee_id, val);
+  }
 
   const nameMap = new Map<string, string>();
 
@@ -96,6 +119,7 @@ export async function getCallInsights(
       bookingRatePercent = (won / oppCalls) * 100;
     }
 
+    const avgRev = r.hcp_employee_id ? revenueMap.get(r.hcp_employee_id) ?? null : null;
     byEmployee.push({
       hcpEmployeeId: r.hcp_employee_id,
       employeeName,
@@ -104,6 +128,7 @@ export async function getCallInsights(
       lost,
       bookingRatePercent,
       avgDurationSeconds: avgDur,
+      avgBookedCallRevenue: avgRev ?? null,
     });
   }
 

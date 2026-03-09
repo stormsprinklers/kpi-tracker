@@ -20,6 +20,14 @@ function IconCheck({ className, style }: { className?: string; style?: React.CSS
   );
 }
 
+function IconX({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg className={className} style={style} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
 function CtaPrimary({ children, href = "#" }: { children: React.ReactNode; href?: string }) {
   return (
     <a
@@ -271,7 +279,72 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* 10. Testimonials */}
+      {/* 10. Pricing */}
+      <section id="pricing" className="px-6 py-20 md:px-12 lg:px-24">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
+            Simple, transparent pricing.
+          </h2>
+          <p className="mt-4 max-w-2xl text-lg leading-relaxed opacity-90" style={{ color: NAV }}>
+            Choose the plan that fits your business. Upgrade anytime as you grow.
+          </p>
+          <div className="mt-12 overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse" style={{ borderColor: "rgba(11,31,51,0.12)" }}>
+              <thead>
+                <tr>
+                  <th className="border-b-2 pb-4 text-left font-semibold" style={{ color: NAV, borderColor: "rgba(11,31,51,0.15)" }}>Feature</th>
+                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: NAV, borderColor: "rgba(11,31,51,0.15)" }}>
+                    <div>Base</div>
+                    <div className="mt-2 text-2xl" style={{ color: NAV }}>$39<span className="text-base font-normal opacity-75">/mo</span></div>
+                  </th>
+                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: NAV, borderColor: "rgba(11,31,51,0.15)" }}>
+                    <div>Essential</div>
+                    <div className="mt-2 text-2xl" style={{ color: NAV }}>$99<span className="text-base font-normal opacity-75">/mo</span></div>
+                  </th>
+                  <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: NAV, borderColor: "rgba(11,31,51,0.15)" }}>
+                    <div>Pro</div>
+                    <div className="mt-2 text-2xl" style={{ color: NAV }}>$499<span className="text-base font-normal opacity-75">/mo</span></div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { feature: "Technician & global insights", base: true, essential: true, pro: true },
+                  { feature: "AI-powered suggestions", base: true, essential: true, pro: true },
+                  { feature: "Call tracking", base: false, essential: true, pro: true },
+                  { feature: "Marketing + SEO insights", base: false, essential: true, pro: true },
+                  { feature: "Timesheets & performance pay", base: false, essential: true, pro: true },
+                  { feature: "Multiple locations", base: false, essential: false, pro: true },
+                  { feature: "Crews", base: false, essential: false, pro: true },
+                  { feature: "Salesmen", base: false, essential: false, pro: true },
+                  { feature: "Custom integrations", base: false, essential: false, pro: true },
+                  { feature: "Exclusive community of elite fast-growing home services business owners", base: false, essential: false, pro: true },
+                ].map(({ feature, base, essential, pro }) => (
+                  <tr key={feature} className="border-b" style={{ borderColor: "rgba(11,31,51,0.08)" }}>
+                    <td className="py-4 pr-4" style={{ color: NAV }}>{feature}</td>
+                    <td className="py-4 text-center">
+                      {base ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: NAV }} />}
+                    </td>
+                    <td className="py-4 text-center">
+                      {essential ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: NAV }} />}
+                    </td>
+                    <td className="py-4 text-center">
+                      {pro ? <IconCheck className="mx-auto h-5 w-5" style={{ color: "#059669" }} /> : <IconX className="mx-auto h-5 w-5 opacity-40" style={{ color: NAV }} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-10 flex flex-wrap justify-center gap-4">
+            <CtaPrimary href="#">Get started — Base</CtaPrimary>
+            <CtaPrimary href="#">Get started — Essential</CtaPrimary>
+            <CtaSecondary href="#">Contact for Pro</CtaSecondary>
+          </div>
+        </div>
+      </section>
+
+      {/* 11. Testimonials */}
       <section className="px-6 py-20 md:px-12 lg:px-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
@@ -296,7 +369,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* 11. FAQ */}
+      {/* 12. FAQ */}
       <section id="faq" className="px-6 py-20 md:px-12 lg:px-24" style={{ backgroundColor: NAVY_LIGHT }}>
         <div className="mx-auto max-w-3xl">
           <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
@@ -320,7 +393,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* 12. Final CTA */}
+      {/* 13. Final CTA */}
       <section className="px-6 py-24 md:px-12 lg:px-24">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold md:text-4xl" style={{ color: NAV }}>
@@ -336,7 +409,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* 13. Footer */}
+      {/* 14. Footer */}
       <footer className="border-t px-6 py-12 md:px-12 lg:px-24" style={{ borderColor: "rgba(11,31,51,0.12)", backgroundColor: NAVY_LIGHT }}>
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 md:flex-row">
           <div>
@@ -347,6 +420,7 @@ export function LandingPage() {
           </div>
           <nav className="flex flex-wrap justify-center gap-6 text-sm">
             <a href="#features" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>Features</a>
+            <a href="#pricing" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>Pricing</a>
             <a href="#integrations" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>Integrations</a>
             <a href="#faq" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>FAQ</a>
             <a href="mailto:contact@example.com" className="opacity-80 hover:opacity-100" style={{ color: NAV }}>Contact</a>

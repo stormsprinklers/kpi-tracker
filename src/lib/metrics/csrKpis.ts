@@ -5,12 +5,14 @@ import { sql } from "@vercel/postgres";
 export interface CsrKpiEntry {
   csrId: string;
   csrName: string;
-  /** % of calls that turn into appointments. Placeholder for webhooks integration. */
+  /** % of calls that turn into appointments. */
   bookingRate: number | null;
-  /** Average call duration in minutes. Placeholder for webhooks integration. */
+  /** Average call duration in minutes. */
   avgCallDurationMinutes: number | null;
-  /** Lead response time. Placeholder for webhooks integration. */
+  /** Lead response time. */
   leadResponseTimeMinutes: number | null;
+  /** Average booked call revenue (from jobs with total_amount > 0). */
+  avgBookedCallRevenue: number | null;
 }
 
 const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
@@ -127,6 +129,7 @@ export async function getCsrKpiList(
       bookingRate: null,
       avgCallDurationMinutes: null,
       leadResponseTimeMinutes: null,
+      avgBookedCallRevenue: null,
     }));
   }
 
@@ -148,7 +151,31 @@ export async function getCsrKpiList(
     GROUP BY hcp_employee_id
   `;
 
-  const callStats = new Map<string, { bookingRate: number | null; avgDurationMinutes: number | null }>();
+  // Average booked call revenue: jobs with total_amount > 0, linked via job_hcp_id
+  const revenueResult = await sql`
+    SELECT c.hcp_employee_id, AVG(j.total_amount)::double precision AS avg_revenue
+    FROM call_records c
+    INNER JOIN jobs j ON j.hcp_id = c.job_hcp_id AND j.company_id = c.company_id
+    WHERE c.organization_id = ${organizationId}::uuid
+      AND c.call_date >= ${start}
+      AND c.call_date <= ${end}
+      AND c.booking_value = 'won'
+      AND c.job_hcp_id IS NOT NULL
+      AND c.hcp_employee_id IS NOT NULL
+      AND j.total_amount IS NOT NULL
+      AND j.total_amount > 0
+    GROUP BY c.hcp_employee_id
+  `;
+  const revenueMap = new Map<string, number>();
+  for (const row of revenueResult.rows ?? []) {
+    const r = row as { hcp_employee_id: string; avg_revenue: number | string | null };
+    const val = r.avg_revenue != null ? (typeof r.avg_revenue === "string" ? parseFloat(r.avg_revenue) : r.avg_revenue) : null;
+    if (val != null && !Number.isNaN(val) && officeStaffIds.has(r.hcp_employee_id)) {
+      revenueMap.set(r.hcp_employee_id, val);
+    }
+  }
+
+  const callStats = new Map<string, { bookingRate: number | null; avgDurationMinutes: number | null; avgBookedCallRevenue: number | null }>();
   for (const row of callResult.rows ?? []) {
     const r = row as {
       hcp_employee_id: string;
@@ -163,7 +190,8 @@ export async function getCsrKpiList(
     if (oppCalls > 0) bookingRate = (won / oppCalls) * 100;
     const avgSec = r.avg_duration != null ? parseFloat(r.avg_duration) : null;
     const avgMinutes = avgSec != null ? avgSec / 60 : null;
-    callStats.set(r.hcp_employee_id, { bookingRate, avgDurationMinutes: avgMinutes });
+    const avgRev = revenueMap.get(r.hcp_employee_id) ?? null;
+    callStats.set(r.hcp_employee_id, { bookingRate, avgDurationMinutes: avgMinutes, avgBookedCallRevenue: avgRev });
   }
 
   return csrList.map((c) => {
@@ -174,6 +202,7 @@ export async function getCsrKpiList(
       bookingRate: stats?.bookingRate ?? null,
       avgCallDurationMinutes: stats?.avgDurationMinutes ?? null,
       leadResponseTimeMinutes: null,
+      avgBookedCallRevenue: stats?.avgBookedCallRevenue ?? revenueMap.get(c.id) ?? null,
     };
   });
 }

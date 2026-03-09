@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getOrganizationById, insertWebhookLog } from "@/lib/db/queries";
+import { getOrganizationById, getWebhookForwarding, insertWebhookLog } from "@/lib/db/queries";
+import { forwardWebhook } from "@/lib/forwardWebhook";
 import { initSchema } from "@/lib/db";
 import { persistGhlCallRecord } from "@/lib/ghl/persistCallRecord";
 
@@ -118,6 +119,13 @@ export async function POST(
   } catch (err) {
     console.error("[GHL Webhook] Persist error:", err);
     return NextResponse.json({ error: "Failed to persist call record" }, { status: 500 });
+  }
+
+  const fwdConfig = (await getWebhookForwarding(organizationId)).find((c) => c.source === "ghl");
+  if (fwdConfig?.enabled && fwdConfig.forward_url?.trim()) {
+    forwardWebhook(rawBody, request, fwdConfig.forward_url, "ghl").catch((e) =>
+      console.error("[GHL Webhook] Forward error:", e)
+    );
   }
 
   return NextResponse.json({ ok: true });
