@@ -222,14 +222,12 @@ export async function calculateExpectedPay(
       }
       case "hourly_to_commission": {
         const rate = (cfg.hourly_rate as number) ?? 0;
-        const thresholdHours = (cfg.threshold_hours as number) ?? 0;
         const commissionRate = (cfg.commission_rate_pct as number) ?? 0;
-        const cappedHours = Math.min(hours, thresholdHours);
-        const base = cappedHours * rate;
-        const commission = hours > thresholdHours ? revenue * (commissionRate / 100) : 0;
-        basePay = base + commission;
-        breakdown.base = base;
-        breakdown.commission = commission;
+        const hourlyPay = hours * rate;
+        const commissionPay = revenue * (commissionRate / 100);
+        basePay = Math.max(hourlyPay, commissionPay);
+        breakdown.hourly = hourlyPay;
+        breakdown.commission = commissionPay;
         break;
       }
       case "pure_commission": {

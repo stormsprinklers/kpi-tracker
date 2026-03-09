@@ -21,7 +21,7 @@ type StructureType =
 const STRUCTURE_LABELS: Record<StructureType, string> = {
   pure_hourly: "Pure hourly",
   hourly_commission_tiers: "Hourly + commission tiers",
-  hourly_to_commission: "Hourly → commission after threshold",
+  hourly_to_commission: "Base or commission (whichever is higher)",
   pure_commission: "Pure commission",
   hourly_metrics: "Hourly tied to metrics",
 };
@@ -362,8 +362,11 @@ export function PerformancePayWizard({
 
           {structureType === "hourly_to_commission" && (
             <div className="space-y-2">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Tech earns base hourly or commission on revenue, whichever is higher.
+              </p>
               <div>
-                <label className="block text-sm text-zinc-600 dark:text-zinc-400">Hourly rate ($)</label>
+                <label className="block text-sm text-zinc-600 dark:text-zinc-400">Base hourly rate ($)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -376,23 +379,7 @@ export function PerformancePayWizard({
                 />
               </div>
               <div>
-                <label className="block text-sm text-zinc-600 dark:text-zinc-400">Threshold hours</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  value={(config.threshold_hours as number) ?? ""}
-                  onChange={(e) =>
-                    setConfig((c) => ({
-                      ...c,
-                      threshold_hours: e.target.value ? parseFloat(e.target.value) : 0,
-                    }))
-                  }
-                  className="mt-1 w-32 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-zinc-600 dark:text-zinc-400">Commission %</label>
+                <label className="block text-sm text-zinc-600 dark:text-zinc-400">Commission % of revenue</label>
                 <input
                   type="number"
                   step="0.01"

@@ -13,7 +13,7 @@ interface Config {
 const STRUCTURE_LABELS: Record<string, string> = {
   pure_hourly: "Pure hourly",
   hourly_commission_tiers: "Hourly + commission tiers",
-  hourly_to_commission: "Hourly → commission",
+  hourly_to_commission: "Base or commission (whichever higher)",
   pure_commission: "Pure commission",
   hourly_metrics: "Hourly tied to metrics",
 };
