@@ -17,6 +17,7 @@ export function SeoSettingsClient() {
   const [keywords, setKeywords] = useState<string[]>([]);
   const [locations, setLocations] = useState<number[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
+  const [locationSearch, setLocationSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,8 +195,15 @@ export function SeoSettingsClient() {
           Locations ({locations.length}/{MAX_LOCATIONS})
         </h2>
         <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-          Cities/regions to monitor for local search rankings
+          Search and select specific cities or states to monitor
         </p>
+        <input
+          type="text"
+          value={locationSearch}
+          onChange={(e) => setLocationSearch(e.target.value)}
+          placeholder="Search cities (e.g. Austin, Denver, Phoenix)..."
+          className="mt-2 block w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+        />
         <div className="mt-2 max-h-64 overflow-y-auto rounded border border-zinc-200 p-2 dark:border-zinc-700">
           {locationOptions.length === 0 ? (
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -205,7 +213,20 @@ export function SeoSettingsClient() {
             <div className="flex flex-col gap-1">
               {locationOptions
                 .filter((l) => l.location_type !== "Country")
-                .slice(0, 200)
+                .filter(
+                  (l) =>
+                    !locationSearch.trim() ||
+                    l.location_name
+                      .toLowerCase()
+                      .includes(locationSearch.trim().toLowerCase())
+                )
+                .sort((a, b) => {
+                  const aParts = a.location_name.split(",").length;
+                  const bParts = b.location_name.split(",").length;
+                  if (aParts !== bParts) return bParts - aParts;
+                  return a.location_name.localeCompare(b.location_name);
+                })
+                .slice(0, locationSearch.trim() ? 300 : 100)
                 .map((loc) => (
                   <label
                     key={loc.location_code}
@@ -226,9 +247,44 @@ export function SeoSettingsClient() {
                     </span>
                   </label>
                 ))}
+              {locationOptions.filter(
+                (l) =>
+                  l.location_type !== "Country" &&
+                  (!locationSearch.trim() ||
+                    l.location_name
+                      .toLowerCase()
+                      .includes(locationSearch.trim().toLowerCase()))
+              ).length > (locationSearch.trim() ? 300 : 100) && (
+                <p className="py-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  Refine your search to see more matches
+                </p>
+              )}
             </div>
           )}
         </div>
+        {locations.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {locations.map((code) => {
+              const loc = locationOptions.find((l) => l.location_code === code);
+              return (
+                <span
+                  key={code}
+                  className="inline-flex items-center gap-1 rounded bg-zinc-200 px-2 py-0.5 text-xs dark:bg-zinc-700"
+                >
+                  {loc?.location_name ?? `#${code}`}
+                  <button
+                    type="button"
+                    onClick={() => toggleLocation(code)}
+                    className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                    aria-label={`Remove ${loc?.location_name ?? code}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {error && (
