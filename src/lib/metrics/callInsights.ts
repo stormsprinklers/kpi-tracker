@@ -20,6 +20,8 @@ export interface EmployeeCallStats {
 }
 
 export interface CallInsightsResult {
+  /** Average days between call date and appointment date for calls with linked jobs. */
+  avgWaitingWindowDays: number | null;
   byEmployee: EmployeeCallStats[];
 }
 
@@ -40,6 +42,32 @@ export async function getCallInsights(
   const { startDate, endDate } = filters ?? {};
   const start = startDate ?? "2000-01-01";
   const end = endDate ?? "2100-12-31";
+
+  const waitingResult = await sql`
+    SELECT AVG(
+      (COALESCE(
+        (j.raw->'schedule'->>'scheduled_start'),
+        (j.raw->'schedule'->>'scheduledStart'),
+        j.raw->>'scheduled_start'
+      )::date - c.call_date)
+    )::double precision AS avg_waiting_days
+    FROM call_records c
+    INNER JOIN jobs j ON j.hcp_id = c.job_hcp_id AND j.company_id = c.company_id
+    WHERE c.organization_id = ${organizationId}::uuid
+      AND c.call_date >= ${start}
+      AND c.call_date <= ${end}
+      AND c.job_hcp_id IS NOT NULL
+      AND (
+        (j.raw->'schedule'->>'scheduled_start') IS NOT NULL
+        OR (j.raw->'schedule'->>'scheduledStart') IS NOT NULL
+        OR (j.raw->>'scheduled_start') IS NOT NULL
+      )
+  `;
+  const waitingRow = waitingResult.rows?.[0] as { avg_waiting_days: number | string | null } | undefined;
+  const avgWaitingWindowDays =
+    waitingRow?.avg_waiting_days != null && !Number.isNaN(Number(waitingRow.avg_waiting_days))
+      ? Number(waitingRow.avg_waiting_days)
+      : null;
 
   const result = await sql`
     SELECT
@@ -141,8 +169,8 @@ export async function getCallInsights(
     const filtered = byEmployee.filter(
       (e) => e.hcpEmployeeId && selectionSet.has(e.hcpEmployeeId)
     );
-    return { byEmployee: filtered };
+    return { avgWaitingWindowDays, byEmployee: filtered };
   }
 
-  return { byEmployee };
+  return { avgWaitingWindowDays, byEmployee };
 }
