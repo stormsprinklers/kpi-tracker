@@ -581,4 +581,15 @@ export async function initSchema(): Promise<void> {
       PRIMARY KEY (organization_id, scope_type, scope_id)
     )
   `;
+
+  // AI dashboard insights - cached insights from OpenAI per dashboard
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai_dashboard_insights (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      dashboard_type TEXT NOT NULL CHECK (dashboard_type IN ('main', 'calls', 'profit', 'time', 'marketing')),
+      insights_json JSONB NOT NULL,
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, dashboard_type)
+    )
+  `;
 }

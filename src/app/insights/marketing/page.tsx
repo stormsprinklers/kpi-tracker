@@ -4,6 +4,7 @@ import Link from "next/link";
 import { MarketingExecutiveSummary } from "@/components/MarketingExecutiveSummary";
 import { MarketingLeadSourceTable } from "@/components/MarketingLeadSourceTable";
 import { MarketingSeoInsights } from "@/components/MarketingSeoInsights";
+import { AIInsightsSection } from "@/components/AIInsightsSection";
 
 export default async function InsightsMarketingPage() {
   const session = await auth();
@@ -29,6 +30,7 @@ export default async function InsightsMarketingPage() {
         <MarketingExecutiveSummary />
         <MarketingLeadSourceTable />
         <MarketingSeoInsights />
+        <AIInsightsSection dashboard="marketing" />
       </main>
     </div>
   );

@@ -4,6 +4,7 @@ import {
   getPerformancePayAssignments,
   getPerformancePayRoles,
   getTimeEntriesByOrganization,
+  getEmployeesAndProsForCsrSelector,
 } from "./db/queries";
 import { getTechnicianRevenue } from "./metrics/technicianRevenue";
 import { getCsrKpiList } from "./metrics/csrKpis";
@@ -121,7 +122,7 @@ export async function calculateExpectedPay(
   const orgEntity = await getOrganizationById(organizationId);
   const companyId = orgEntity?.hcp_company_id ?? "default";
 
-  const [timeEntries, techResult, csrKpis] = await Promise.all([
+  const [timeEntries, techResult, csrKpis, employeesAndPros] = await Promise.all([
     getTimeEntriesByOrganization(organizationId, startDate, endDate),
     getTechnicianRevenue(organizationId, {
       startDate,
@@ -129,7 +130,13 @@ export async function calculateExpectedPay(
       activeInCurrentYearOnly: false,
     }),
     getCsrKpiList(organizationId, { startDate, endDate }),
+    getEmployeesAndProsForCsrSelector(companyId),
   ]);
+
+  const employeeNames = new Map<string, string>();
+  for (const e of employeesAndPros) {
+    employeeNames.set(e.id, e.name);
+  }
 
   const hoursByEmployee = new Map<string, number>();
   for (const e of timeEntries) {
@@ -164,12 +171,6 @@ export async function calculateExpectedPay(
       },
     ])
   );
-
-  const employeeNames = new Map<string, string>();
-  techResult.technicians.forEach((t) =>
-    employeeNames.set(t.technicianId, t.technicianName)
-  );
-  csrKpis.forEach((c) => employeeNames.set(c.csrId, c.csrName));
 
   const results: ExpectedPayResult[] = [];
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { MetricTooltip } from "./MetricTooltip";
+import { AIInsightsSection } from "./AIInsightsSection";
 
 interface EmployeeCallStats {
   hcpEmployeeId: string | null;
@@ -142,16 +143,7 @@ export function CallInsightsClient() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-        <h3 className="mb-3 text-sm font-medium text-zinc-500 dark:text-zinc-400">
-          AI Analysis
-        </h3>
-        <div className="rounded-lg border border-dashed border-zinc-200 bg-zinc-50/50 p-6 text-center dark:border-zinc-700 dark:bg-zinc-900/50">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            AI analysis will appear here. Configure automations to populate insights.
-          </p>
-        </div>
-      </section>
+      <AIInsightsSection dashboard="calls" />
 
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">

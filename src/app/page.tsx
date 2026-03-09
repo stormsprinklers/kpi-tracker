@@ -6,6 +6,7 @@ import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection"
 import { CsrKpisSection } from "@/components/CsrKpisSection";
 import { EmployeeDashboardBanner } from "@/components/EmployeeDashboardBanner";
 import { ActivityFeed } from "@/components/ActivityFeed";
+import { AIInsightsSection } from "@/components/AIInsightsSection";
 import { LandingPage } from "@/components/LandingPage";
 
 export default async function Home() {
@@ -31,6 +32,7 @@ export default async function Home() {
         {connected && <ActivityFeed connected={connected} />}
         {connected && <TechnicianRevenueSection />}
         {connected && <CsrKpisSection />}
+        {connected && <AIInsightsSection dashboard="main" />}
       </main>
     </div>
   );

@@ -1456,3 +1456,34 @@ export async function deletePerformancePayConfig(
     WHERE organization_id = ${organizationId}::uuid AND scope_type = ${scopeType} AND scope_id = ${scopeId}
   `;
 }
+
+export type AiDashboardType = "main" | "calls" | "profit" | "time" | "marketing";
+
+export async function getAiDashboardInsights(
+  organizationId: string,
+  dashboardType: AiDashboardType
+): Promise<{ insights: string[]; generatedAt: string } | null> {
+  const result = await sql`
+    SELECT insights_json, generated_at
+    FROM ai_dashboard_insights
+    WHERE organization_id = ${organizationId}::uuid AND dashboard_type = ${dashboardType}
+  `;
+  const row = result.rows?.[0] as { insights_json: unknown; generated_at: string } | undefined;
+  if (!row) return null;
+  const insights = Array.isArray(row.insights_json) ? (row.insights_json as string[]) : [];
+  return { insights, generatedAt: row.generated_at };
+}
+
+export async function upsertAiDashboardInsights(
+  organizationId: string,
+  dashboardType: AiDashboardType,
+  insights: string[]
+): Promise<void> {
+  await sql`
+    INSERT INTO ai_dashboard_insights (organization_id, dashboard_type, insights_json, generated_at)
+    VALUES (${organizationId}::uuid, ${dashboardType}, ${JSON.stringify(insights)}::jsonb, NOW())
+    ON CONFLICT (organization_id, dashboard_type) DO UPDATE SET
+      insights_json = ${JSON.stringify(insights)}::jsonb,
+      generated_at = NOW()
+  `;
+}

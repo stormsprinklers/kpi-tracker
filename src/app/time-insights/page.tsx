@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { TimeInsightsClient } from "@/components/TimeInsightsClient";
+import { AIInsightsSection } from "@/components/AIInsightsSection";
 
 export default async function TimeInsightsPage() {
   const session = await auth();
@@ -26,6 +27,7 @@ export default async function TimeInsightsPage() {
           </p>
           <TimeInsightsClient />
         </section>
+        <AIInsightsSection dashboard="time" />
       </main>
     </div>
   );

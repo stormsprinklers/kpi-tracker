@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { AIInsightsSection } from "@/components/AIInsightsSection";
 
 export default async function InsightsProfitPage() {
   const session = await auth();
@@ -34,6 +35,7 @@ export default async function InsightsProfitPage() {
           <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Estimated Profit</h2>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Coming soon.</p>
         </section>
+        <AIInsightsSection dashboard="profit" />
       </main>
     </div>
   );
