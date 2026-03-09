@@ -8,28 +8,41 @@ interface SeoData {
   configured: boolean;
   message?: string;
   error?: string;
-  locations?: { code: number; name: string }[];
+  locations?: { value: string; name: string }[];
+  serviceAreas?: { id: string; name: string; locationCount: number }[];
   organic?: Array<{
     keyword: string;
-    locationCode: number;
-    locationName: string;
+    locationKey: string;
+    locationValue: string;
     rank: number | null;
     url: string | null;
     title: string | null;
   }>;
   local?: Array<{
     keyword: string;
-    locationCode: number;
-    locationName: string;
+    locationKey: string;
+    locationValue: string;
     rank: number | null;
     title: string | null;
   }>;
   ai?: Array<{
     keyword: string;
-    locationCode: number;
-    locationName: string;
+    locationKey: string;
+    locationValue: string;
     mentioned: boolean;
     snippet: string | null;
+  }>;
+  serviceAreaLocal?: Array<{
+    serviceAreaName: string;
+    keyword: string;
+    avgRank: number | null;
+    locationCount: number;
+  }>;
+  serviceAreaOrganic?: Array<{
+    serviceAreaName: string;
+    keyword: string;
+    avgRank: number | null;
+    locationCount: number;
   }>;
 }
 
@@ -118,13 +131,31 @@ export function MarketingSeoInsights() {
   const localData = data.local ?? [];
   const organicData = data.organic ?? [];
   const aiData = data.ai ?? [];
+  const serviceAreaLocal = data.serviceAreaLocal ?? [];
+  const serviceAreaOrganic = data.serviceAreaOrganic ?? [];
 
   const keywords = [...new Set(localData.map((r) => r.keyword))];
 
-  const getLocalRank = (keyword: string, locCode: number) => {
-    const r = localData.find((x) => x.keyword === keyword && x.locationCode === locCode);
+  const getLocalRank = (keyword: string, locValue: string) => {
+    const r = localData.find((x) => x.keyword === keyword && x.locationValue === locValue);
     return r?.rank ?? null;
   };
+
+  const getServiceAreaLocalRank = (keyword: string, areaName: string) => {
+    const r = serviceAreaLocal.find(
+      (x) => x.keyword === keyword && x.serviceAreaName === areaName
+    );
+    return r?.avgRank ?? null;
+  };
+
+  const getServiceAreaOrganicRank = (keyword: string, areaName: string) => {
+    const r = serviceAreaOrganic.find(
+      (x) => x.keyword === keyword && x.serviceAreaName === areaName
+    );
+    return r?.avgRank ?? null;
+  };
+
+  const serviceAreaNames = [...new Set(serviceAreaLocal.map((x) => x.serviceAreaName))];
 
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -145,6 +176,62 @@ export function MarketingSeoInsights() {
         Google Organic, Local Finder (GBP), and AI Mode rankings via DataForSEO.
       </p>
 
+      {serviceAreaNames.length > 0 && keywords.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
+            <MetricTooltip
+              label="Service area averages"
+              tooltip="Average ranking across all cities/zips in each service area."
+            />
+          </h3>
+          <div className="mt-2 space-y-4">
+            {serviceAreaNames.map((areaName) => (
+              <div key={areaName}>
+                <h4 className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  {areaName}
+                </h4>
+                <div className="mt-1 overflow-x-auto">
+                  <table className="min-w-full border-collapse text-sm">
+                    <thead>
+                      <tr>
+                        <th className="border border-zinc-200 px-2 py-1.5 text-left text-xs font-medium text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                          Keyword
+                        </th>
+                        <th className="border border-zinc-200 px-2 py-1.5 text-center text-xs font-medium text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                          Local avg
+                        </th>
+                        <th className="border border-zinc-200 px-2 py-1.5 text-center text-xs font-medium text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                          Organic avg
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {keywords.map((kw) => (
+                        <tr key={kw}>
+                          <td className="border border-zinc-200 px-2 py-1.5 text-zinc-900 dark:border-zinc-700 dark:text-zinc-50">
+                            {kw}
+                          </td>
+                          <td
+                            className={`border border-zinc-200 px-2 py-1.5 text-center dark:border-zinc-700 ${rankColor(getServiceAreaLocalRank(kw, areaName))}`}
+                          >
+                            {getServiceAreaLocalRank(kw, areaName) ?? "—"}
+                          </td>
+                          <td
+                            className={`border border-zinc-200 px-2 py-1.5 text-center dark:border-zinc-700 ${rankColor(getServiceAreaOrganicRank(kw, areaName))}`}
+                          >
+                            {getServiceAreaOrganicRank(kw, areaName) ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {keywords.length > 0 && locations.length > 0 && (
         <div className="mt-6">
           <h3 className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
@@ -162,7 +249,7 @@ export function MarketingSeoInsights() {
                   </th>
                   {locations.map((loc) => (
                     <th
-                      key={loc.code}
+                      key={loc.value}
                       className="border border-zinc-200 px-2 py-1.5 text-center text-xs font-medium text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
                     >
                       {loc.name.length > 20 ? loc.name.slice(0, 18) + "…" : loc.name}
@@ -177,10 +264,10 @@ export function MarketingSeoInsights() {
                       {kw}
                     </td>
                     {locations.map((loc) => {
-                      const rank = getLocalRank(kw, loc.code);
+                      const rank = getLocalRank(kw, loc.value);
                       return (
                         <td
-                          key={loc.code}
+                          key={loc.value}
                           className={`border border-zinc-200 px-2 py-1.5 text-center dark:border-zinc-700 ${rankColor(rank)}`}
                         >
                           {rank != null ? rank : "—"}
@@ -231,7 +318,7 @@ export function MarketingSeoInsights() {
                         {o.keyword}
                       </td>
                       <td className="border border-zinc-200 px-2 py-1.5 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-                        {o.locationName}
+                        {o.locationKey}
                       </td>
                       <td
                         className={`border border-zinc-200 px-2 py-1.5 text-center dark:border-zinc-700 ${rankColor(o.rank)}`}
@@ -287,7 +374,7 @@ export function MarketingSeoInsights() {
                   </span>
                   <span className="text-zinc-500 dark:text-zinc-400">
                     {" "}
-                    in {a.locationName}
+                    in {a.locationKey}
                   </span>
                   {a.snippet && (
                     <p className="mt-1 truncate text-xs text-zinc-500 dark:text-zinc-400">

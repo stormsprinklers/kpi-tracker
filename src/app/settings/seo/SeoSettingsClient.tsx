@@ -8,16 +8,40 @@ interface LocationOption {
   location_type?: string;
 }
 
+interface ServiceArea {
+  id?: string;
+  name: string;
+  location_values: string[];
+}
+
 const MAX_KEYWORDS = 10;
-const MAX_LOCATIONS = 20;
+const MAX_LOCATIONS = 50;
+
+function getLocationDisplay(value: string, locationOptions: LocationOption[]): string {
+  if (value.startsWith("zip:")) {
+    const parts = value.split(":");
+    if (parts.length >= 2) return `ZIP ${parts[1]}`;
+    return value;
+  }
+  const code = parseInt(value, 10);
+  if (!Number.isNaN(code)) {
+    const loc = locationOptions.find((l) => l.location_code === code);
+    return loc?.location_name ?? `#${code}`;
+  }
+  return value;
+}
 
 export function SeoSettingsClient() {
   const [website, setWebsite] = useState("");
   const [seoBusinessName, setSeoBusinessName] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
-  const [locations, setLocations] = useState<number[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>([]);
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [locationSearch, setLocationSearch] = useState("");
+  const [zipInput, setZipInput] = useState("");
+  const [zipLoading, setZipLoading] = useState(false);
+  const [zipError, setZipError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,12 +61,24 @@ export function SeoSettingsClient() {
           website: string;
           seo_business_name: string;
           keywords: string[];
-          locations: number[];
+          locations: (string | number)[];
+          serviceAreas?: { id: string; name: string; location_values: string[] }[];
         };
         setWebsite(config.website ?? "");
         setSeoBusinessName(config.seo_business_name ?? "");
         setKeywords(config.keywords ?? []);
-        setLocations(config.locations ?? []);
+        setLocations(
+          (config.locations ?? []).map((l) =>
+            typeof l === "number" ? String(l) : l
+          )
+        );
+        setServiceAreas(
+          config.serviceAreas?.map((a) => ({
+            id: a.id,
+            name: a.name,
+            location_values: a.location_values ?? [],
+          })) ?? []
+        );
 
         if (locationsRes.ok) {
           const locs = (await locationsRes.json()) as LocationOption[];
@@ -68,12 +104,92 @@ export function SeoSettingsClient() {
     setKeywords((prev) => prev.filter((_, j) => j !== i));
   };
 
-  const toggleLocation = (code: number) => {
+  const addZipCode = async () => {
+    const zip = zipInput.replace(/\D/g, "").slice(0, 5);
+    if (!zip || zip.length !== 5) {
+      setZipError("Enter a 5-digit US zip code");
+      return;
+    }
+    const value = `zip:${zip}:0,0`;
+    if (locations.includes(value) || locations.some((l) => l.startsWith(`zip:${zip}:`))) {
+      setZipError("Zip code already added");
+      return;
+    }
+    if (locations.length >= MAX_LOCATIONS) {
+      setZipError(`Maximum ${MAX_LOCATIONS} locations`);
+      return;
+    }
+    setZipLoading(true);
+    setZipError(null);
+    try {
+      const res = await fetch(`/api/marketing/seo/zip-lookup?zip=${zip}`);
+      const data = (await res.json()) as { error?: string; zip?: string; lat?: number; lng?: number };
+      if (!res.ok) {
+        setZipError(data.error ?? "Zip code not found");
+        return;
+      }
+      const locValue = `zip:${data.zip}:${data.lat},${data.lng}`;
+      if (locations.includes(locValue)) {
+        setZipError("Zip code already added");
+        return;
+      }
+      setLocations((prev) => [...prev, locValue]);
+      setZipInput("");
+    } catch {
+      setZipError("Failed to look up zip code");
+    } finally {
+      setZipLoading(false);
+    }
+  };
+
+  const toggleLocation = (value: string) => {
     setLocations((prev) => {
-      if (prev.includes(code)) return prev.filter((c) => c !== code);
+      if (prev.includes(value)) return prev.filter((c) => c !== value);
       if (prev.length >= MAX_LOCATIONS) return prev;
-      return [...prev, code];
+      return [...prev, value];
     });
+  };
+
+  const removeLocation = (value: string) => {
+    setLocations((prev) => prev.filter((c) => c !== value));
+    setServiceAreas((prev) =>
+      prev.map((a) => ({
+        ...a,
+        location_values: a.location_values.filter((v) => v !== value),
+      }))
+    );
+  };
+
+  const addServiceArea = () => {
+    setServiceAreas((prev) => [
+      ...prev,
+      { name: `Area ${prev.length + 1}`, location_values: [] },
+    ]);
+  };
+
+  const updateServiceArea = (idx: number, patch: Partial<ServiceArea>) => {
+    setServiceAreas((prev) =>
+      prev.map((a, i) => (i === idx ? { ...a, ...patch } : a))
+    );
+  };
+
+  const removeServiceArea = (idx: number) => {
+    setServiceAreas((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const toggleServiceAreaLocation = (areaIdx: number, locValue: string) => {
+    setServiceAreas((prev) =>
+      prev.map((a, i) => {
+        if (i !== areaIdx) return a;
+        const has = a.location_values.includes(locValue);
+        return {
+          ...a,
+          location_values: has
+            ? a.location_values.filter((v) => v !== locValue)
+            : [...a.location_values, locValue],
+        };
+      })
+    );
   };
 
   const handleSave = async () => {
@@ -88,6 +204,7 @@ export function SeoSettingsClient() {
           seo_business_name: seoBusinessName.trim() || null,
           keywords,
           locations,
+          serviceAreas,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -195,8 +312,31 @@ export function SeoSettingsClient() {
           Locations ({locations.length}/{MAX_LOCATIONS})
         </h2>
         <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-          Search and select specific cities or states to monitor
+          Add cities or zip codes to monitor. Combine them into service areas below for average rankings.
         </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            type="text"
+            value={zipInput}
+            onChange={(e) => {
+              setZipInput(e.target.value.replace(/\D/g, "").slice(0, 5));
+              setZipError(null);
+            }}
+            placeholder="Add zip (e.g. 75201)"
+            className="block w-28 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+          />
+          <button
+            type="button"
+            onClick={addZipCode}
+            disabled={zipLoading}
+            className="rounded bg-zinc-200 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
+          >
+            {zipLoading ? "…" : "Add zip"}
+          </button>
+        </div>
+        {zipError && (
+          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{zipError}</p>
+        )}
         <input
           type="text"
           value={locationSearch}
@@ -227,26 +367,29 @@ export function SeoSettingsClient() {
                   return a.location_name.localeCompare(b.location_name);
                 })
                 .slice(0, locationSearch.trim() ? 300 : 100)
-                .map((loc) => (
-                  <label
-                    key={loc.location_code}
-                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={locations.includes(loc.location_code)}
-                      onChange={() => toggleLocation(loc.location_code)}
-                      disabled={
-                        !locations.includes(loc.location_code) &&
-                        locations.length >= MAX_LOCATIONS
-                      }
-                      className="rounded border-zinc-300 dark:border-zinc-600"
-                    />
-                    <span className="text-sm text-zinc-900 dark:text-zinc-50">
-                      {loc.location_name}
-                    </span>
-                  </label>
-                ))}
+                .map((loc) => {
+                  const value = String(loc.location_code);
+                  return (
+                    <label
+                      key={loc.location_code}
+                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={locations.includes(value)}
+                        onChange={() => toggleLocation(value)}
+                        disabled={
+                          !locations.includes(value) &&
+                          locations.length >= MAX_LOCATIONS
+                        }
+                        className="rounded border-zinc-300 dark:border-zinc-600"
+                      />
+                      <span className="text-sm text-zinc-900 dark:text-zinc-50">
+                        {loc.location_name}
+                      </span>
+                    </label>
+                  );
+                })}
               {locationOptions.filter(
                 (l) =>
                   l.location_type !== "Country" &&
@@ -264,27 +407,91 @@ export function SeoSettingsClient() {
         </div>
         {locations.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {locations.map((code) => {
-              const loc = locationOptions.find((l) => l.location_code === code);
-              return (
-                <span
-                  key={code}
-                  className="inline-flex items-center gap-1 rounded bg-zinc-200 px-2 py-0.5 text-xs dark:bg-zinc-700"
+            {locations.map((val) => (
+              <span
+                key={val}
+                className="inline-flex items-center gap-1 rounded bg-zinc-200 px-2 py-0.5 text-xs dark:bg-zinc-700"
+              >
+                {getLocationDisplay(val, locationOptions)}
+                <button
+                  type="button"
+                  onClick={() => removeLocation(val)}
+                  className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                  aria-label={`Remove ${getLocationDisplay(val, locationOptions)}`}
                 >
-                  {loc?.location_name ?? `#${code}`}
-                  <button
-                    type="button"
-                    onClick={() => toggleLocation(code)}
-                    className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-                    aria-label={`Remove ${loc?.location_name ?? code}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              );
-            })}
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
         )}
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+          Service areas
+        </h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+          Group locations into service areas. Reports will show average ranking across all cities/zips in each area.
+        </p>
+        <div className="mt-2 space-y-3">
+          {serviceAreas.map((area, idx) => (
+            <div
+              key={idx}
+              className="rounded border border-zinc-200 p-3 dark:border-zinc-700"
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={area.name}
+                  onChange={(e) => updateServiceArea(idx, { name: e.target.value })}
+                  placeholder="Area name (e.g. North Texas)"
+                  className="flex-1 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeServiceArea(idx)}
+                  className="text-zinc-500 hover:text-red-600 dark:hover:text-red-400"
+                  aria-label="Remove area"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {locations.length === 0 ? (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Add locations above first
+                  </p>
+                ) : (
+                  locations.map((val) => {
+                    const checked = area.location_values.includes(val);
+                    return (
+                      <label
+                        key={val}
+                        className="flex cursor-pointer items-center gap-1 rounded bg-zinc-100 px-2 py-0.5 text-xs hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleServiceAreaLocation(idx, val)}
+                          className="rounded border-zinc-300 dark:border-zinc-600"
+                        />
+                        {getLocationDisplay(val, locationOptions)}
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={addServiceArea}
+          className="mt-2 rounded border border-dashed border-zinc-300 px-3 py-2 text-sm text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
+        >
+          + Add service area
+        </button>
       </section>
 
       {error && (

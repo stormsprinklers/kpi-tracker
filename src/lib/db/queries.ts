@@ -428,12 +428,78 @@ export async function setSeoConfig(
   await sql`DELETE FROM seo_config WHERE organization_id = ${organizationId}::uuid`;
   const inserts: { config_type: string; value: string; sort_order: number }[] = [];
   (params.keywords ?? []).forEach((v, i) => inserts.push({ config_type: "keywords", value: v, sort_order: i }));
-  (params.locations ?? []).forEach((v, i) => inserts.push({ config_type: "locations", value: v, sort_order: i }));
+  (params.locations ?? []).forEach((v, i) => inserts.push({ config_type: "locations", value: String(v), sort_order: i }));
   for (const row of inserts) {
     await sql`
       INSERT INTO seo_config (organization_id, config_type, value, sort_order)
       VALUES (${organizationId}::uuid, ${row.config_type}, ${row.value}, ${row.sort_order})
     `;
+  }
+}
+
+export interface SeoServiceArea {
+  id: string;
+  organization_id: string;
+  name: string;
+  sort_order: number;
+  location_values: string[];
+}
+
+export async function getSeoServiceAreas(organizationId: string): Promise<SeoServiceArea[]> {
+  const areasResult = await sql`
+    SELECT id, organization_id, name, sort_order
+    FROM seo_service_areas
+    WHERE organization_id = ${organizationId}::uuid
+    ORDER BY sort_order ASC, name ASC
+  `;
+  const areas = (areasResult.rows ?? []) as { id: string; organization_id: string; name: string; sort_order: number }[];
+  const out: SeoServiceArea[] = [];
+  for (const a of areas) {
+    const locResult = await sql`
+      SELECT location_value FROM seo_service_area_locations
+      WHERE service_area_id = ${a.id}::uuid
+      ORDER BY sort_order ASC
+    `;
+    const locs = (locResult.rows ?? []).map((r) => (r as { location_value: string }).location_value);
+    out.push({ ...a, location_values: locs });
+  }
+  return out;
+}
+
+export async function setSeoServiceAreas(
+  organizationId: string,
+  areas: { id?: string; name: string; location_values: string[] }[]
+): Promise<void> {
+  const existing = await getSeoServiceAreas(organizationId);
+  const existingIds = new Set(existing.map((e) => e.id));
+  const keepIds = new Set<string>();
+
+  for (const area of areas) {
+    const id = area.id && existingIds.has(area.id) ? area.id : crypto.randomUUID();
+    keepIds.add(id);
+    if (!area.id || !existingIds.has(area.id)) {
+      await sql`
+        INSERT INTO seo_service_areas (id, organization_id, name, sort_order)
+        VALUES (${id}::uuid, ${organizationId}::uuid, ${area.name}, 0)
+      `;
+    } else {
+      await sql`
+        UPDATE seo_service_areas SET name = ${area.name} WHERE id = ${id}::uuid
+      `;
+    }
+    await sql`DELETE FROM seo_service_area_locations WHERE service_area_id = ${id}::uuid`;
+    for (let i = 0; i < area.location_values.length; i++) {
+      await sql`
+        INSERT INTO seo_service_area_locations (service_area_id, location_value, sort_order)
+        VALUES (${id}::uuid, ${area.location_values[i]}, ${i})
+      `;
+    }
+  }
+
+  for (const e of existing) {
+    if (!keepIds.has(e.id)) {
+      await sql`DELETE FROM seo_service_areas WHERE id = ${e.id}::uuid`;
+    }
   }
 }
 

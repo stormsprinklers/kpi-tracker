@@ -244,6 +244,33 @@ export async function initSchema(): Promise<void> {
     ON seo_config (organization_id, config_type)
   `;
 
+  // SEO service areas - groups of locations for averaged reporting
+  await sql`
+    CREATE TABLE IF NOT EXISTS seo_service_areas (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_seo_service_areas_org
+    ON seo_service_areas (organization_id)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS seo_service_area_locations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      service_area_id UUID NOT NULL REFERENCES seo_service_areas(id) ON DELETE CASCADE,
+      location_value TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_seo_service_area_locations_area
+    ON seo_service_area_locations (service_area_id)
+  `;
+
   // Extend users for Auth.js/OAuth
   await sql`
     DO $$

@@ -29,9 +29,21 @@ async function post<T>(path: string, body: unknown[]): Promise<T> {
   return json as T;
 }
 
+export type LocationParam =
+  | { locationCode: number }
+  | { locationCoordinate: string };
+
+function addLocationToTask(task: Record<string, unknown>, loc: LocationParam): void {
+  if ("locationCode" in loc) {
+    task.location_code = loc.locationCode;
+  } else {
+    task.location_coordinate = loc.locationCoordinate;
+  }
+}
+
 export interface OrganicResult {
   keyword: string;
-  locationCode: number;
+  locationKey: string;
   rank: number | null;
   url: string | null;
   title: string | null;
@@ -39,14 +51,15 @@ export interface OrganicResult {
 
 export async function fetchOrganicLive(params: {
   keyword: string;
-  locationCode: number;
+  locationKey: string;
+  location: LocationParam;
   target?: string;
 }): Promise<OrganicResult> {
   const task: Record<string, unknown> = {
     keyword: params.keyword,
-    location_code: params.locationCode,
     language_code: "en",
   };
+  addLocationToTask(task, params.location);
   if (params.target) {
     task.target = params.target.includes("*") ? params.target : `${params.target}*`;
   }
@@ -68,7 +81,7 @@ export async function fetchOrganicLive(params: {
 
   const result = json.tasks?.[0]?.result?.[0];
   if (!result) {
-    return { keyword: params.keyword, locationCode: params.locationCode, rank: null, url: null, title: null };
+    return { keyword: params.keyword, locationKey: params.locationKey, rank: null, url: null, title: null };
   }
   const items = result.items ?? [];
   const organic = items.filter((i) => i.type === "organic");
@@ -78,7 +91,7 @@ export async function fetchOrganicLive(params: {
     : organic[0];
   return {
     keyword: result.keyword ?? params.keyword,
-    locationCode: result.location_code ?? params.locationCode,
+    locationKey: params.locationKey,
     rank: match?.rank_absolute ?? null,
     url: match?.url ?? null,
     title: match?.title ?? null,
@@ -87,7 +100,7 @@ export async function fetchOrganicLive(params: {
 
 export interface LocalFinderResult {
   keyword: string;
-  locationCode: number;
+  locationKey: string;
   rank: number | null;
   title: string | null;
 }
@@ -106,10 +119,16 @@ function matchesLocal(
 
 export async function fetchLocalFinderLive(params: {
   keyword: string;
-  locationCode: number;
+  locationKey: string;
+  location: LocationParam;
   businessName: string;
   domain: string | null;
 }): Promise<LocalFinderResult> {
+  const task: Record<string, unknown> = {
+    keyword: params.keyword,
+    language_code: "en",
+  };
+  addLocationToTask(task, params.location);
   const json = await post<{
     tasks: {
       result?: Array<{
@@ -121,17 +140,11 @@ export async function fetchLocalFinderLive(params: {
         }>;
       }>;
     }[];
-  }>("/serp/google/local_finder/live/advanced", [
-    {
-      keyword: params.keyword,
-      location_code: params.locationCode,
-      language_code: "en",
-    },
-  ]);
+  }>("/serp/google/local_finder/live/advanced", [task]);
 
   const result = json.tasks?.[0]?.result?.[0];
   if (!result) {
-    return { keyword: params.keyword, locationCode: params.locationCode, rank: null, title: null };
+    return { keyword: params.keyword, locationKey: params.locationKey, rank: null, title: null };
   }
   const items = result.items ?? [];
   const localPack = items.find((i) => i.type === "local_pack");
@@ -142,7 +155,7 @@ export async function fetchLocalFinderLive(params: {
   );
   return {
     keyword: result.keyword ?? params.keyword,
-    locationCode: result.location_code ?? params.locationCode,
+    locationKey: params.locationKey,
     rank: match?.rank_group ?? match?.rank_absolute ?? null,
     title: match?.title ?? null,
   };
@@ -150,7 +163,7 @@ export async function fetchLocalFinderLive(params: {
 
 export interface AiModeResult {
   keyword: string;
-  locationCode: number;
+  locationKey: string;
   mentioned: boolean;
   snippet: string | null;
 }
@@ -200,10 +213,16 @@ export async function fetchLocations(country?: string): Promise<DataForSeoLocati
 
 export async function fetchAiModeLive(params: {
   keyword: string;
-  locationCode: number;
+  locationKey: string;
+  location: LocationParam;
   businessName: string;
   domain: string | null;
 }): Promise<AiModeResult> {
+  const task: Record<string, unknown> = {
+    keyword: params.keyword,
+    language_code: "en",
+  };
+  addLocationToTask(task, params.location);
   const json = await post<{
     tasks: {
       result?: Array<{
@@ -216,17 +235,11 @@ export async function fetchAiModeLive(params: {
         }>;
       }>;
     }[];
-  }>("/serp/google/ai_mode/live/advanced", [
-    {
-      keyword: params.keyword,
-      location_code: params.locationCode,
-      language_code: "en",
-    },
-  ]);
+  }>("/serp/google/ai_mode/live/advanced", [task]);
 
   const result = json.tasks?.[0]?.result?.[0];
   if (!result) {
-    return { keyword: params.keyword, locationCode: params.locationCode, mentioned: false, snippet: null };
+    return { keyword: params.keyword, locationKey: params.locationKey, mentioned: false, snippet: null };
   }
   const items = result.items ?? [];
   const aiOverview = items.find((i) => i.type === "ai_overview");
@@ -239,7 +252,7 @@ export async function fetchAiModeLive(params: {
   const snippet = mentioned && aiOverview?.markdown ? aiOverview.markdown.slice(0, 300) : null;
   return {
     keyword: result.keyword ?? params.keyword,
-    locationCode: result.location_code ?? params.locationCode,
+    locationKey: params.locationKey,
     mentioned,
     snippet,
   };
