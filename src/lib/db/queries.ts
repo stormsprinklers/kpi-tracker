@@ -1232,13 +1232,24 @@ export async function getActivityFeed(
     LIMIT 15
   `;
   const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const ordinal = (n: number) => {
+    const s = String(n);
+    if (n >= 11 && n <= 13) return s + "th";
+    const last = s.slice(-1);
+    if (last === "1") return s + "st";
+    if (last === "2") return s + "nd";
+    if (last === "3") return s + "rd";
+    return s + "th";
+  };
   for (const row of callsResult.rows ?? []) {
     const r = row as { hcp_employee_id: string | null; csr_first_name_raw: string | null; call_date: string; customer_city: string | null; created_at: string };
     const csrName = r.hcp_employee_id
       ? nameMap.get(r.hcp_employee_id) ?? r.csr_first_name_raw ?? "A CSR"
       : r.csr_first_name_raw ?? "A CSR";
     const d = new Date(r.call_date);
-    const dateLabel = Number.isNaN(d.getTime()) ? "" : dayNames[d.getDay()];
+    const dateLabel = Number.isNaN(d.getTime())
+      ? ""
+      : `${dayNames[d.getDay()]} the ${ordinal(d.getDate())}`;
     events.push({
       type: "csr_booking",
       timestamp: r.created_at,

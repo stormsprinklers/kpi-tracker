@@ -27,8 +27,8 @@ export default async function Home() {
         {isEmployeeWithLink && (
           <EmployeeDashboardBanner hcpEmployeeId={session.user.hcpEmployeeId!} />
         )}
-        {connected && <ActivityFeed connected={connected} />}
         <KeyMetricsSection connected={connected} />
+        {connected && <ActivityFeed connected={connected} />}
         {connected && <TechnicianRevenueSection />}
         {connected && <CsrKpisSection />}
       </main>
