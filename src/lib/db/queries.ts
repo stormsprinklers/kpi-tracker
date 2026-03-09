@@ -1112,6 +1112,146 @@ export async function getCallRecordsForCsr(
   return (result.rows ?? []) as CallRecordForCsr[];
 }
 
+const COMPLETED_JOB_STATUSES = [
+  "paid",
+  "completed",
+  "complete",
+  "closed",
+  "done",
+  "paid_in_full",
+  "invoiced",
+  "finished",
+];
+
+function getTechnicianIdsFromJob(job: Record<string, unknown>): string[] {
+  const assigned = job.assigned_employees ?? job.assigned_pro ?? job.assigned_employee;
+  const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
+  const ids: string[] = [];
+  for (const a of items) {
+    if (typeof a === "string") {
+      ids.push(a);
+      continue;
+    }
+    if (a && typeof a === "object" && "id" in a) {
+      ids.push(String((a as { id: unknown }).id));
+    }
+  }
+  if (ids.length > 0) return ids;
+  const fallback = job.pro_id ?? job.pro ?? job.employee_id ?? job.assigned_pro_id;
+  if (typeof fallback === "string") return [fallback];
+  if (fallback && typeof fallback === "object" && "id" in fallback) {
+    return [String((fallback as { id: unknown }).id)];
+  }
+  return [];
+}
+
+function isJobCompleted(raw: Record<string, unknown>): boolean {
+  const status = (raw.status ?? raw.job_status ?? raw.work_status ?? raw.state ?? "")
+    .toString()
+    .toLowerCase();
+  return COMPLETED_JOB_STATUSES.includes(status);
+}
+
+export interface ActivityFeedEvent {
+  type: "job_completed" | "csr_booking";
+  timestamp: string;
+  technicianName?: string;
+  amount?: number;
+  csrName?: string;
+  dateLabel?: string;
+  city?: string;
+}
+
+export async function getActivityFeed(
+  organizationId: string,
+  limit = 5
+): Promise<ActivityFeedEvent[]> {
+  const org = await getOrganizationById(organizationId);
+  const companyId = org?.hcp_company_id;
+  if (!companyId) return [];
+
+  const nameMap = new Map<string, string>();
+  const empResult = await sql`
+    SELECT hcp_id, raw FROM employees WHERE company_id = ${companyId}
+  `;
+  for (const row of empResult.rows ?? []) {
+    const r = row as { hcp_id: string; raw: Record<string, unknown> };
+    const raw = r.raw ?? {};
+    const first = String(raw.first_name ?? raw.firstName ?? "").trim();
+    const last = String(raw.last_name ?? raw.lastName ?? "").trim();
+    const name = [first, last].filter(Boolean).join(" ").trim() || "Unknown";
+    nameMap.set(r.hcp_id, name);
+  }
+  const prosResult = await sql`
+    SELECT hcp_id, raw FROM pros WHERE company_id = ${companyId}
+  `;
+  for (const row of prosResult.rows ?? []) {
+    const r = row as { hcp_id: string; raw: Record<string, unknown> };
+    if (nameMap.has(r.hcp_id)) continue;
+    const raw = r.raw ?? {};
+    const first = String(raw.first_name ?? raw.firstName ?? "").trim();
+    const last = String(raw.last_name ?? raw.lastName ?? "").trim();
+    const name = [first, last].filter(Boolean).join(" ").trim() || "Unknown";
+    nameMap.set(r.hcp_id, name);
+  }
+
+  const events: ActivityFeedEvent[] = [];
+
+  const jobsResult = await sql`
+    SELECT hcp_id, raw, total_amount, updated_at
+    FROM jobs
+    WHERE company_id = ${companyId}
+    ORDER BY COALESCE(raw->>'updated_at', updated_at::text) DESC NULLS LAST
+    LIMIT 50
+  `;
+  for (const row of jobsResult.rows ?? []) {
+    const r = row as { hcp_id: string; raw: Record<string, unknown>; total_amount: number | string | null; updated_at: string };
+    const raw = r.raw ?? {};
+    if (!isJobCompleted(raw)) continue;
+    const ts = (raw.updated_at ?? r.updated_at ?? "") as string;
+    if (!ts) continue;
+    const techIds = getTechnicianIdsFromJob(raw);
+    const technicianName = techIds.length > 0
+      ? nameMap.get(techIds[0]) ?? "A technician"
+      : "A technician";
+    const amt = r.total_amount != null ? parseFloat(String(r.total_amount)) : 0;
+    events.push({
+      type: "job_completed",
+      timestamp: ts,
+      technicianName,
+      amount: amt > 0 ? amt : undefined,
+    });
+  }
+
+  const callsResult = await sql`
+    SELECT hcp_employee_id, csr_first_name_raw, call_date, customer_city, created_at
+    FROM call_records
+    WHERE organization_id = ${organizationId}::uuid
+      AND booking_value = 'won'
+    ORDER BY created_at DESC
+    LIMIT 15
+  `;
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  for (const row of callsResult.rows ?? []) {
+    const r = row as { hcp_employee_id: string | null; csr_first_name_raw: string | null; call_date: string; customer_city: string | null; created_at: string };
+    const csrName = r.hcp_employee_id
+      ? nameMap.get(r.hcp_employee_id) ?? r.csr_first_name_raw ?? "A CSR"
+      : r.csr_first_name_raw ?? "A CSR";
+    const d = new Date(r.call_date);
+    const dateLabel = Number.isNaN(d.getTime()) ? "" : dayNames[d.getDay()];
+    events.push({
+      type: "csr_booking",
+      timestamp: r.created_at,
+      csrName,
+      dateLabel: dateLabel || undefined,
+      city: r.customer_city?.trim() || undefined,
+    });
+  }
+
+  events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return events.slice(0, limit);
+}
+
 // Performance pay
 export interface PerformancePayOrg {
   organization_id: string;

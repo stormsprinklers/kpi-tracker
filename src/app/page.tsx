@@ -5,6 +5,7 @@ import { KeyMetricsSection } from "@/components/KeyMetricsSection";
 import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
 import { CsrKpisSection } from "@/components/CsrKpisSection";
 import { EmployeeDashboardBanner } from "@/components/EmployeeDashboardBanner";
+import { ActivityFeed } from "@/components/ActivityFeed";
 import { LandingPage } from "@/components/LandingPage";
 
 export default async function Home() {
@@ -26,6 +27,7 @@ export default async function Home() {
         {isEmployeeWithLink && (
           <EmployeeDashboardBanner hcpEmployeeId={session.user.hcpEmployeeId!} />
         )}
+        {connected && <ActivityFeed connected={connected} />}
         <KeyMetricsSection connected={connected} />
         {connected && <TechnicianRevenueSection />}
         {connected && <CsrKpisSection />}
