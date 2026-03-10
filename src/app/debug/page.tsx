@@ -12,13 +12,6 @@ export default function DebugPage() {
             Test API endpoints and inspect responses
           </p>
         </div>
-        <a
-          href="/"
-          className="rounded border px-3 py-1.5 text-sm hover:opacity-80"
-          style={{ borderColor: "#0B1F33", color: "#0B1F33" }}
-        >
-          Back to Dashboard
-        </a>
       </header>
 
       <main className="p-6">

@@ -1,6 +1,5 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { AIInsightsSection } from "@/components/AIInsightsSection";
 
 export default async function InsightsProfitPage() {
@@ -12,13 +11,6 @@ export default async function InsightsProfitPage() {
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
       <main className="flex flex-1 flex-col gap-6 p-6">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-        >
-          ← Back to Dashboard
-        </Link>
-
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Profit</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           P&amp;L and Balance Sheet from QuickBooks. Estimated profit levels.

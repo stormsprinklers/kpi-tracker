@@ -1,6 +1,5 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { getOrganizationById } from "@/lib/db/queries";
 import { CompanyLogoSection } from "@/components/CompanyLogoSection";
 import { SettingsSidebar } from "@/components/SettingsSidebar";
@@ -25,12 +24,6 @@ export default async function SettingsLayout({
       <div className="flex min-h-screen flex-1">
         <SettingsSidebar />
         <main className="flex flex-1 flex-col p-6 pl-4 pt-14 lg:pt-6">
-          <Link
-            href="/"
-            className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            ← Back to Dashboard
-          </Link>
           <CompanyLogoSection
             organizationId={session.user.organizationId}
             initialLogoUrl={org?.logo_url ?? null}
