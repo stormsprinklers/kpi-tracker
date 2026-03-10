@@ -3,43 +3,7 @@ import { getOrganizationById, getWebhookForwarding, insertWebhookLog } from "@/l
 import { forwardWebhook } from "@/lib/forwardWebhook";
 import { initSchema } from "@/lib/db";
 import { persistGhlCallRecord } from "@/lib/ghl/persistCallRecord";
-
-const KEYS = [
-  "csr",
-  "booking_value",
-  "date",
-  "time",
-  "duration",
-  "transcript",
-  "customer_phone",
-] as const;
-
-function getValue(
-  request: Request,
-  rawBody: string,
-  key: string
-): string {
-  const headerKey = key.replace(/_/g, "-");
-  const variants = [headerKey, headerKey.toLowerCase(), `x-${headerKey}`, `x-${headerKey.toLowerCase()}`];
-  for (const v of variants) {
-    const header = request.headers.get(v);
-    if (header != null && header !== "") return header;
-  }
-
-  try {
-    const body = JSON.parse(rawBody || "{}") as Record<string, unknown>;
-    const lower = key.toLowerCase();
-    for (const k of Object.keys(body)) {
-      if (k.toLowerCase() === lower) {
-        const v = body[k];
-        return v != null ? String(v) : "";
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return "";
-}
+import { extractGhlPayload, parseBody } from "@/lib/ghl/extractGhlPayload";
 
 export async function GET() {
   return NextResponse.json({
@@ -63,22 +27,19 @@ export async function POST(
 
   const companyId = org.hcp_company_id ?? "default";
 
-  const payload: Record<string, string> = {};
-  for (const key of KEYS) {
-    payload[key] = getValue(request, rawBody, key);
-  }
-
-  let rawPayload: Record<string, unknown> = {};
-  try {
-    rawPayload = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {};
-  } catch {
-    rawPayload = { _raw: rawBody };
-  }
-
   const headersObj: Record<string, string> = {};
   request.headers.forEach((v, k) => {
     headersObj[k] = v;
   });
+
+  const payload = extractGhlPayload(headersObj, rawBody);
+
+  let rawPayload: Record<string, unknown> = parseBody(rawBody) as Record<string, unknown>;
+  if (rawPayload && Object.keys(rawPayload).length === 0 && rawBody) {
+    rawPayload = { _raw: rawBody };
+  } else if (!rawPayload) {
+    rawPayload = { _raw: rawBody };
+  }
 
   try {
     await initSchema();

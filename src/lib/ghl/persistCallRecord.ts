@@ -6,6 +6,36 @@ import { matchJobByCustomerPhone } from "./jobMatcher";
 
 const VALID_BOOKING_VALUES = new Set(["won", "lost", "non-opportunity"]);
 
+/** Map common GHL values to our canonical booking_value. */
+const BOOKING_VALUE_ALIASES: Record<string, string> = {
+  booked: "won",
+  completed: "won",
+  yes: "won",
+  appointment_booked: "won",
+  scheduled: "won",
+  "appointment scheduled": "won",
+  success: "won",
+  no: "lost",
+  cancelled: "lost",
+  "no show": "lost",
+  no_show: "lost",
+  canceled: "lost",
+  failed: "lost",
+  "non-opportunity": "non-opportunity",
+  "non opportunity": "non-opportunity",
+  n_a: "non-opportunity",
+  na: "non-opportunity",
+  nope: "lost",
+};
+
+function normalizeBookingValue(raw: string): string | null {
+  const v = raw.toString().toLowerCase().trim();
+  if (VALID_BOOKING_VALUES.has(v)) return v;
+  const mapped = BOOKING_VALUE_ALIASES[v];
+  if (mapped) return mapped;
+  return null;
+}
+
 export interface GhlCallPayload {
   csr: string;
   booking_value: string;
@@ -119,15 +149,26 @@ export async function persistGhlCallRecord(
   rawPayload: Record<string, unknown>,
   options?: { fallbackCity?: string | null; callHeaders?: Record<string, string> | null }
 ): Promise<{ ok: boolean; skipped?: string }> {
-  const bookingValue = (payload.booking_value ?? "").toString().toLowerCase().trim();
-  if (!VALID_BOOKING_VALUES.has(bookingValue)) {
-    console.warn("[GHL] Skipped: booking_value_not_valid", { booking_value: payload.booking_value });
+  const rawBooking = (payload.booking_value ?? "").toString().trim();
+  const bookingValue = normalizeBookingValue(rawBooking);
+  if (!bookingValue) {
+    console.warn("[GHL] Skipped: booking_value_not_valid", {
+      booking_value: payload.booking_value,
+      organizationId,
+      date: payload.date,
+      csr: payload.csr,
+    });
     return { ok: true, skipped: "booking_value_not_valid" };
   }
 
   const callDate = parseDate(payload.date);
   if (!callDate) {
-    console.warn("[GHL] Skipped: invalid_date", { date: payload.date });
+    console.warn("[GHL] Skipped: invalid_date", {
+      date: payload.date,
+      organizationId,
+      csr: payload.csr,
+      booking_value: rawBooking,
+    });
     return { ok: true, skipped: "invalid_date" };
   }
 
