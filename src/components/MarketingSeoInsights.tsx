@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { MetricTooltip } from "./MetricTooltip";
 
@@ -57,12 +57,20 @@ function rankColor(rank: number | null): string {
 
 export function MarketingSeoInsights() {
   const [data, setData] = useState<SeoData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [hasStarted, setHasStarted] = useState(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
 
-  const fetchData = async (isRefresh = false) => {
+  const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
+    setElapsed(0);
+    const start = Date.now();
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
     try {
       const url = isRefresh ? "/api/marketing/seo?force_refresh=1" : "/api/marketing/seo";
       const res = await fetch(url);
@@ -71,22 +79,57 @@ export function MarketingSeoInsights() {
     } catch {
       setData({ configured: false, message: "Failed to load SEO data." });
     } finally {
+      clearInterval(timer);
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    fetchData();
   }, []);
 
-  if (loading && !data) {
+  useEffect(() => {
+    if (hasStarted || data) return;
+    const el = sectionRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (hasStarted || data) return;
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
+          setHasStarted(true);
+          fetchData();
+        }
+      },
+      { rootMargin: "100px", threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasStarted, data, fetchData]);
+
+  const isLoading = loading && !data;
+  const isPlaceholder = !hasStarted && !data;
+
+  if (isLoading || isPlaceholder) {
     return (
-      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <section
+        ref={sectionRef}
+        className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
+      >
         <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
           SEO insights
         </h2>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+        {isLoading ? (
+          <>
+            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+              Loading SEO data…
+            </p>
+            <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+              Elapsed: {elapsed}s — typically 30–90 seconds for full refresh
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+            Loading…
+          </p>
+        )}
       </section>
     );
   }
@@ -172,7 +215,7 @@ export function MarketingSeoInsights() {
           disabled={refreshing}
           className="rounded bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
         >
-          {refreshing ? "Refreshing…" : "Refresh"}
+          {refreshing ? `Refreshing… ${elapsed}s` : "Refresh"}
         </button>
       </div>
       <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
