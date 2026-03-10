@@ -325,10 +325,10 @@ export async function getOrganizationsCount(): Promise<number> {
 
 export async function getOrganizationById(id: string) {
   const result = await sql`
-    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, trial_ends_at, website, seo_business_name, seo_domain, created_at, updated_at
+    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, trial_ends_at, website, seo_business_name, seo_domain, seo_include_ai_mode, created_at, updated_at
     FROM organizations WHERE id = ${id}
   `;
-  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; logo_url: string | null; trial_ends_at: string | null; website: string | null; seo_business_name: string | null; seo_domain: string | null; created_at: string; updated_at: string } | undefined;
+  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; logo_url: string | null; trial_ends_at: string | null; website: string | null; seo_business_name: string | null; seo_domain: string | null; seo_include_ai_mode: boolean | null; created_at: string; updated_at: string } | undefined;
 }
 
 export async function upsertOrganizationLogo(organizationId: string, logoUrl: string): Promise<void> {
@@ -345,6 +345,18 @@ export async function getOrganizationsWithTokens() {
     WHERE hcp_access_token IS NOT NULL AND hcp_access_token != ''
   `;
   return result.rows as { id: string; name: string; hcp_company_id: string | null; hcp_access_token: string }[];
+}
+
+/** Organizations that have SEO configured: website + at least one keyword and one location. */
+export async function getOrganizationsWithSeoConfig() {
+  const result = await sql`
+    SELECT DISTINCT o.id
+    FROM organizations o
+    WHERE o.website IS NOT NULL AND o.website != ''
+      AND EXISTS (SELECT 1 FROM seo_config kw WHERE kw.organization_id = o.id AND kw.config_type = 'keywords')
+      AND EXISTS (SELECT 1 FROM seo_config loc WHERE loc.organization_id = o.id AND loc.config_type = 'locations')
+  `;
+  return (result.rows ?? []).map((r) => (r as { id: string }).id);
 }
 
 export async function getOrganizationByHcpCompanyId(hcpCompanyId: string) {
@@ -388,7 +400,7 @@ export async function updateOrganizationSettings(
 
 export async function updateOrganizationSeoSettings(
   id: string,
-  params: { website?: string | null; seo_business_name?: string | null; seo_domain?: string | null }
+  params: { website?: string | null; seo_business_name?: string | null; seo_domain?: string | null; seo_include_ai_mode?: boolean | null }
 ) {
   if (params.website !== undefined) {
     await sql`
@@ -403,6 +415,11 @@ export async function updateOrganizationSeoSettings(
   if (params.seo_domain !== undefined) {
     await sql`
       UPDATE organizations SET seo_domain = ${params.seo_domain?.trim() || null}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.seo_include_ai_mode !== undefined) {
+    await sql`
+      UPDATE organizations SET seo_include_ai_mode = ${params.seo_include_ai_mode}, updated_at = NOW() WHERE id = ${id}
     `;
   }
 }
@@ -535,6 +552,77 @@ export async function invalidateSeoCache(organizationId: string): Promise<void> 
   await sql`
     DELETE FROM seo_results_cache
     WHERE organization_id = ${organizationId}::uuid
+  `;
+}
+
+export interface SeoFetchProgress {
+  chunk_index: number;
+  total_combos: number;
+  combos_per_chunk: number;
+  partial_organic: unknown[];
+  partial_local: unknown[];
+  partial_ai: unknown[];
+}
+
+export async function getSeoFetchProgress(
+  organizationId: string,
+  configFingerprint: string
+): Promise<SeoFetchProgress | null> {
+  const result = await sql`
+    SELECT chunk_index, total_combos, combos_per_chunk, partial_organic, partial_local, partial_ai
+    FROM seo_fetch_progress
+    WHERE organization_id = ${organizationId}::uuid
+      AND config_fingerprint = ${configFingerprint}
+  `;
+  const row = (result.rows ?? [])[0] as SeoFetchProgress | undefined;
+  return row ?? null;
+}
+
+export async function upsertSeoFetchProgress(
+  organizationId: string,
+  configFingerprint: string,
+  params: {
+    chunk_index: number;
+    total_combos: number;
+    combos_per_chunk: number;
+    partial_organic: unknown[];
+    partial_local: unknown[];
+    partial_ai: unknown[];
+  }
+): Promise<void> {
+  await sql`
+    INSERT INTO seo_fetch_progress (
+      organization_id, config_fingerprint, chunk_index, total_combos, combos_per_chunk,
+      partial_organic, partial_local, partial_ai, updated_at
+    )
+    VALUES (
+      ${organizationId}::uuid,
+      ${configFingerprint},
+      ${params.chunk_index},
+      ${params.total_combos},
+      ${params.combos_per_chunk},
+      ${JSON.stringify(params.partial_organic)}::jsonb,
+      ${JSON.stringify(params.partial_local)}::jsonb,
+      ${JSON.stringify(params.partial_ai)}::jsonb,
+      NOW()
+    )
+    ON CONFLICT (organization_id, config_fingerprint) DO UPDATE SET
+      chunk_index = EXCLUDED.chunk_index,
+      partial_organic = EXCLUDED.partial_organic,
+      partial_local = EXCLUDED.partial_local,
+      partial_ai = EXCLUDED.partial_ai,
+      updated_at = NOW()
+  `;
+}
+
+export async function deleteSeoFetchProgress(
+  organizationId: string,
+  configFingerprint: string
+): Promise<void> {
+  await sql`
+    DELETE FROM seo_fetch_progress
+    WHERE organization_id = ${organizationId}::uuid
+      AND config_fingerprint = ${configFingerprint}
   `;
 }
 

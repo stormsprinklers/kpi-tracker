@@ -226,6 +226,9 @@ export async function initSchema(): Promise<void> {
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='seo_domain') THEN
         ALTER TABLE organizations ADD COLUMN seo_domain TEXT;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='seo_include_ai_mode') THEN
+        ALTER TABLE organizations ADD COLUMN seo_include_ai_mode BOOLEAN DEFAULT false;
+      END IF;
     END $$
   `;
 
@@ -291,6 +294,22 @@ export async function initSchema(): Promise<void> {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_seo_results_cache_org_fingerprint
     ON seo_results_cache (organization_id, config_fingerprint, snapshot_at DESC)
+  `;
+
+  // SEO fetch progress - for chunked processing across multiple invocations
+  await sql`
+    CREATE TABLE IF NOT EXISTS seo_fetch_progress (
+      organization_id UUID NOT NULL,
+      config_fingerprint TEXT NOT NULL,
+      chunk_index INT NOT NULL,
+      total_combos INT NOT NULL,
+      combos_per_chunk INT NOT NULL,
+      partial_organic JSONB NOT NULL DEFAULT '[]',
+      partial_local JSONB NOT NULL DEFAULT '[]',
+      partial_ai JSONB NOT NULL DEFAULT '[]',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, config_fingerprint)
+    )
   `;
 
   // DataForSEO locations list cache (changes rarely, 7-day TTL)

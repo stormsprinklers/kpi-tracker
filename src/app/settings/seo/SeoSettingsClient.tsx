@@ -34,6 +34,7 @@ function getLocationDisplay(value: string, locationOptions: LocationOption[]): s
 export function SeoSettingsClient() {
   const [website, setWebsite] = useState("");
   const [seoBusinessName, setSeoBusinessName] = useState("");
+  const [includeAiMode, setIncludeAiMode] = useState(false);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [serviceAreas, setServiceAreas] = useState<ServiceArea[]>([]);
@@ -60,12 +61,14 @@ export function SeoSettingsClient() {
         const config = (await configRes.json()) as {
           website: string;
           seo_business_name: string;
+          include_ai_mode?: boolean;
           keywords: string[];
           locations: (string | number)[];
           serviceAreas?: { id: string; name: string; location_values: string[] }[];
         };
         setWebsite(config.website ?? "");
         setSeoBusinessName(config.seo_business_name ?? "");
+        setIncludeAiMode(config.include_ai_mode ?? false);
         setKeywords(config.keywords ?? []);
         setLocations(
           (config.locations ?? []).map((l) =>
@@ -202,6 +205,7 @@ export function SeoSettingsClient() {
         body: JSON.stringify({
           website: website.trim() || null,
           seo_business_name: seoBusinessName.trim() || null,
+          include_ai_mode: includeAiMode,
           keywords,
           locations,
           serviceAreas,
@@ -211,6 +215,9 @@ export function SeoSettingsClient() {
       if (!res.ok) {
         setError(data.error ?? "Failed to save");
         return;
+      }
+      if (keywords.length > 0 && locations.length > 0 && website.trim()) {
+        fetch("/api/marketing/seo?force_refresh=1").catch(() => {});
       }
     } catch {
       setError("Failed to save");
@@ -259,6 +266,24 @@ export function SeoSettingsClient() {
           placeholder="Your business name"
           className="mt-2 block w-full max-w-md rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
         />
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+          Google AI Mode tracking
+        </h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+          Include AI Overview mentions in rankings. Adds ~33% more API calls and refresh time; disable to speed up updates.
+        </p>
+        <label className="mt-2 flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={includeAiMode}
+            onChange={(e) => setIncludeAiMode(e.target.checked)}
+            className="rounded border-zinc-300 dark:border-zinc-600"
+          />
+          <span className="text-sm text-zinc-900 dark:text-zinc-50">Include AI Mode mentions</span>
+        </label>
       </section>
 
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">

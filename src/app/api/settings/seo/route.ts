@@ -26,6 +26,7 @@ export async function GET() {
   return NextResponse.json({
     website: org?.website ?? "",
     seo_business_name: org?.seo_business_name ?? org?.name ?? "",
+    include_ai_mode: org?.seo_include_ai_mode ?? false,
     keywords: seo.keywords,
     locations: seo.locations,
     serviceAreas: serviceAreas.map((a) => ({
@@ -50,6 +51,7 @@ export async function PATCH(request: Request) {
   const body = (await request.json()) as {
     website?: string | null;
     seo_business_name?: string | null;
+    include_ai_mode?: boolean;
     keywords?: string[];
     locations?: (string | number)[];
     serviceAreas?: { id?: string; name: string; location_values: string[] }[];
@@ -81,11 +83,13 @@ export async function PATCH(request: Request) {
 
   if (
     body.website !== undefined ||
-    body.seo_business_name !== undefined
+    body.seo_business_name !== undefined ||
+    body.include_ai_mode !== undefined
   ) {
     await updateOrganizationSeoSettings(orgId, {
       website: body.website,
       seo_business_name: body.seo_business_name,
+      seo_include_ai_mode: body.include_ai_mode,
     });
   }
 
