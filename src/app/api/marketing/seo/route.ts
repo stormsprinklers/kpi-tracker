@@ -88,6 +88,22 @@ export async function GET(request: Request) {
     });
   }
 
+  if (result.payload) {
+    return NextResponse.json(result.payload);
+  }
+
+  if (result.pending) {
+    return NextResponse.json({
+      configured: true,
+      error: "SEO data is being refreshed in the background. This may take 1–2 minutes. Please try again shortly.",
+      locations: [],
+      serviceAreas: [],
+      organic: [],
+      local: [],
+      ai: [],
+    });
+  }
+
   const cached = await getLatestSeoResults(orgId, fingerprint);
   if (cached?.payload) {
     return NextResponse.json({
@@ -99,7 +115,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     configured: true,
-    error: "Fetch completed but cache read failed",
+    error: "No SEO data available. Try refreshing in a moment.",
     locations: [],
     serviceAreas: [],
     organic: [],

@@ -76,10 +76,19 @@ export interface FetchSeoOptions {
   triggerContinue?: boolean;
 }
 
+export interface FetchSeoResult {
+  ok: boolean;
+  error?: string;
+  /** When last chunk completes, the full payload. */
+  payload?: Record<string, unknown>;
+  /** When chunked and more chunks are running in background. */
+  pending?: boolean;
+}
+
 export async function fetchAndCacheSeoForOrg(
   orgId: string,
   options?: FetchSeoOptions
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<FetchSeoResult> {
   const chunkIndex = options?.chunkIndex ?? 0;
   const triggerContinue = options?.triggerContinue ?? true;
   const org = await getOrganizationById(orgId);
@@ -324,6 +333,8 @@ export async function fetchAndCacheSeoForOrg(
 
       await insertSeoResults(orgId, fingerprint, payload);
       await deleteSeoFetchProgress(orgId, fingerprint);
+      Object.assign(payload, { cachedAt: new Date().toISOString(), fromCache: false });
+      return { ok: true, payload };
     } else {
       await upsertSeoFetchProgress(orgId, fingerprint, {
         chunk_index: chunkIndex,
@@ -350,8 +361,8 @@ export async function fetchAndCacheSeoForOrg(
           }),
         }).catch((e) => console.error("[SEO] Failed to trigger continue:", e));
       }
+      return { ok: true, pending: true };
     }
-    return { ok: true };
   } catch (err) {
     console.error("[SEO] fetchAndCacheSeoForOrg error:", err);
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
