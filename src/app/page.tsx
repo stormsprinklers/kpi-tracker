@@ -28,11 +28,11 @@ export default async function Home() {
         {isEmployeeWithLink && (
           <EmployeeDashboardBanner hcpEmployeeId={session.user.hcpEmployeeId!} />
         )}
+        {connected && <AIInsightsSection dashboard="main" />}
         <KeyMetricsSection connected={connected} />
         {connected && <ActivityFeed connected={connected} />}
         {connected && <TechnicianRevenueSection />}
         {connected && <CsrKpisSection />}
-        {connected && <AIInsightsSection dashboard="main" />}
       </main>
     </div>
   );

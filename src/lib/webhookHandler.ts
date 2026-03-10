@@ -9,43 +9,21 @@ import { forwardWebhook } from "@/lib/forwardWebhook";
 import { initSchema } from "@/lib/db";
 import { persistWebhookEvent } from "@/lib/sync/webhookPersist";
 import { persistGhlCallRecord } from "@/lib/ghl/persistCallRecord";
+import { extractGhlPayload, parseBody } from "@/lib/ghl/extractGhlPayload";
 
-const GHL_KEYS = ["csr", "booking_value", "date", "time", "duration", "transcript", "customer_phone"] as const;
-
-function getGhlValue(request: Request, rawBody: string, key: string): string {
-  const headerKey = key.replace(/_/g, "-");
-  const variants = [headerKey, headerKey.toLowerCase(), `x-${headerKey}`, `x-${headerKey.toLowerCase()}`];
-  for (const v of variants) {
-    const header = request.headers.get(v);
-    if (header != null && header !== "") return header;
-  }
+function hasHcpEvent(rawBody: string): boolean {
   try {
-    const parsed = JSON.parse(rawBody || "{}") as Record<string, unknown>;
-    const lower = key.toLowerCase();
-    for (const k of Object.keys(parsed)) {
-      if (k.toLowerCase() === lower) {
-        const val = parsed[k];
-        return val != null ? String(val) : "";
-      }
-    }
+    const p = JSON.parse(rawBody || "{}") as { event?: string };
+    return typeof p?.event === "string";
   } catch {
-    /* ignore */
+    return false;
   }
-  return "";
 }
 
-function looksLikeGhlCall(request: Request, rawBody: string): boolean {
-  const csr = getGhlValue(request, rawBody, "csr");
-  const booking = getGhlValue(request, rawBody, "booking_value");
-  const hasEvent = (() => {
-    try {
-      const p = JSON.parse(rawBody || "{}") as { event?: string };
-      return typeof p?.event === "string";
-    } catch {
-      return false;
-    }
-  })();
-  return !hasEvent && !!csr.trim() && !!booking.trim();
+function looksLikeGhlCall(headers: Record<string, string>, rawBody: string): boolean {
+  if (hasHcpEvent(rawBody)) return false;
+  const payload = extractGhlPayload(headers, rawBody);
+  return !!payload.csr.trim() && !!payload.booking_value.trim();
 }
 
 /** Verify HMAC using api-signature + api-timestamp format (timestamp.body). Tries hex and base64. */
@@ -192,12 +170,14 @@ export async function handleWebhookPOST(
   }
 
   const companyId = org.hcp_company_id ?? "default";
-  if (looksLikeGhlCall(request, rawBody)) {
+  const headersObj: Record<string, string> = {};
+  request.headers.forEach((v, k) => {
+    headersObj[k] = v;
+  });
+  if (looksLikeGhlCall(headersObj, rawBody)) {
     console.log(`${logPrefix} GHL call detected on main webhook route - persisting to call_records`);
     try {
       await initSchema();
-      const headersObj: Record<string, string> = {};
-      request.headers.forEach((v, k) => { headersObj[k] = v; });
       await insertWebhookLog({
         organizationId,
         source: "ghl",
@@ -206,20 +186,15 @@ export async function handleWebhookPOST(
         status: "processed",
         skipReason: null,
       });
-      const payload: Record<string, string> = {};
-      for (const key of GHL_KEYS) {
-        payload[key] = getGhlValue(request, rawBody, key);
-      }
-      let rawPayload: Record<string, unknown> = {};
-      try {
-        rawPayload = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {};
-      } catch {
-        rawPayload = { _raw: rawBody };
+      const payload = extractGhlPayload(headersObj, rawBody);
+      let rawPayload: Record<string, unknown> = parseBody(rawBody) as Record<string, unknown>;
+      if (!rawPayload || Object.keys(rawPayload).length === 0) {
+        rawPayload = rawBody ? { _raw: rawBody } : {};
       }
       const result = await persistGhlCallRecord(
         organizationId,
         companyId,
-        { csr: payload.csr ?? "", booking_value: payload.booking_value ?? "", date: payload.date ?? "", time: payload.time ?? "", duration: payload.duration ?? "", transcript: payload.transcript ?? "", customer_phone: payload.customer_phone ?? "" },
+        payload,
         rawPayload,
         { callHeaders: headersObj }
       );

@@ -19,10 +19,10 @@ export default async function InsightsMarketingPage() {
           Ad spend, leads, revenue by source. SEO and keyword rankings.
         </p>
 
+        <AIInsightsSection dashboard="marketing" />
         <MarketingExecutiveSummary />
         <MarketingLeadSourceTable />
         <MarketingSeoInsights />
-        <AIInsightsSection dashboard="marketing" />
       </main>
     </div>
   );
