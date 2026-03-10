@@ -142,12 +142,25 @@ function getNameFromPayload(payload: Record<string, unknown>): string | null {
   return full || null;
 }
 
+/** Extract city from GHL webhook raw payload. Used only when no HCP customer match by customer_phone. */
+function getCityFromPayload(payload: Record<string, unknown>): string | null {
+  const city = payload.city ?? payload.locality ?? payload.town ?? payload.region;
+  if (city != null && String(city).trim()) return String(city).trim();
+  const addr = payload.address;
+  if (addr && typeof addr === "object" && addr !== null) {
+    const a = addr as Record<string, unknown>;
+    const c = a.city ?? a.locality ?? a.town ?? a.region;
+    if (c != null && String(c).trim()) return String(c).trim();
+  }
+  return null;
+}
+
 export async function persistGhlCallRecord(
   organizationId: string,
   companyId: string,
   payload: GhlCallPayload,
   rawPayload: Record<string, unknown>,
-  options?: { fallbackCity?: string | null; callHeaders?: Record<string, string> | null }
+  options?: { callHeaders?: Record<string, string> | null }
 ): Promise<{ ok: boolean; skipped?: string }> {
   const rawBooking = (payload.booking_value ?? "").toString().trim();
   const bookingValue = normalizeBookingValue(rawBooking);
@@ -180,18 +193,9 @@ export async function persistGhlCallRecord(
     (payload.csr ?? "").toString().trim()
   );
 
-  let fallbackCity: string | undefined;
-  if (options?.fallbackCity) {
-    try {
-      fallbackCity = decodeURIComponent(String(options.fallbackCity).replace(/\+/g, " "));
-    } catch {
-      fallbackCity = String(options.fallbackCity).replace(/\+/g, " ");
-    }
-  }
-
   const customerPhone = (payload.customer_phone ?? "").toString().trim();
 
-  // Prefer city + job link + name from recent job.appointment.booked / job.scheduled (mobile_number match)
+  // Match by customer_phone: first try jobs (appointment.booked / scheduled), then HCP customers
   let job_hcp_id: string | null = null;
   let customer_city: string | null = null;
   let customer_name_from_job: string | null = null;
@@ -204,13 +208,13 @@ export async function persistGhlCallRecord(
 
   const { customer_hcp_id, customer_name: customer_name_from_hcp, customer_city: custCity } = await matchCustomerByPhone(
     companyId,
-    customerPhone,
-    jobMatch ? undefined : fallbackCity
+    customerPhone
   );
-  // Use job city when available; else customer table city; else fallback
-  const finalCity = customer_city ?? custCity ?? fallbackCity ?? null;
+  // City: HCP job → HCP customers table → raw payload only if no HCP match (never x-vercel-ip-city)
+  const cityFromPayload = getCityFromPayload(rawPayload);
+  const finalCity = customer_city ?? custCity ?? cityFromPayload ?? null;
 
-  // Customer name: prefer job customer, then HCP customers table, then GHL raw payload
+  // Customer name: HCP job → HCP customers table → raw payload only if no HCP match
   const nameFromPayload = getNameFromPayload(rawPayload);
   const finalCustomerName = customer_name_from_job ?? customer_name_from_hcp ?? nameFromPayload ?? null;
   const transcriptVal = (payload.transcript ?? "").toString().trim() || null;

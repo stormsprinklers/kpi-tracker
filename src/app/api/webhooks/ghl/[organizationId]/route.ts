@@ -58,7 +58,6 @@ export async function POST(
     // #region agent log
     console.log("[WH-DBG] H2 GHL insertWebhookLog succeeded", JSON.stringify({ hypothesisId: "H2", organizationId }));
     // #endregion
-    const fallbackCity = request.headers.get("x-vercel-ip-city") ?? undefined;
     const result = await persistGhlCallRecord(
       organizationId,
       companyId,
@@ -72,7 +71,7 @@ export async function POST(
         customer_phone: payload.customer_phone ?? "",
       },
       rawPayload,
-      { fallbackCity, callHeaders: headersObj }
+      { callHeaders: headersObj }
     );
     if (result.skipped) {
       console.log("[GHL Webhook] Skipped:", result.skipped);

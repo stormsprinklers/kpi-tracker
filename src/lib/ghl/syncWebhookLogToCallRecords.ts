@@ -4,7 +4,7 @@
  */
 import type { WebhookLog } from "@/lib/db/queries";
 import { persistGhlCallRecord } from "./persistCallRecord";
-import { extractGhlPayload, getHeader, parseBody } from "./extractGhlPayload";
+import { extractGhlPayload, parseBody } from "./extractGhlPayload";
 
 function looksLikeGhlCall(log: WebhookLog): boolean {
   const payload = extractGhlPayload(log.headers ?? {}, log.raw_body);
@@ -47,15 +47,13 @@ export async function syncWebhookLogToCallRecords(
     (rawPayload as Record<string, unknown>)._raw = log.raw_body;
   }
 
-  const fallbackCity = getHeader(log.headers ?? {}, "x-vercel-ip-city") || undefined;
-
   try {
     const result = await persistGhlCallRecord(
       log.organization_id,
       companyId,
       payload,
       rawPayload,
-      { fallbackCity, callHeaders: log.headers ?? {} }
+      { callHeaders: log.headers ?? {} }
     );
     return {
       ok: true,

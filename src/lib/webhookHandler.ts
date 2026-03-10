@@ -216,13 +216,12 @@ export async function handleWebhookPOST(
       } catch {
         rawPayload = { _raw: rawBody };
       }
-      const fallbackCity = request.headers.get("x-vercel-ip-city") ?? undefined;
       const result = await persistGhlCallRecord(
         organizationId,
         companyId,
         { csr: payload.csr ?? "", booking_value: payload.booking_value ?? "", date: payload.date ?? "", time: payload.time ?? "", duration: payload.duration ?? "", transcript: payload.transcript ?? "", customer_phone: payload.customer_phone ?? "" },
         rawPayload,
-        { fallbackCity, callHeaders: headersObj }
+        { callHeaders: headersObj }
       );
       if (result.skipped) {
         console.log(`${logPrefix} GHL persist skipped:`, result.skipped);

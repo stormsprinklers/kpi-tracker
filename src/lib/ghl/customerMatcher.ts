@@ -31,13 +31,13 @@ export interface CustomerMatchResult {
 }
 
 /**
- * Match customer phone from GHL to HCP customers.
- * When no match, uses fallbackCity for customer_city if provided (e.g. x-vercel-ip-city).
+ * Match customer phone from GHL webhook to HCP customers (synced from Housecall Pro).
+ * Returns customer_hcp_id, customer_name, customer_city when phone matches.
+ * When no match, returns nulls; caller should fall back to raw payload for name/city.
  */
 export async function matchCustomerByPhone(
   companyId: string,
-  customerPhone: string,
-  fallbackCity?: string | null
+  customerPhone: string
 ): Promise<CustomerMatchResult> {
   const normalized = normalizePhone(customerPhone);
   if (!normalized) {
@@ -66,6 +66,5 @@ export async function matchCustomerByPhone(
     }
   }
 
-  const city = fallbackCity?.trim() || null;
-  return { customer_hcp_id: null, customer_name: null, customer_city: city };
+  return { customer_hcp_id: null, customer_name: null, customer_city: null };
 }
