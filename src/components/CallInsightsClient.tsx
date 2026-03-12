@@ -19,6 +19,7 @@ interface EmployeeCallStats {
 interface CallInsightsResult {
   avgWaitingWindowDays: number | null;
   byEmployee: EmployeeCallStats[];
+  awaitingAssignment?: EmployeeCallStats | null;
 }
 
 type DatePreset = "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "all" | "custom";
@@ -198,6 +199,58 @@ export function CallInsightsClient() {
             No call data for this period. Configure GoHighLevel to send call webhooks to populate.
           </p>
         )}
+        {!loading && !error && data && data.awaitingAssignment && data.awaitingAssignment.totalOpportunityCalls > 0 && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+            <h4 className="mb-3 text-sm font-medium text-amber-800 dark:text-amber-200">
+              Awaiting Assignment
+            </h4>
+            <p className="mb-3 text-xs text-amber-700 dark:text-amber-300">
+              Calls where the CSR was not clear (N/A). Assign these in GHL or update your workflow to capture the CSR.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[400px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-amber-200 dark:border-amber-800">
+                    <th className="pb-2 font-medium text-amber-900 dark:text-amber-100">Employee</th>
+                    <th className="pb-2 font-medium text-amber-900 dark:text-amber-100 text-right">Opportunity Calls</th>
+                    <th className="pb-2 font-medium text-amber-900 dark:text-amber-100 text-right">Won</th>
+                    <th className="pb-2 font-medium text-amber-900 dark:text-amber-100 text-right">Lost</th>
+                    <th className="pb-2 font-medium text-amber-900 dark:text-amber-100 text-right">Booking Rate</th>
+                    <th className="pb-2 font-medium text-amber-900 dark:text-amber-100 text-right">Avg Duration</th>
+                    <th className="pb-2 font-medium text-amber-900 dark:text-amber-100 text-right">Avg Booked Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-amber-100 dark:border-amber-900">
+                    <td className="py-2 font-medium text-amber-900 dark:text-amber-100">
+                      <Link
+                        href="/call-insights/awaiting-assignment"
+                        className="hover:underline"
+                      >
+                        Awaiting Assignment
+                      </Link>
+                    </td>
+                    <td className="py-2 text-right font-medium">{data.awaitingAssignment.totalOpportunityCalls}</td>
+                    <td className="py-2 text-right">{data.awaitingAssignment.won}</td>
+                    <td className="py-2 text-right">{data.awaitingAssignment.lost}</td>
+                    <td className="py-2 text-right font-medium">
+                      {data.awaitingAssignment.bookingRatePercent != null
+                        ? `${data.awaitingAssignment.bookingRatePercent.toFixed(1)}%`
+                        : "—"}
+                    </td>
+                    <td className="py-2 text-right">
+                      {data.awaitingAssignment.avgDurationSeconds != null
+                        ? formatDuration(data.awaitingAssignment.avgDurationSeconds)
+                        : "—"}
+                    </td>
+                    <td className="py-2 text-right font-medium">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {!loading && !error && data && data.byEmployee.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[400px] text-left text-sm">

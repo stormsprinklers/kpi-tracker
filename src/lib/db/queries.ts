@@ -1200,6 +1200,38 @@ export async function getCallRecordsForCsr(
   return (result.rows ?? []) as CallRecordForCsr[];
 }
 
+/** Call records where hcp_employee_id IS NULL (CSR N/A or unmatched). For "Awaiting Assignment" detail view. */
+export async function getCallRecordsForAwaitingAssignment(
+  organizationId: string,
+  filters?: { startDate?: string; endDate?: string }
+): Promise<CallRecordForCsr[]> {
+  const start = filters?.startDate ?? "2000-01-01";
+  const end = filters?.endDate ?? "2100-12-31";
+  const result = await sql`
+    SELECT
+      c.id,
+      c.call_date::text,
+      c.call_time::text,
+      c.duration_seconds,
+      c.customer_name,
+      c.customer_city,
+      c.transcript,
+      c.booking_value,
+      c.customer_phone,
+      c.job_hcp_id,
+      c.call_headers AS call_debug,
+      j.raw AS job_debug
+    FROM call_records c
+    LEFT JOIN jobs j ON j.hcp_id = c.job_hcp_id AND j.company_id = c.company_id
+    WHERE c.organization_id = ${organizationId}::uuid
+      AND c.hcp_employee_id IS NULL
+      AND c.call_date >= ${start}
+      AND c.call_date <= ${end}
+    ORDER BY c.call_date DESC, c.call_time DESC NULLS LAST
+  `;
+  return (result.rows ?? []) as CallRecordForCsr[];
+}
+
 const COMPLETED_JOB_STATUSES = [
   "paid",
   "completed",
@@ -1574,4 +1606,145 @@ export async function upsertAiDashboardInsights(
       insights_json = ${JSON.stringify(insights)}::jsonb,
       generated_at = NOW()
   `;
+}
+
+// Time-off requests and notifications
+export interface TimeOffRequestRange {
+  id: string;
+  batch_id: string;
+  hcp_employee_id: string;
+  start_date: string;
+  end_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  status: "pending" | "approved" | "declined";
+  admin_reason: string | null;
+  created_at: string;
+}
+
+export async function createTimeOffRequest(params: {
+  organization_id: string;
+  batch_id: string;
+  hcp_employee_id: string;
+  start_date: string;
+  end_date: string;
+  start_time?: string | null;
+  end_time?: string | null;
+}): Promise<void> {
+  await sql`
+    INSERT INTO time_off_requests (organization_id, batch_id, hcp_employee_id, start_date, end_date, start_time, end_time, status)
+    VALUES (${params.organization_id}::uuid, ${params.batch_id}::uuid, ${params.hcp_employee_id},
+      ${params.start_date}::date, ${params.end_date}::date,
+      ${params.start_time ?? null}, ${params.end_time ?? null}, 'pending')
+  `;
+}
+
+export async function getTimeOffRequestsByOrg(
+  organizationId: string,
+  filters?: { startDate?: string; endDate?: string }
+): Promise<TimeOffRequestRange[]> {
+  const start = filters?.startDate ?? "2000-01-01";
+  const end = filters?.endDate ?? "2100-12-31";
+  const result = await sql`
+    SELECT id, batch_id::text, hcp_employee_id, start_date::text, end_date::text,
+      start_time::text, end_time::text, status, admin_reason, created_at::text
+    FROM time_off_requests
+    WHERE organization_id = ${organizationId}::uuid
+      AND start_date <= ${end}
+      AND end_date >= ${start}
+    ORDER BY created_at DESC, start_date ASC
+  `;
+  return (result.rows ?? []) as TimeOffRequestRange[];
+}
+
+export async function updateTimeOffRequestBatch(
+  organizationId: string,
+  batchId: string,
+  status: "approved" | "declined",
+  adminReason?: string | null
+): Promise<void> {
+  await sql`
+    UPDATE time_off_requests
+    SET status = ${status}, admin_reason = ${adminReason ?? null}
+    WHERE organization_id = ${organizationId}::uuid AND batch_id = ${batchId}::uuid
+  `;
+}
+
+export interface NotificationRow {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  type: string;
+  data: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
+
+export async function createNotification(params: {
+  organization_id: string;
+  user_id: string;
+  type: string;
+  data: Record<string, unknown>;
+}): Promise<void> {
+  await sql`
+    INSERT INTO notifications (organization_id, user_id, type, data)
+    VALUES (${params.organization_id}::uuid, ${params.user_id}::uuid, ${params.type}, ${JSON.stringify(params.data)}::jsonb)
+  `;
+}
+
+export async function getNotificationsForUser(
+  userId: string,
+  limit = 50
+): Promise<NotificationRow[]> {
+  const result = await sql`
+    SELECT id, organization_id::text, user_id::text, type, data, read_at::text, created_at::text
+    FROM notifications
+    WHERE user_id = ${userId}::uuid
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+  return (result.rows ?? []) as NotificationRow[];
+}
+
+export async function getUnreadNotificationCount(userId: string): Promise<number> {
+  const result = await sql`
+    SELECT COUNT(*)::int as count FROM notifications
+    WHERE user_id = ${userId}::uuid AND read_at IS NULL
+  `;
+  return (result.rows?.[0] as { count: number })?.count ?? 0;
+}
+
+export async function markNotificationRead(id: string, userId: string): Promise<void> {
+  await sql`
+    UPDATE notifications SET read_at = NOW()
+    WHERE id = ${id}::uuid AND user_id = ${userId}::uuid
+  `;
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  await sql`
+    UPDATE notifications SET read_at = NOW()
+    WHERE user_id = ${userId}::uuid AND read_at IS NULL
+  `;
+}
+
+export async function getAdminUserIds(organizationId: string): Promise<string[]> {
+  const result = await sql`
+    SELECT id::text FROM users
+    WHERE organization_id = ${organizationId}::uuid AND role = 'admin'
+  `;
+  return (result.rows ?? []).map((r) => (r as { id: string }).id);
+}
+
+export async function getUserIdByHcpEmployeeId(
+  organizationId: string,
+  hcpEmployeeId: string
+): Promise<string | null> {
+  const result = await sql`
+    SELECT id::text FROM users
+    WHERE organization_id = ${organizationId}::uuid AND hcp_employee_id = ${hcpEmployeeId}
+    LIMIT 1
+  `;
+  const row = result.rows?.[0] as { id: string } | undefined;
+  return row?.id ?? null;
 }

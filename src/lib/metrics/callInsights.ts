@@ -23,6 +23,8 @@ export interface CallInsightsResult {
   /** Average days between call date and appointment date for calls with linked jobs. */
   avgWaitingWindowDays: number | null;
   byEmployee: EmployeeCallStats[];
+  /** Calls where CSR was N/A or unmatched (hcp_employee_id IS NULL). Shown in "Awaiting Assignment" section. */
+  awaitingAssignment?: EmployeeCallStats | null;
 }
 
 function getName(raw: Record<string, unknown>): string {
@@ -119,6 +121,9 @@ export async function getCallInsights(
   }
 
   const byEmployee: EmployeeCallStats[] = [];
+  let awaitingAssignment: EmployeeCallStats | null = null;
+  let awaitingDurationSum = 0;
+  let awaitingDurationCount = 0;
 
   for (const row of result.rows ?? []) {
     const r = row as {
@@ -134,7 +139,35 @@ export async function getCallInsights(
     const lost = Number(r.lost) || 0;
     const avgDur = r.avg_duration != null ? parseFloat(r.avg_duration) : null;
 
-    let employeeName = r.hcp_employee_id ? nameMap.get(r.hcp_employee_id) : null;
+    // Calls with hcp_employee_id IS NULL go to "Awaiting Assignment" (CSR N/A or unmatched)
+    if (r.hcp_employee_id == null) {
+      if (awaitingAssignment == null) {
+        awaitingAssignment = {
+          hcpEmployeeId: null,
+          employeeName: "Awaiting Assignment",
+          totalOpportunityCalls: 0,
+          won: 0,
+          lost: 0,
+          bookingRatePercent: null,
+          avgDurationSeconds: null,
+          avgBookedCallRevenue: null,
+        };
+      }
+      awaitingAssignment.totalOpportunityCalls += oppCalls;
+      awaitingAssignment.won += won;
+      awaitingAssignment.lost += lost;
+      if (avgDur != null && !Number.isNaN(avgDur) && oppCalls > 0) {
+        awaitingDurationSum += avgDur * oppCalls;
+        awaitingDurationCount += oppCalls;
+      }
+      if (awaitingAssignment.totalOpportunityCalls > 0) {
+        awaitingAssignment.bookingRatePercent =
+          (awaitingAssignment.won / awaitingAssignment.totalOpportunityCalls) * 100;
+      }
+      continue;
+    }
+
+    let employeeName = nameMap.get(r.hcp_employee_id) ?? null;
     if (!employeeName && r.csr_first_name_raw) {
       employeeName = `${r.csr_first_name_raw} (unmatched)`;
     }
@@ -147,7 +180,7 @@ export async function getCallInsights(
       bookingRatePercent = (won / oppCalls) * 100;
     }
 
-    const avgRev = r.hcp_employee_id ? revenueMap.get(r.hcp_employee_id) ?? null : null;
+    const avgRev = revenueMap.get(r.hcp_employee_id) ?? null;
     byEmployee.push({
       hcpEmployeeId: r.hcp_employee_id,
       employeeName,
@@ -162,15 +195,19 @@ export async function getCallInsights(
 
   byEmployee.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
 
-  // Filter to CSR list when admin has selections
+  if (awaitingAssignment != null && awaitingDurationCount > 0) {
+    awaitingAssignment.avgDurationSeconds = awaitingDurationSum / awaitingDurationCount;
+  }
+
+  // Filter to CSR list when admin has selections (awaiting assignment is always shown)
   const selections = await getCsrSelections(organizationId);
   if (selections.length > 0) {
     const selectionSet = new Set(selections);
     const filtered = byEmployee.filter(
       (e) => e.hcpEmployeeId && selectionSet.has(e.hcpEmployeeId)
     );
-    return { avgWaitingWindowDays, byEmployee: filtered };
+    return { avgWaitingWindowDays, byEmployee: filtered, awaitingAssignment: awaitingAssignment ?? undefined };
   }
 
-  return { avgWaitingWindowDays, byEmployee };
+  return { avgWaitingWindowDays, byEmployee, awaitingAssignment: awaitingAssignment ?? undefined };
 }

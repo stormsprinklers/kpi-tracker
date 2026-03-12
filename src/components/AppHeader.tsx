@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NavDropdown } from "./NavDropdown";
 import { HeaderNightShiftToggle } from "./HeaderNightShiftToggle";
+import { NotificationBell } from "./NotificationBell";
 
 interface AppHeaderProps {
   title?: string;
@@ -145,6 +146,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
         {extra}
         {session?.user && (
           <>
+            <NotificationBell />
             <HeaderNightShiftToggle />
             <a href="/" className={navLinkClass}>Dashboard</a>
             <NavDropdown label="Insights" items={insightsItems} navLinkClass={navLinkClass} />

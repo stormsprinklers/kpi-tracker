@@ -611,4 +611,46 @@ export async function initSchema(): Promise<void> {
       PRIMARY KEY (organization_id, dashboard_type)
     )
   `;
+
+  // Time-off requests - employees request time ranges off; admin approves/declines
+  await sql`
+    CREATE TABLE IF NOT EXISTS time_off_requests (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      batch_id UUID NOT NULL,
+      hcp_employee_id TEXT NOT NULL,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      start_time TIME,
+      end_time TIME,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'declined')),
+      admin_reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_time_off_requests_org_batch
+    ON time_off_requests (organization_id, batch_id)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_time_off_requests_org_employee
+    ON time_off_requests (organization_id, hcp_employee_id)
+  `;
+
+  // Notifications - admin gets time-off requests; employee gets approve/decline responses
+  await sql`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      data JSONB NOT NULL DEFAULT '{}',
+      read_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+    ON notifications (user_id, read_at) WHERE read_at IS NULL
+  `;
 }
