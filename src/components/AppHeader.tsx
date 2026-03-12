@@ -20,6 +20,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   const { data: session } = useSession();
   const pathname = usePathname();
   const [logoUrl, setLogoUrl] = useState<string | null>(session?.user?.organizationLogoUrl ?? null);
+  const [employeeProfile, setEmployeeProfile] = useState<{ displayName: string | null; photoUrl: string | null } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState<"insights" | "team" | "company" | null>(null);
 
@@ -38,6 +39,19 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
       fetchLogo();
     }
   }, [session?.user?.organizationId, session?.user?.organizationLogoUrl]);
+
+  useEffect(() => {
+    if (session?.user?.role === "employee" && session?.user?.hcpEmployeeId) {
+      fetch("/api/me")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { displayName?: string | null; photoUrl?: string | null } | null) => {
+          if (d) setEmployeeProfile({ displayName: d.displayName ?? null, photoUrl: d.photoUrl ?? null });
+        })
+        .catch(() => setEmployeeProfile(null));
+    } else {
+      setEmployeeProfile(null);
+    }
+  }, [session?.user?.role, session?.user?.hcpEmployeeId]);
 
   useEffect(() => {
     function onLogoUpdated(e: CustomEvent<{ logoUrl?: string | null }>) {
@@ -100,22 +114,30 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
     return false;
   };
 
-  const insightsItems = [
-    ...(can("call_insights") ? [{ label: "Calls", href: "/call-insights" }] : []),
-    ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
-    ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
-    ...(can("marketing") ? [{ label: "Marketing", href: "/insights/marketing" }] : []),
-  ];
+  const isEmployee = session?.user?.role === "employee";
 
-  const teamItems = [];
+  const insightsItems = isEmployee
+    ? []
+    : [
+        ...(can("call_insights") ? [{ label: "Calls", href: "/call-insights" }] : []),
+        ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
+        ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
+        ...(can("marketing") ? [{ label: "Marketing", href: "/insights/marketing" }] : []),
+      ];
+
+  const teamItems: { label: string; href: string }[] = [];
   if (can("timesheets")) teamItems.push({ label: "Timesheets", href: "/timesheets" });
-  if (can("performance_pay")) teamItems.push({ label: "Performance Pay", href: "/team/performance-pay" });
-  if (can("users")) teamItems.push({ label: "Users", href: "/team/users" });
+  if (!isEmployee) {
+    if (can("performance_pay")) teamItems.push({ label: "Performance Pay", href: "/team/performance-pay" });
+    if (can("users")) teamItems.push({ label: "Users", href: "/team/users" });
+  }
 
   const companyItems: { label: string; href?: string; onClick?: () => void }[] = [];
-  if (can("settings")) companyItems.push({ label: "Settings", href: "/settings" });
-  if (can("billing")) companyItems.push({ label: "Billing", href: "/billing" });
-  if (can("developer_console")) companyItems.push({ label: "Developer Console", href: "/debug" });
+  if (!isEmployee) {
+    if (can("settings")) companyItems.push({ label: "Settings", href: "/settings" });
+    if (can("billing")) companyItems.push({ label: "Billing", href: "/billing" });
+    if (can("developer_console")) companyItems.push({ label: "Developer Console", href: "/debug" });
+  }
   companyItems.push({ label: "Log Out", onClick: () => signOut({ callbackUrl: "/login" }) });
 
   const isAdmin = session?.user?.role === "admin";
@@ -149,21 +171,44 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
             <NotificationBell />
             <HeaderNightShiftToggle />
             <a href="/" className={navLinkClass}>Dashboard</a>
-            <NavDropdown label="Insights" items={insightsItems} navLinkClass={navLinkClass} />
-            {teamItems.length > 0 && (
-              <NavDropdown label="Team" items={teamItems} navLinkClass={navLinkClass} />
+            {isEmployee ? (
+              <a href="/timesheets" className={navLinkClass}>Timesheets</a>
+            ) : (
+              <>
+                {insightsItems.length > 0 && (
+                  <NavDropdown label="Insights" items={insightsItems} navLinkClass={navLinkClass} />
+                )}
+                {teamItems.length > 0 && (
+                  <NavDropdown label="Team" items={teamItems} navLinkClass={navLinkClass} />
+                )}
+              </>
             )}
             <NavDropdown
               label={
                 <span className="flex items-center gap-2">
-                  {logoUrl ? (
-                    <img src={logoUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
+                  {isEmployee && employeeProfile ? (
+                    <>
+                      {employeeProfile.photoUrl ? (
+                        <img src={employeeProfile.photoUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
+                      ) : (
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
+                          {(employeeProfile.displayName ?? "?").slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                      {employeeProfile.displayName ?? session?.user?.email ?? "Account"}
+                    </>
                   ) : (
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
-                      {companyName.slice(0, 1).toUpperCase()}
-                    </span>
+                    <>
+                      {logoUrl ? (
+                        <img src={logoUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
+                      ) : (
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
+                          {companyName.slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                      {companyName}
+                    </>
                   )}
-                  {companyName}
                 </span>
               }
               items={companyItems}
@@ -249,8 +294,18 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
               >
                 Dashboard
               </a>
+              {isEmployee && (
+                <a
+                  href="/timesheets"
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  onClick={closeMobile}
+                >
+                  Timesheets
+                </a>
+              )}
 
-              {/* Insights section */}
+              {/* Insights section - not for employees */}
+              {!isEmployee && (
               <div className="mt-1">
                 <button
                   type="button"
@@ -282,6 +337,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
                   </div>
                 )}
               </div>
+              )}
 
               {/* Team section */}
               {teamItems.length > 0 && (
@@ -318,7 +374,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
                 </div>
               )}
 
-              {/* Company section */}
+              {/* Company / Account section */}
               <div className="mt-1">
                 <button
                   type="button"
@@ -326,14 +382,29 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
                   className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 >
                   <span className="flex items-center gap-2">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                    {isEmployee && employeeProfile ? (
+                      <>
+                        {employeeProfile.photoUrl ? (
+                          <img src={employeeProfile.photoUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                        ) : (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
+                            {(employeeProfile.displayName ?? "?").slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        {employeeProfile.displayName ?? session?.user?.email ?? "Account"}
+                      </>
                     ) : (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
-                        {companyName.slice(0, 1).toUpperCase()}
-                      </span>
+                      <>
+                        {logoUrl ? (
+                          <img src={logoUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                        ) : (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-300 text-xs font-medium text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300">
+                            {companyName.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        {companyName}
+                      </>
                     )}
-                    {companyName}
                   </span>
                   <svg
                     className={`h-4 w-4 shrink-0 transition-transform ${mobileExpanded === "company" ? "rotate-180" : ""}`}

@@ -57,8 +57,8 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
   const [formNotes, setFormNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showTimeOffForm, setShowTimeOffForm] = useState(false);
-  const [timeOffRanges, setTimeOffRanges] = useState<Array<{ startDate: string; endDate: string; startTime: string; endTime: string }>>([
-    { startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), startTime: "09:00", endTime: "17:00" },
+  const [timeOffRanges, setTimeOffRanges] = useState<Array<{ startDate: string; endDate: string; startTime: string; endTime: string; allDay: boolean }>>([
+    { startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), startTime: "09:00", endTime: "17:00", allDay: true },
   ]);
   const [timeOffSubmitting, setTimeOffSubmitting] = useState(false);
   const [timeOffError, setTimeOffError] = useState<string | null>(null);
@@ -194,8 +194,8 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
           ranges: timeOffRanges.map((r) => ({
             startDate: r.startDate,
             endDate: r.endDate,
-            startTime: r.startTime || null,
-            endTime: r.endTime || null,
+            startTime: r.allDay ? null : (r.startTime || null),
+            endTime: r.allDay ? null : (r.endTime || null),
           })),
         }),
       });
@@ -203,7 +203,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       if (!res.ok) throw new Error(data.error ?? "Failed to submit");
       setShowTimeOffForm(false);
       setTimeOffRanges([
-        { startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), startTime: "09:00", endTime: "17:00" },
+        { startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), startTime: "09:00", endTime: "17:00", allDay: true },
       ]);
     } catch (err) {
       setTimeOffError(err instanceof Error ? err.message : "Failed");
@@ -221,13 +221,14 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
         endDate: last?.endDate ?? new Date().toISOString().slice(0, 10),
         startTime: "09:00",
         endTime: "17:00",
+        allDay: true,
       },
     ]);
   }
 
-  function updateTimeOffRange(idx: number, field: "startDate" | "endDate" | "startTime" | "endTime", value: string) {
+  function updateTimeOffRange(idx: number, field: "startDate" | "endDate" | "startTime" | "endTime" | "allDay", value: string | boolean) {
     setTimeOffRanges((prev) =>
-      prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r))
+      prev.map((r, i) => (i === idx ? { ...r, [field]: field === "allDay" ? value : String(value) } : r))
     );
   }
 
@@ -319,24 +320,37 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
                     className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
                   />
                 </label>
-                <label className="text-xs">
-                  Start time
+                <label className="flex cursor-pointer items-center gap-2 text-xs">
                   <input
-                    type="time"
-                    value={r.startTime}
-                    onChange={(e) => updateTimeOffRange(idx, "startTime", e.target.value)}
-                    className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+                    type="checkbox"
+                    checked={r.allDay}
+                    onChange={(e) => updateTimeOffRange(idx, "allDay", e.target.checked)}
+                    className="rounded border-zinc-300 dark:border-zinc-600"
                   />
+                  All day
                 </label>
-                <label className="text-xs">
-                  End time
-                  <input
-                    type="time"
-                    value={r.endTime}
-                    onChange={(e) => updateTimeOffRange(idx, "endTime", e.target.value)}
-                    className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
-                  />
-                </label>
+                {!r.allDay && (
+                  <>
+                    <label className="text-xs">
+                      Start time
+                      <input
+                        type="time"
+                        value={r.startTime}
+                        onChange={(e) => updateTimeOffRange(idx, "startTime", e.target.value)}
+                        className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+                      />
+                    </label>
+                    <label className="text-xs">
+                      End time
+                      <input
+                        type="time"
+                        value={r.endTime}
+                        onChange={(e) => updateTimeOffRange(idx, "endTime", e.target.value)}
+                        className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+                      />
+                    </label>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={() => removeTimeOffRange(idx)}
