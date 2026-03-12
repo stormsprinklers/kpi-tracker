@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   }
 
   const adminIds = await getAdminUserIds(session.user.organizationId);
-  const employeeName = session.user.name ?? session.user.email ?? "An employee";
+  const employeeName = session.user.email ?? "An employee";
   for (const adminId of adminIds) {
     await createNotification({
       organization_id: session.user.organizationId,
