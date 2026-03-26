@@ -376,6 +376,7 @@ export async function getTechnicianRevenue(
   const revenueByTech = new Map<string, number>();
   const billableJobsByTech = new Map<string, number>();
   const revenueByTechAndDate = new Map<string, Map<string, number>>();
+  let totalRevenueAllJobs = 0;
 
   const { startDate, endDate, activeInCurrentYearOnly = true } = filters ?? {};
 
@@ -436,12 +437,6 @@ export async function getTechnicianRevenue(
     const j = job as Record<string, unknown>;
     if (!jobInDateRange(j, startDate, endDate)) continue;
     mergeNamesFromJob(nameMap, j);
-    let techIds = getTechnicianIds(j);
-    techIds = techIds.filter((id) => !officeStaffIds.has(id));
-    if (techIds.length === 0) continue;
-
-    const jobDate = getJobDate(j);
-    const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
 
     const isPaid = isPaidOrCompleted(j);
     let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
@@ -467,6 +462,16 @@ export async function getTechnicianRevenue(
         }
       }
     }
+    if (paidAmount > 0) {
+      totalRevenueAllJobs += paidAmount;
+    }
+
+    let techIds = getTechnicianIds(j);
+    techIds = techIds.filter((id) => !officeStaffIds.has(id));
+    if (techIds.length === 0) continue;
+
+    const jobDate = getJobDate(j);
+    const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
 
     const amountPerTech = paidAmount / techIds.length;
     for (const techId of techIds) {
@@ -565,7 +570,7 @@ export async function getTechnicianRevenue(
     })
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
 
-  const totalRevenue = technicians.reduce((sum, t) => sum + t.totalRevenue, 0);
+  const totalRevenue = totalRevenueAllJobs;
 
   return { technicians, totalRevenue };
 }
