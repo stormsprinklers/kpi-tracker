@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { runFullSync } from "@/lib/sync/hcpSync";
 import { getLastSyncAt, getOrganizationsWithTokens, getOrganizationById } from "@/lib/db/queries";
 
+const DASHBOARD_SYNC_MINUTES = 10;
+
 function isCronRequest(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -74,9 +76,6 @@ export async function POST(request: Request) {
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role !== "admin") {
-    return NextResponse.json({ error: "Admin only" }, { status: 403 });
-  }
 
   const org = await getOrganizationById(session.user.organizationId);
   if (!org?.hcp_access_token) {
@@ -84,6 +83,29 @@ export async function POST(request: Request) {
       { error: "Housecall Pro not configured for your organization. Add an access token in Settings." },
       { status: 503 }
     );
+  }
+
+  let body: { force?: boolean } = {};
+  try {
+    body = await request.json();
+  } catch {
+    /* optional body */
+  }
+  const force = body.force === true;
+
+  // Avoid hammering HCP on frequent page loads unless explicitly forced.
+  const companyId = org.hcp_company_id ?? "default";
+  const lastSync = await getLastSyncAt(companyId, "jobs");
+  if (!force && lastSync) {
+    const minutesSinceSync = (Date.now() - new Date(lastSync).getTime()) / 60000;
+    if (minutesSinceSync < DASHBOARD_SYNC_MINUTES) {
+      return NextResponse.json({
+        status: "skipped",
+        reason: "recent_sync",
+        companyId,
+        lastSyncAt: lastSync.toISOString(),
+      });
+    }
   }
 
   try {

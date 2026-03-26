@@ -130,10 +130,19 @@ export function CsrKpisSection() {
         method: "POST",
         body: formData,
       });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        let msg = "Upload failed";
+        try {
+          const data = (await res.json()) as { error?: string };
+          if (data?.error) msg = data.error;
+        } catch {
+          // ignore
+        }
+        throw new Error(msg);
+      }
       await fetchData();
-    } catch {
-      setError("Photo upload failed");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Photo upload failed");
     } finally {
       setUploadingId(null);
     }

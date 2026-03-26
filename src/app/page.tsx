@@ -5,7 +5,7 @@ import { KeyMetricsSection } from "@/components/KeyMetricsSection";
 import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
 import { CsrKpisSection } from "@/components/CsrKpisSection";
 import { EmployeeDashboardBanner } from "@/components/EmployeeDashboardBanner";
-import { ActivityFeed } from "@/components/ActivityFeed";
+import { DashboardAutoSync } from "@/components/DashboardAutoSync";
 import { LandingPage } from "@/components/LandingPage";
 
 export default async function Home() {
@@ -24,11 +24,11 @@ export default async function Home() {
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
       <main className="flex flex-1 flex-col gap-6 p-6">
+        <DashboardAutoSync enabled={connected} />
         {isEmployeeWithLink && (
           <EmployeeDashboardBanner hcpEmployeeId={session.user.hcpEmployeeId!} />
         )}
         <KeyMetricsSection connected={connected} />
-        {connected && <ActivityFeed connected={connected} />}
         {connected && <TechnicianRevenueSection />}
         {connected && <CsrKpisSection />}
       </main>
