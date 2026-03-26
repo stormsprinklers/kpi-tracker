@@ -62,6 +62,9 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
   const [timeOffError, setTimeOffError] = useState<string | null>(null);
   const [timeOffRequests, setTimeOffRequests] = useState<TimeOffRequest[]>([]);
   const [timeOffLoading, setTimeOffLoading] = useState(false);
+  const [importingCsv, setImportingCsv] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<string | null>(null);
 
   const effectiveHcpEmployeeId = isAdmin ? null : initialHcpEmployeeId ?? null;
   const employeeMap = Object.fromEntries(employees.map((e) => [e.id, e.name]));
@@ -244,6 +247,35 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
     }
   }
 
+  async function handleImportCsv(file: File) {
+    setImportingCsv(true);
+    setImportError(null);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/timesheets/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        importedRows?: number;
+        unmatchedEmployees?: string[];
+      };
+      if (!res.ok) throw new Error(data.error ?? "Import failed");
+
+      const unmatched = (data.unmatchedEmployees ?? []).length;
+      const msg = `Imported ${data.importedRows ?? 0} entries${unmatched > 0 ? ` (${unmatched} unmatched employee name${unmatched > 1 ? "s" : ""})` : ""}.`;
+      setImportResult(msg);
+      fetchEntries();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImportingCsv(false);
+    }
+  }
+
   return (
     <div className="mt-4 space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -274,6 +306,22 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
           >
             Add hours
           </button>
+        )}
+        {isAdmin && (
+          <label className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+            {importingCsv ? "Importing..." : "Import CSV"}
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              disabled={importingCsv}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleImportCsv(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
         )}
         {!isAdmin && effectiveHcpEmployeeId && (
           <button
@@ -391,6 +439,12 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
 
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+      {importError && (
+        <p className="text-sm text-red-600 dark:text-red-400">{importError}</p>
+      )}
+      {importResult && (
+        <p className="text-sm text-emerald-700 dark:text-emerald-400">{importResult}</p>
       )}
 
       {isAdmin && (timeOffLoading || timeOffRequests.length > 0) && (

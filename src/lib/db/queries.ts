@@ -967,6 +967,50 @@ export async function createTimeEntry(params: {
   return result.rows?.[0] as TimeEntry;
 }
 
+/** Upsert imported CSV time entry for exact day+employee. */
+export async function upsertImportedTimeEntry(params: {
+  organization_id: string;
+  hcp_employee_id: string;
+  entry_date: string;
+  hours: number;
+  notes?: string | null;
+}): Promise<TimeEntry> {
+  const note = params.notes ?? "[Imported CSV]";
+  const existing = await sql`
+    SELECT id
+    FROM time_entries
+    WHERE organization_id = ${params.organization_id}::uuid
+      AND hcp_employee_id = ${params.hcp_employee_id}
+      AND entry_date = ${params.entry_date}::date
+      AND notes LIKE '[Imported CSV%'
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `;
+  const existingId = (existing.rows?.[0] as { id?: string } | undefined)?.id;
+
+  if (existingId) {
+    const updated = await sql`
+      UPDATE time_entries
+      SET
+        start_time = NULL,
+        end_time = NULL,
+        hours = ${params.hours},
+        notes = ${note},
+        updated_at = NOW()
+      WHERE id = ${existingId}::uuid
+      RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours::double precision as hours, job_hcp_id, notes, created_at, updated_at
+    `;
+    return updated.rows?.[0] as TimeEntry;
+  }
+
+  const inserted = await sql`
+    INSERT INTO time_entries (organization_id, hcp_employee_id, entry_date, start_time, end_time, hours, job_hcp_id, notes, updated_at)
+    VALUES (${params.organization_id}::uuid, ${params.hcp_employee_id}, ${params.entry_date}::date, NULL, NULL, ${params.hours}, NULL, ${note}, NOW())
+    RETURNING id, organization_id, hcp_employee_id, entry_date::text, start_time::text, end_time::text, hours::double precision as hours, job_hcp_id, notes, created_at, updated_at
+  `;
+  return inserted.rows?.[0] as TimeEntry;
+}
+
 export async function updateTimeEntry(
   id: string,
   organizationId: string,
