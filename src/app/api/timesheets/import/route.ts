@@ -4,6 +4,7 @@ import { initSchema } from "@/lib/db";
 import {
   getOrganizationById,
   getEmployeesForSelector,
+  getTimesheetImportNameMappings,
   upsertImportedTimeEntry,
 } from "@/lib/db/queries";
 
@@ -79,6 +80,11 @@ export async function POST(request: Request) {
   for (const e of employees) {
     employeeByName.set(normalizeName(e.name), e.id);
   }
+  const mappings = await getTimesheetImportNameMappings(session.user.organizationId);
+  const mappedEmployeeByCsvName = new Map<string, string>();
+  for (const m of mappings) {
+    mappedEmployeeByCsvName.set(normalizeName(m.csv_name), m.hcp_employee_id);
+  }
 
   const importedAt = new Date().toISOString();
   let importedRows = 0;
@@ -100,7 +106,10 @@ export async function POST(request: Request) {
       if (!nameHeader || !hoursHeader) continue;
       if (!/\(hours\)\s*$/i.test(hoursHeader)) continue;
 
-      const employeeId = employeeByName.get(normalizeName(nameHeader));
+      const normalizedHeader = normalizeName(nameHeader);
+      const employeeId =
+        mappedEmployeeByCsvName.get(normalizedHeader) ??
+        employeeByName.get(normalizedHeader);
       if (!employeeId) {
         if (nameHeader.trim()) unmatchedEmployees.add(nameHeader.trim());
         continue;

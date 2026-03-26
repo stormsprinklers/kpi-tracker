@@ -1011,6 +1011,37 @@ export async function upsertImportedTimeEntry(params: {
   return inserted.rows?.[0] as TimeEntry;
 }
 
+export interface TimesheetImportNameMapping {
+  csv_name: string;
+  hcp_employee_id: string;
+}
+
+export async function getTimesheetImportNameMappings(
+  organizationId: string
+): Promise<TimesheetImportNameMapping[]> {
+  const result = await sql`
+    SELECT csv_name, hcp_employee_id
+    FROM timesheet_import_name_mappings
+    WHERE organization_id = ${organizationId}::uuid
+    ORDER BY csv_name ASC
+  `;
+  return (result.rows ?? []) as TimesheetImportNameMapping[];
+}
+
+export async function upsertTimesheetImportNameMapping(params: {
+  organization_id: string;
+  csv_name: string;
+  hcp_employee_id: string;
+}): Promise<void> {
+  await sql`
+    INSERT INTO timesheet_import_name_mappings (organization_id, csv_name, hcp_employee_id, created_at, updated_at)
+    VALUES (${params.organization_id}::uuid, ${params.csv_name}, ${params.hcp_employee_id}, NOW(), NOW())
+    ON CONFLICT (organization_id, csv_name) DO UPDATE SET
+      hcp_employee_id = ${params.hcp_employee_id},
+      updated_at = NOW()
+  `;
+}
+
 export async function updateTimeEntry(
   id: string,
   organizationId: string,

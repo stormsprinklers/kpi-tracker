@@ -653,4 +653,20 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
     ON notifications (user_id, read_at) WHERE read_at IS NULL
   `;
+
+  // CSV import name mapping - map legal/export names to HCP employee ids for timesheet import
+  await sql`
+    CREATE TABLE IF NOT EXISTS timesheet_import_name_mappings (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      csv_name TEXT NOT NULL,
+      hcp_employee_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, csv_name)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_timesheet_import_name_mappings_org_employee
+    ON timesheet_import_name_mappings (organization_id, hcp_employee_id)
+  `;
 }

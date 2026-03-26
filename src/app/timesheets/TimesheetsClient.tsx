@@ -65,6 +65,9 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
   const [importingCsv, setImportingCsv] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [unmatchedCsvNames, setUnmatchedCsvNames] = useState<string[]>([]);
+  const [csvNameMappings, setCsvNameMappings] = useState<Record<string, string>>({});
+  const [savingMappings, setSavingMappings] = useState(false);
 
   const effectiveHcpEmployeeId = isAdmin ? null : initialHcpEmployeeId ?? null;
   const employeeMap = Object.fromEntries(employees.map((e) => [e.id, e.name]));
@@ -102,6 +105,20 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
         })
         .catch(() => setEmployees([]));
     }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch("/api/timesheets/import-mappings")
+      .then((r) => (r.ok ? r.json() : { mappings: [] }))
+      .then((d: { mappings?: Array<{ csv_name: string; hcp_employee_id: string }> }) => {
+        const map: Record<string, string> = {};
+        for (const m of d.mappings ?? []) {
+          map[m.csv_name] = m.hcp_employee_id;
+        }
+        setCsvNameMappings(map);
+      })
+      .catch(() => {});
   }, [isAdmin]);
 
   function fetchEntries() {
@@ -266,6 +283,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       if (!res.ok) throw new Error(data.error ?? "Import failed");
 
       const unmatched = (data.unmatchedEmployees ?? []).length;
+      setUnmatchedCsvNames(data.unmatchedEmployees ?? []);
       const msg = `Imported ${data.importedRows ?? 0} entries${unmatched > 0 ? ` (${unmatched} unmatched employee name${unmatched > 1 ? "s" : ""})` : ""}.`;
       setImportResult(msg);
       fetchEntries();
@@ -273,6 +291,32 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       setImportError(err instanceof Error ? err.message : "Import failed");
     } finally {
       setImportingCsv(false);
+    }
+  }
+
+  async function saveCsvMappings() {
+    if (unmatchedCsvNames.length === 0) return;
+    setSavingMappings(true);
+    setImportError(null);
+    try {
+      for (const name of unmatchedCsvNames) {
+        const targetId = csvNameMappings[name];
+        if (!targetId) continue;
+        const res = await fetch("/api/timesheets/import-mappings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ csvName: name, hcpEmployeeId: targetId }),
+        });
+        if (!res.ok) {
+          const d = (await res.json()) as { error?: string };
+          throw new Error(d.error ?? `Failed to save mapping for ${name}`);
+        }
+      }
+      setImportResult("Saved name mappings. Re-upload the CSV to apply them.");
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Failed to save mappings");
+    } finally {
+      setSavingMappings(false);
     }
   }
 
@@ -445,6 +489,47 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       )}
       {importResult && (
         <p className="text-sm text-emerald-700 dark:text-emerald-400">{importResult}</p>
+      )}
+      {isAdmin && unmatchedCsvNames.length > 0 && (
+        <div className="rounded border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-800 dark:bg-amber-950/20">
+          <h4 className="text-sm font-medium text-amber-800 dark:text-amber-300">
+            Route unmatched legal names
+          </h4>
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+            Map each not-found CSV name to the correct employee, then save and re-upload the CSV.
+          </p>
+          <div className="mt-3 space-y-2">
+            {unmatchedCsvNames.map((name) => (
+              <div key={name} className="flex flex-wrap items-center gap-2">
+                <span className="min-w-[220px] text-sm text-zinc-700 dark:text-zinc-300">{name}</span>
+                <select
+                  value={csvNameMappings[name] ?? ""}
+                  onChange={(e) =>
+                    setCsvNameMappings((prev) => ({ ...prev, [name]: e.target.value }))
+                  }
+                  className="rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+                >
+                  <option value="">Select employee...</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={saveCsvMappings}
+              disabled={savingMappings}
+              className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+            >
+              {savingMappings ? "Saving..." : "Save mappings"}
+            </button>
+          </div>
+        </div>
       )}
 
       {isAdmin && (timeOffLoading || timeOffRequests.length > 0) && (
