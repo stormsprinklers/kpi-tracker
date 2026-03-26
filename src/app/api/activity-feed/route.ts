@@ -18,6 +18,6 @@ export async function GET() {
     return NextResponse.json([]);
   }
 
-  const events = await getActivityFeed(session.user.organizationId, 5);
+  const events = await getActivityFeed(session.user.organizationId, 3);
   return NextResponse.json(events);
 }

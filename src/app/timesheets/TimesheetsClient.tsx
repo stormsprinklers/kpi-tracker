@@ -51,8 +51,6 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [showForm, setShowForm] = useState(false);
   const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
-  const [formStart, setFormStart] = useState("09:00");
-  const [formEnd, setFormEnd] = useState("17:00");
   const [formHours, setFormHours] = useState("8");
   const [formNotes, setFormNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -158,8 +156,8 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
         body: JSON.stringify({
           ...(empId ? { hcp_employee_id: empId } : {}),
           entry_date: formDate,
-          start_time: formStart || null,
-          end_time: formEnd || null,
+          start_time: null,
+          end_time: null,
           hours: formHours ? parseFloat(formHours) : null,
           notes: formNotes || null,
         }),
@@ -170,8 +168,6 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       }
       setShowForm(false);
       setFormDate(new Date().toISOString().slice(0, 10));
-      setFormStart("09:00");
-      setFormEnd("17:00");
       setFormHours("8");
       setFormNotes("");
       fetchEntries();
@@ -269,14 +265,16 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
             className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
           />
         </label>
-        <button
-          type="button"
-          onClick={() => setShowForm(true)}
-          disabled={isAdmin && employees.length === 0}
-          className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-        >
-          Add entry
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            disabled={employees.length === 0}
+            className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            Add hours
+          </button>
+        )}
         {!isAdmin && effectiveHcpEmployeeId && (
           <button
             type="button"
@@ -452,7 +450,10 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
 
       {showForm && (
         <form onSubmit={handleSubmit} className="rounded border border-zinc-200 p-4 dark:border-zinc-700">
-          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">New time entry</h3>
+          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Log hours</h3>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            Enter the hours worked for a specific day. No clock in/out times.
+          </p>
           {isAdmin && (
             <label className="mt-3 block text-xs">
               Employee
@@ -471,7 +472,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
               </select>
             </label>
           )}
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="text-xs">
               Date
               <input
@@ -479,24 +480,6 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
                 value={formDate}
                 onChange={(e) => setFormDate(e.target.value)}
                 required
-                className="mt-1 block w-full rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
-              />
-            </label>
-            <label className="text-xs">
-              Start
-              <input
-                type="time"
-                value={formStart}
-                onChange={(e) => setFormStart(e.target.value)}
-                className="mt-1 block w-full rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
-              />
-            </label>
-            <label className="text-xs">
-              End
-              <input
-                type="time"
-                value={formEnd}
-                onChange={(e) => setFormEnd(e.target.value)}
                 className="mt-1 block w-full rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
               />
             </label>
@@ -528,7 +511,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
               disabled={submitting}
               className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
             >
-              {submitting ? "Adding..." : "Add"}
+              {submitting ? "Saving..." : "Save"}
             </button>
             <button
               type="button"
@@ -579,13 +562,13 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
                     <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Employee</th>
                   )}
                   <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Date</th>
-                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Start</th>
-                  <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">End</th>
                   <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">
-                    <MetricTooltip label="Hours" tooltip="Logged hours for this time entry. From clock in/out or manual entry. Used for pay calculation." />
+                    <MetricTooltip label="Hours" tooltip="Hours worked for the day (entered by owner/admin). Used for pay calculation." />
                   </th>
                   <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Notes</th>
-                  <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
+                  {isAdmin && (
+                    <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -597,19 +580,19 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
                       </td>
                     )}
                     <td className="py-2 text-zinc-900 dark:text-zinc-50">{e.entry_date}</td>
-                    <td className="py-2">{e.start_time ?? "—"}</td>
-                    <td className="py-2">{e.end_time ?? "—"}</td>
                     <td className="py-2">{e.hours ?? "—"}</td>
                     <td className="py-2 max-w-[200px] truncate">{e.notes ?? "—"}</td>
-                    <td className="py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(e.id)}
-                        className="text-red-600 hover:underline dark:text-red-400"
-                      >
-                        Delete
-                      </button>
-                    </td>
+                    {isAdmin && (
+                      <td className="py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(e.id)}
+                          className="text-red-600 hover:underline dark:text-red-400"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

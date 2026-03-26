@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { MarketingExecutiveSummary } from "@/components/MarketingExecutiveSummary";
 import { MarketingLeadSourceTable } from "@/components/MarketingLeadSourceTable";
 import { MarketingSeoInsights } from "@/components/MarketingSeoInsights";
-import { AIInsightsSection } from "@/components/AIInsightsSection";
 
 export default async function InsightsMarketingPage() {
   const session = await auth();
@@ -18,8 +17,6 @@ export default async function InsightsMarketingPage() {
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Ad spend, leads, revenue by source. SEO and keyword rankings.
         </p>
-
-        <AIInsightsSection dashboard="marketing" />
         <MarketingExecutiveSummary />
         <MarketingLeadSourceTable />
         <MarketingSeoInsights />

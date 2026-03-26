@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { MetricTooltip } from "./MetricTooltip";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 interface CallRecord {
   id: string;
@@ -18,6 +19,10 @@ interface CallRecord {
   job_debug?: Record<string, unknown> | null;
   call_debug?: Record<string, unknown> | null;
 }
+
+type BookingValue = "won" | "lost" | "non-opportunity";
+
+type CsrCandidate = { id: string; name: string };
 
 type DatePreset = "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "all" | "custom";
 
@@ -99,6 +104,8 @@ export function CsrCallDetailClient({
   hcpEmployeeId: string;
   csrName: string;
 }) {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
   const [datePreset, setDatePreset] = useState<DatePreset>("14d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -108,6 +115,13 @@ export function CsrCallDetailClient({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [csrCandidates, setCsrCandidates] = useState<CsrCandidate[]>([]);
+  const [csrPhotos, setCsrPhotos] = useState<Record<string, string>>({});
+  const [editCsrId, setEditCsrId] = useState<string>(""); // "" = unassigned
+  const [editBooking, setEditBooking] = useState<BookingValue>("non-opportunity");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -133,6 +147,52 @@ export function CsrCallDetailClient({
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch("/api/csr-candidates")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { candidates?: CsrCandidate[]; photos?: Record<string, string> } | null) => {
+        if (!d) return;
+        setCsrCandidates(Array.isArray(d.candidates) ? d.candidates : []);
+        setCsrPhotos(d.photos ?? {});
+      })
+      .catch(() => {
+        setCsrCandidates([]);
+        setCsrPhotos({});
+      });
+  }, [isAdmin]);
+
+  function startEdit(callId: string, currentBooking: string) {
+    setEditingId(callId);
+    setEditError(null);
+    setEditCsrId(hcpEmployeeId === "awaiting-assignment" ? "" : hcpEmployeeId);
+    const b = (currentBooking ?? "").toString().trim() as BookingValue;
+    setEditBooking(b === "won" || b === "lost" || b === "non-opportunity" ? b : "non-opportunity");
+  }
+
+  async function submitEdit(callRecordId: string) {
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/call-records/${callRecordId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hcpEmployeeId: editCsrId ? editCsrId : null,
+          bookingValue: editBooking,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to save");
+      setEditingId(null);
+      fetchData();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -203,6 +263,9 @@ export function CsrCallDetailClient({
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                   <MetricTooltip label="Booking" tooltip="Call outcome: won (booked), lost (no booking), or other. From GHL booking_value." />
                 </th>
+                {isAdmin && (
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Edit</th>
+                )}
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job (debug)</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Call (debug)</th>
@@ -244,6 +307,17 @@ export function CsrCallDetailClient({
                         {r.booking_value}
                       </span>
                     </td>
+                    {isAdmin && (
+                      <td className="py-2">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(r.id, r.booking_value)}
+                          className="text-xs text-sky-700 hover:underline dark:text-sky-400"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    )}
                     <td className="py-2 text-zinc-600 dark:text-zinc-400">
                       {r.job_hcp_id ? (
                         <span className="font-mono text-xs" title="Linked to HCP job for revenue tracking">
@@ -291,13 +365,87 @@ export function CsrCallDetailClient({
                       </button>
                     </td>
                   </tr>,
+                ...(editingId === r.id
+                  ? [
+                      <tr
+                        key={`${r.id}-edit`}
+                        className="border-b border-zinc-100 dark:border-zinc-800"
+                      >
+                        <td colSpan={isAdmin ? 11 : 10} className="bg-sky-50/50 py-3 pl-4 pr-4 dark:bg-sky-950/20">
+                          <div className="flex flex-wrap items-end gap-3">
+                            <div className="min-w-[220px]">
+                              <div className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">Assign CSR</div>
+                              <select
+                                value={editCsrId}
+                                onChange={(e) => setEditCsrId(e.target.value)}
+                                className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200"
+                              >
+                                <option value="">Unassigned</option>
+                                {csrCandidates.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="min-w-[200px]">
+                              <div className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">Booking type</div>
+                              <select
+                                value={editBooking}
+                                onChange={(e) => setEditBooking(e.target.value as BookingValue)}
+                                className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200"
+                              >
+                                <option value="won">won</option>
+                                <option value="lost">lost</option>
+                                <option value="non-opportunity">non-opportunity</option>
+                              </select>
+                            </div>
+
+                            {editCsrId && csrPhotos[editCsrId] && (
+                              <img
+                                src={csrPhotos[editCsrId]}
+                                alt=""
+                                className="h-10 w-10 rounded-full object-cover"
+                                title="CSR photo"
+                              />
+                            )}
+
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => submitEdit(r.id)}
+                                disabled={savingEdit}
+                                className="rounded bg-sky-700 px-3 py-2 text-sm font-medium text-white hover:bg-sky-800 disabled:opacity-50"
+                              >
+                                {savingEdit ? "Saving..." : "Submit"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingId(null)}
+                                className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                          {editError && (
+                            <p className="mt-2 text-sm text-red-600 dark:text-red-400">{editError}</p>
+                          )}
+                          <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                            Tip: setting CSR to “Unassigned” will move the call into “Awaiting Assignment”.
+                          </p>
+                        </td>
+                      </tr>,
+                    ]
+                  : []),
                 ...(expandedId === r.id && r.transcript
                   ? [
                       <tr
                         key={`${r.id}-transcript`}
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
-                        <td colSpan={10} className="bg-zinc-50 py-2 pl-4 dark:bg-zinc-900/50">
+                        <td colSpan={isAdmin ? 11 : 10} className="bg-zinc-50 py-2 pl-4 dark:bg-zinc-900/50">
                           <p className="whitespace-pre-wrap text-xs text-zinc-600 dark:text-zinc-400">
                             {r.transcript}
                           </p>
@@ -311,7 +459,7 @@ export function CsrCallDetailClient({
                         key={`${r.id}-job-debug`}
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
-                        <td colSpan={10} className="bg-amber-50/50 py-2 pl-4 dark:bg-amber-950/20">
+                        <td colSpan={isAdmin ? 11 : 10} className="bg-amber-50/50 py-2 pl-4 dark:bg-amber-950/20">
                           <div className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-400">Job (from jobs table / HCP webhook)</div>
                           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                             {JSON.stringify(r.job_debug, null, 2)}
@@ -326,7 +474,7 @@ export function CsrCallDetailClient({
                         key={`${r.id}-call-debug`}
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
-                        <td colSpan={10} className="bg-sky-50/50 py-2 pl-4 dark:bg-sky-950/20">
+                        <td colSpan={isAdmin ? 11 : 10} className="bg-sky-50/50 py-2 pl-4 dark:bg-sky-950/20">
                           <div className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">Call headers (from GHL webhook)</div>
                           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                             {JSON.stringify(r.call_debug, null, 2)}

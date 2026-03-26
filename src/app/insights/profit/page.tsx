@@ -1,6 +1,5 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { AIInsightsSection } from "@/components/AIInsightsSection";
 
 export default async function InsightsProfitPage() {
   const session = await auth();
@@ -15,7 +14,6 @@ export default async function InsightsProfitPage() {
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           P&amp;L and Balance Sheet from QuickBooks. Estimated profit levels.
         </p>
-        <AIInsightsSection dashboard="profit" />
         <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Profit &amp; Loss</h2>
           <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">Coming soon.</p>

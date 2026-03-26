@@ -1232,6 +1232,21 @@ export async function getCallRecordsForAwaitingAssignment(
   return (result.rows ?? []) as CallRecordForCsr[];
 }
 
+export async function updateCallRecordForAdmin(
+  organizationId: string,
+  callRecordId: string,
+  params: { hcp_employee_id?: string | null; booking_value?: "won" | "lost" | "non-opportunity" }
+): Promise<void> {
+  await sql`
+    UPDATE call_records
+    SET
+      hcp_employee_id = COALESCE(${params.hcp_employee_id ?? null}, hcp_employee_id),
+      booking_value = COALESCE(${params.booking_value ?? null}, booking_value)
+    WHERE organization_id = ${organizationId}::uuid
+      AND id = ${callRecordId}::uuid
+  `;
+}
+
 const COMPLETED_JOB_STATUSES = [
   "paid",
   "completed",
