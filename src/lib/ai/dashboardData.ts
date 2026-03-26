@@ -78,11 +78,9 @@ export async function fetchDashboardData(
           avgJobsPerDay: t.avgJobsPerDay,
         })),
         avgDriveTimeMinutes: timeInsights.averageDriveTimeMinutes,
-        avgJobTimePerLineItem: timeInsights.averageJobTimePerLineItem.map((l) => ({
-          name: l.name,
-          avgMinutesPerUnit: l.avgMinutesPerUnit,
-          jobCount: l.jobCount,
-        })),
+        avgLaborTimeMinutes: timeInsights.averageLaborTimeMinutes,
+        avgRevenuePerJob: timeInsights.averageRevenuePerJob,
+        avgRevenuePerHour: timeInsights.averageRevenuePerHour,
       };
     }
 

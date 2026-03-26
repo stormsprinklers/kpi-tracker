@@ -183,6 +183,7 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
   }
 
   let jobCount = 0;
+  let paidJobCount = 0;
   let revenue = 0;
 
   for (const job of jobs) {
@@ -216,6 +217,9 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
     }
 
     revenue += paidAmount;
+    if (paidAmount > 0) {
+      paidJobCount += 1;
+    }
   }
 
   let estimates: unknown[] = [];
@@ -253,7 +257,8 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
   revenue = techRevenue.totalRevenue;
 
   const conversionRate = totalEstimates > 0 ? (approvedEstimates / totalEstimates) * 100 : null;
-  const avgJobValue = jobCount > 0 ? revenue / jobCount : null;
+  // Average ticket excludes $0 jobs from the divisor.
+  const avgJobValue = paidJobCount > 0 ? revenue / paidJobCount : null;
 
   return {
     jobCount,

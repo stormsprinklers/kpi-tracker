@@ -6,6 +6,7 @@ import {
   getProsFromDb,
   getEstimatesFromDb,
   getTimeEntriesByOrganization,
+  getJobRevenueAssignments,
 } from "../db/queries";
 
 export interface TechnicianRevenue {
@@ -379,6 +380,12 @@ export async function getTechnicianRevenue(
   let totalRevenueAllJobs = 0;
 
   const { startDate, endDate, activeInCurrentYearOnly = true } = filters ?? {};
+  const assignmentRows = await getJobRevenueAssignments(organizationId).catch(() => []);
+  const manualJobAssignmentByJobId = new Map<string, string>();
+  for (const row of assignmentRows) {
+    if (!row.job_hcp_id || !row.hcp_employee_id) continue;
+    manualJobAssignmentByJobId.set(row.job_hcp_id, row.hcp_employee_id);
+  }
 
   // Fetch time entries and build hours-by-date map (techId -> date -> hours)
   const hoursByTechAndDate = new Map<string, Map<string, number>>();
@@ -467,6 +474,11 @@ export async function getTechnicianRevenue(
     }
 
     let techIds = getTechnicianIds(j);
+    const jobId = j.id != null ? String(j.id) : "";
+    const manualAssignedTech = jobId ? manualJobAssignmentByJobId.get(jobId) : undefined;
+    if (manualAssignedTech) {
+      techIds = [manualAssignedTech];
+    }
     techIds = techIds.filter((id) => !officeStaffIds.has(id));
     if (techIds.length === 0) continue;
 
@@ -534,7 +546,13 @@ export async function getTechnicianRevenue(
       if (!jobDate) continue;
       const jobDay = jobDate.toISOString().slice(0, 10);
       if (jobDay < yearStart || jobDay > yearEnd) continue;
-      const techIds = getTechnicianIds(j).filter((id) => !officeStaffIds.has(id));
+      let techIds = getTechnicianIds(j);
+      const jobId = j.id != null ? String(j.id) : "";
+      const manualAssignedTech = jobId ? manualJobAssignmentByJobId.get(jobId) : undefined;
+      if (manualAssignedTech) {
+        techIds = [manualAssignedTech];
+      }
+      techIds = techIds.filter((id) => !officeStaffIds.has(id));
       for (const id of techIds) activeInCurrentYear.add(id);
     }
   }

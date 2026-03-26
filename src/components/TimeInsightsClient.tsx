@@ -9,18 +9,12 @@ interface TechnicianJobsPerDay {
   avgJobsPerDay: number;
 }
 
-interface LineItemTimeMetric {
-  lineItemId?: string;
-  name: string;
-  avgMinutesPerUnit: number;
-  jobCount: number;
-}
-
 interface TimeInsightsResult {
   averageJobsPerDayPerTechnician: TechnicianJobsPerDay[];
   averageDriveTimeMinutes: number | null;
-  averageJobTimePerLineItem: LineItemTimeMetric[];
-  excludedJobsCount: number;
+  averageLaborTimeMinutes: number | null;
+  averageRevenuePerJob: number | null;
+  averageRevenuePerHour: number | null;
 }
 
 type DatePreset = "all" | "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "custom";
@@ -77,7 +71,7 @@ const PRESET_LABELS: Record<DatePreset, string> = {
 };
 
 export function TimeInsightsClient() {
-  const [datePreset, setDatePreset] = useState<DatePreset>("14d");
+  const [datePreset, setDatePreset] = useState<DatePreset>("7d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [data, setData] = useState<TimeInsightsResult | null>(null);
@@ -197,78 +191,54 @@ export function TimeInsightsClient() {
             )}
           </section>
 
-          {/* 2. Average Drive Time */}
+          {/* 2. Rollup Averages */}
           <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-            <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              <MetricTooltip
-                label="Average Drive Time"
-                tooltip="Average drive or travel time to jobs in minutes. Derived from job location and scheduling data when available."
-              />
-            </h3>
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-5 dark:border-zinc-700 dark:bg-zinc-900/50">
-              <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                {data.averageDriveTimeMinutes != null
-                  ? `${data.averageDriveTimeMinutes} min`
-                  : "—"}
-              </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                Average drive time to jobs
-              </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
+                <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                  {data.averageDriveTimeMinutes != null ? `${data.averageDriveTimeMinutes} min` : "—"}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <MetricTooltip
+                    label="Average Drive Time"
+                    tooltip="Average drive or travel time to jobs in minutes."
+                  />
+                </p>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
+                <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                  {data.averageLaborTimeMinutes != null ? `${data.averageLaborTimeMinutes} min` : "—"}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <MetricTooltip
+                    label="Average Labor Time"
+                    tooltip="Average on-site labor time from job start to completion."
+                  />
+                </p>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
+                <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                  {data.averageRevenuePerJob != null ? `$${data.averageRevenuePerJob.toFixed(2)}` : "—"}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <MetricTooltip
+                    label="Average Revenue per Job"
+                    tooltip="Average paid revenue per paid job in the selected period."
+                  />
+                </p>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
+                <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                  {data.averageRevenuePerHour != null ? `$${data.averageRevenuePerHour.toFixed(2)}` : "—"}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <MetricTooltip
+                    label="Average Revenue per Hour"
+                    tooltip="Paid revenue divided by total logged labor hours from job start/completion timestamps."
+                  />
+                </p>
+              </div>
             </div>
-          </section>
-
-          {/* 3. Average Job Time per Line Item */}
-          <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-            <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              <MetricTooltip
-                label="Average Job Time per Line Item"
-                tooltip="Average minutes spent per unit of each line item. Only jobs with a single line item type. Job duration divided by quantity."
-              />
-            </h3>
-            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Only jobs with a single line item type. Job time divided by line item quantity.
-            </p>
-            {data.averageJobTimePerLineItem.length === 0 ? (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                No single-line-item job data for this period.
-              </p>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[320px] text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                        <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Line Item</th>
-                        <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                          <MetricTooltip label="Avg Min/Unit" tooltip="Average minutes of job time per unit of this line item." />
-                        </th>
-                        <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                          <MetricTooltip label="Jobs" tooltip="Number of jobs included in this average." />
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.averageJobTimePerLineItem.map((item, idx) => (
-                        <tr key={item.name + String(idx)} className="border-b border-zinc-100 dark:border-zinc-800">
-                          <td className="py-2 text-zinc-900 dark:text-zinc-50">{item.name}</td>
-                          <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
-                            {item.avgMinutesPerUnit.toFixed(1)} min
-                          </td>
-                          <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
-                            {item.jobCount}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {data.excludedJobsCount > 0 && (
-                  <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                    {data.excludedJobsCount} jobs not included here due to multiple line items.
-                  </p>
-                )}
-              </>
-            )}
           </section>
         </>
       )}

@@ -2,7 +2,6 @@ import { getHcpClient } from "../housecallpro";
 import {
   getJobsFromDb,
   getEmployeesFromDb,
-  getAllJobLineItemsByCompany,
   getOrganizationById,
 } from "../db/queries";
 
@@ -17,18 +16,12 @@ export interface TechnicianJobsPerDay {
   avgJobsPerDay: number;
 }
 
-export interface LineItemTimeMetric {
-  lineItemId?: string;
-  name: string;
-  avgMinutesPerUnit: number;
-  jobCount: number;
-}
-
 export interface TimeInsightsResult {
   averageJobsPerDayPerTechnician: TechnicianJobsPerDay[];
   averageDriveTimeMinutes: number | null;
-  averageJobTimePerLineItem: LineItemTimeMetric[];
-  excludedJobsCount: number; // jobs with multiple line items, excluded from line item report
+  averageLaborTimeMinutes: number | null;
+  averageRevenuePerJob: number | null;
+  averageRevenuePerHour: number | null;
 }
 
 const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
@@ -149,16 +142,42 @@ function getJobTimeMinutes(job: Record<string, unknown>): number | null {
   return Math.round(ms / 60000);
 }
 
-function getLineItemKey(item: Record<string, unknown>): string {
-  const name = item.name ?? item.description ?? item.title ?? item.service_name ?? "";
-  const serviceId = item.service_id ?? item.price_book_item_id ?? item.id ?? "";
-  return `${String(name).trim() || "(unnamed)"}|${String(serviceId)}`;
+function toDollars(value: unknown): number {
+  const n =
+    typeof value === "number" && !Number.isNaN(value)
+      ? value
+      : typeof value === "string"
+        ? parseFloat(value) || 0
+        : 0;
+  if (n <= 0) return 0;
+  if (Number.isInteger(n) && n > 3000) return n / 100;
+  return n;
 }
 
-function getLineItemQuantity(item: Record<string, unknown>): number {
-  const q = item.quantity ?? item.qty ?? item.count ?? 1;
-  const n = typeof q === "number" && !Number.isNaN(q) ? q : typeof q === "string" ? parseFloat(q) || 1 : 1;
-  return Math.max(1, n);
+function getPaidAmountFromJob(job: Record<string, unknown>): number {
+  const totals = job.totals as Record<string, unknown> | undefined;
+  const financial = job.financial as Record<string, unknown> | undefined;
+  const total =
+    job.total_amount ??
+    job.amount_paid ??
+    job.total_paid ??
+    job.total ??
+    job.paid_amount ??
+    job.revenue ??
+    totals?.total_amount ??
+    totals?.total ??
+    financial?.total_amount ??
+    financial?.paid_amount;
+  const outstanding =
+    job.outstanding_balance ??
+    job.balance_due ??
+    job.amount_due ??
+    totals?.outstanding_balance ??
+    financial?.outstanding_balance ??
+    0;
+  const totalNum = toDollars(total);
+  const outNum = toDollars(outstanding);
+  return Math.max(0, totalNum - outNum) || totalNum;
 }
 
 export async function getTimeInsights(
@@ -244,90 +263,42 @@ export async function getTimeInsights(
   }
   const averageDriveTimeMinutes = driveCount > 0 ? Math.round(totalDriveMinutes / driveCount) : null;
 
-  // 3. Average job time per line item (single-line-item jobs only)
-  const lineItemStats = new Map<string, { totalMinutes: number; jobCount: number; lineItemId?: string; name: string }>();
-  let excludedJobsCount = 0;
-
-  const lineItemsByJob = await getAllJobLineItemsByCompany(companyId).catch(() => new Map<string, Record<string, unknown>[]>());
-
+  // 3. Overall labor and revenue rollups
+  let totalLaborMinutes = 0;
+  let laborJobCount = 0;
+  let totalPaidRevenue = 0;
+  let paidJobCount = 0;
+  let totalRevenueOnLaborJobs = 0;
   for (const job of filteredJobs) {
+    const paid = getPaidAmountFromJob(job);
+    if (paid > 0) {
+      totalPaidRevenue += paid;
+      paidJobCount += 1;
+    }
+
     const jobTime = getJobTimeMinutes(job);
     if (jobTime == null) continue;
-
-    const jobHcpId = (job.id ?? job.uuid) != null ? String(job.id ?? job.uuid) : null;
-    if (!jobHcpId) continue;
-
-    let lineItems = lineItemsByJob.get(jobHcpId) ?? [];
-    if (lineItems.length === 0) {
-      // Fallback: check if job has line_items embedded (some HCP responses include them)
-      const embedded =
-        job.line_items ??
-        job.items ??
-        (job.invoice as Record<string, unknown>)?.line_items ??
-        (job.estimate as Record<string, unknown>)?.options ??
-        (job as Record<string, unknown>).line_items;
-      const arr = Array.isArray(embedded)
-        ? embedded
-        : embedded && typeof embedded === "object" && "line_items" in (embedded as object)
-          ? ((embedded as { line_items: unknown[] }).line_items ?? [])
-          : embedded && typeof embedded === "object" && "items" in (embedded as object)
-            ? ((embedded as { items: unknown[] }).items ?? [])
-            : [];
-      lineItems = arr as Record<string, unknown>[];
-    }
-    if (lineItems.length === 0) continue;
-
-    // Group by line item key (name|service_id) and sum quantities
-    const byKey = new Map<string, { quantity: number; item: Record<string, unknown> }>();
-    for (const item of lineItems) {
-      const key = getLineItemKey(item);
-      const qty = getLineItemQuantity(item);
-      const existing = byKey.get(key);
-      if (existing) {
-        existing.quantity += qty;
-      } else {
-        byKey.set(key, { quantity: qty, item });
-      }
-    }
-
-    if (byKey.size > 1) {
-      excludedJobsCount++;
-      continue;
-    }
-
-    const entry = [...byKey.values()][0];
-    const quantity = entry.quantity;
-    const key = getLineItemKey(entry.item);
-    const name = String(entry.item.name ?? entry.item.description ?? entry.item.title ?? entry.item.service_name ?? "(unnamed)").trim() || "(unnamed)";
-    const lineItemId = (entry.item.id ?? entry.item.service_id) != null ? String(entry.item.id ?? entry.item.service_id) : undefined;
-
-    const minutesPerUnit = jobTime / quantity;
-    const existing = lineItemStats.get(key);
-    if (existing) {
-      existing.totalMinutes += minutesPerUnit;
-      existing.jobCount += 1;
-    } else {
-      lineItemStats.set(key, {
-        totalMinutes: minutesPerUnit,
-        jobCount: 1,
-        lineItemId,
-        name,
-      });
+    totalLaborMinutes += jobTime;
+    laborJobCount += 1;
+    if (paid > 0) {
+      totalRevenueOnLaborJobs += paid;
     }
   }
 
-  const averageJobTimePerLineItem: LineItemTimeMetric[] = [...lineItemStats.entries()].map(([, v]) => ({
-    lineItemId: v.lineItemId,
-    name: v.name,
-    avgMinutesPerUnit: Math.round((v.totalMinutes / v.jobCount) * 10) / 10,
-    jobCount: v.jobCount,
-  }));
-  averageJobTimePerLineItem.sort((a, b) => b.jobCount - a.jobCount);
+  const averageLaborTimeMinutes =
+    laborJobCount > 0 ? Math.round(totalLaborMinutes / laborJobCount) : null;
+  const averageRevenuePerJob =
+    paidJobCount > 0 ? Math.round((totalPaidRevenue / paidJobCount) * 100) / 100 : null;
+  const averageRevenuePerHour =
+    totalLaborMinutes > 0
+      ? Math.round((totalRevenueOnLaborJobs / (totalLaborMinutes / 60)) * 100) / 100
+      : null;
 
   return {
     averageJobsPerDayPerTechnician,
     averageDriveTimeMinutes,
-    averageJobTimePerLineItem,
-    excludedJobsCount,
+    averageLaborTimeMinutes,
+    averageRevenuePerJob,
+    averageRevenuePerHour,
   };
 }

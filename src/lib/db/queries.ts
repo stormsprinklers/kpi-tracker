@@ -1322,6 +1322,36 @@ export async function updateCallRecordForAdmin(
   `;
 }
 
+export interface JobRevenueAssignment {
+  job_hcp_id: string;
+  hcp_employee_id: string;
+}
+
+export async function getJobRevenueAssignments(
+  organizationId: string
+): Promise<JobRevenueAssignment[]> {
+  const result = await sql`
+    SELECT job_hcp_id, hcp_employee_id
+    FROM job_revenue_assignments
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+  return (result.rows ?? []) as JobRevenueAssignment[];
+}
+
+export async function upsertJobRevenueAssignment(params: {
+  organization_id: string;
+  job_hcp_id: string;
+  hcp_employee_id: string;
+}): Promise<void> {
+  await sql`
+    INSERT INTO job_revenue_assignments (organization_id, job_hcp_id, hcp_employee_id, created_at, updated_at)
+    VALUES (${params.organization_id}::uuid, ${params.job_hcp_id}, ${params.hcp_employee_id}, NOW(), NOW())
+    ON CONFLICT (organization_id, job_hcp_id) DO UPDATE SET
+      hcp_employee_id = ${params.hcp_employee_id},
+      updated_at = NOW()
+  `;
+}
+
 const COMPLETED_JOB_STATUSES = [
   "paid",
   "completed",

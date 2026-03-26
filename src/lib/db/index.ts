@@ -669,4 +669,20 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_timesheet_import_name_mappings_org_employee
     ON timesheet_import_name_mappings (organization_id, hcp_employee_id)
   `;
+
+  // Manual unassigned revenue routing - lets admin assign otherwise unassigned jobs to a technician.
+  await sql`
+    CREATE TABLE IF NOT EXISTS job_revenue_assignments (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      job_hcp_id TEXT NOT NULL,
+      hcp_employee_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, job_hcp_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_job_revenue_assignments_org_employee
+    ON job_revenue_assignments (organization_id, hcp_employee_id)
+  `;
 }
