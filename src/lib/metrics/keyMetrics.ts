@@ -1,5 +1,6 @@
 import { getHcpClient } from "../housecallpro";
 import { getJobsFromDb, getInvoicesFromDb, getEstimatesFromDb } from "../db/queries";
+import { getTechnicianRevenue } from "./technicianRevenue";
 
 export type KeyMetricsRange = "7d" | "30d" | "all";
 
@@ -241,6 +242,15 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
     totalEstimates += 1;
     if (hasApprovedOption(e)) approvedEstimates += 1;
   }
+
+  // Keep Key Metrics revenue aligned with Technician KPI revenue calculation.
+  // This avoids drift between the two cards when source filters/logic evolve.
+  const techRevenue = await getTechnicianRevenue(organizationId, {
+    startDate: startDate ?? undefined,
+    endDate: endDate ?? undefined,
+    activeInCurrentYearOnly: true,
+  });
+  revenue = techRevenue.totalRevenue;
 
   const conversionRate = totalEstimates > 0 ? (approvedEstimates / totalEstimates) * 100 : null;
   const avgJobValue = jobCount > 0 ? revenue / jobCount : null;

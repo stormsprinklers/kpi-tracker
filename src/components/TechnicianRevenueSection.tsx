@@ -10,6 +10,7 @@ interface TechnicianRevenue {
   totalRevenue: number;
   conversionRate: number | null;
   revenuePerHour: number | null;
+  avgTicket: number | null;
 }
 
 interface TechnicianRevenueResult {
@@ -23,6 +24,7 @@ interface TechnicianCard {
   revenuePerHour: number | null;
   totalRevenue: number;
   conversionRate: number | null;
+  avgTicket: number | null;
   fiveStarReviews: number | null;
   photoUrl: string | null;
 }
@@ -100,7 +102,7 @@ export function TechnicianRevenueSection() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
   const [viewTab, setViewTab] = useState<"cards" | "tables">("cards");
-  const [datePreset, setDatePreset] = useState<DatePreset>("14d");
+  const [datePreset, setDatePreset] = useState<DatePreset>("7d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [data, setData] = useState<TechnicianRevenueResult | null>(null);
@@ -138,6 +140,7 @@ export function TechnicianRevenueSection() {
         revenuePerHour: t.revenuePerHour,
         totalRevenue: t.totalRevenue,
         conversionRate: t.conversionRate,
+        avgTicket: t.avgTicket,
         fiveStarReviews: null,
         photoUrl: photos[t.technicianId] ?? null,
       }));
@@ -272,6 +275,9 @@ export function TechnicianRevenueSection() {
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                     <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. Total job revenue on days with time entries, divided by hours logged." />
                   </th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                    <MetricTooltip label="Avg Ticket" tooltip="Average paid ticket for this technician. Calculated as total paid revenue divided by number of billable jobs." />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -286,6 +292,9 @@ export function TechnicianRevenueSection() {
                     </td>
                     <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
                       {t.revenuePerHour != null ? `${formatCurrency(t.revenuePerHour)}/hr` : "N/A"}
+                    </td>
+                    <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
+                      {t.avgTicket != null ? formatCurrency(t.avgTicket) : "—"}
                     </td>
                   </tr>
                 ))}
@@ -386,6 +395,14 @@ export function TechnicianRevenueSection() {
                     </dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                       {card.conversionRate != null ? `${card.conversionRate.toFixed(1)}%` : "—"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-zinc-500 dark:text-zinc-400">
+                      <MetricTooltip label="Average Ticket" tooltip="Average paid ticket for this technician. Total paid revenue divided by billable jobs." />
+                    </dt>
+                    <dd className="font-medium text-zinc-900 dark:text-zinc-50">
+                      {card.avgTicket != null ? formatCurrency(card.avgTicket) : "—"}
                     </dd>
                   </div>
                   <div className="flex justify-between">

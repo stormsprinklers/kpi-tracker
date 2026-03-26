@@ -51,7 +51,7 @@ function formatDuration(minutes: number): string {
 
 export function CsrKpisSection() {
   const { data: session } = useSession();
-  const [datePreset, setDatePreset] = useState<DatePreset>("14d");
+  const [datePreset, setDatePreset] = useState<DatePreset>("7d");
   const [cards, setCards] = useState<CsrKpiEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

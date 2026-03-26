@@ -106,6 +106,7 @@ export function CsrCallDetailClient({
 }) {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
+  const isAwaitingAssignment = hcpEmployeeId === "awaiting-assignment";
   const [datePreset, setDatePreset] = useState<DatePreset>("14d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -202,7 +203,9 @@ export function CsrCallDetailClient({
             Call log — {csrName}
           </h3>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Date, time, customer, city, duration, booking value, transcript
+            {isAwaitingAssignment
+              ? "Date, time, customer, duration, booking value, transcript. Edit to reassign missed calls."
+              : "Date, time, customer, city, duration, booking value, transcript"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -256,19 +259,28 @@ export function CsrCallDetailClient({
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Date</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Time</th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Customer</th>
-                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">City</th>
+                {!isAwaitingAssignment && (
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">City</th>
+                )}
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                   <MetricTooltip label="Duration" tooltip="Length of the call in minutes and seconds. From GHL call webhook duration_seconds." />
                 </th>
                 <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                   <MetricTooltip label="Booking" tooltip="Call outcome: won (booked), lost (no booking), or other. From GHL booking_value." />
                 </th>
-                {isAdmin && (
+                {isAwaitingAssignment && (
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Transcript</th>
+                )}
+                {(isAdmin || !isAwaitingAssignment) && (
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Edit</th>
                 )}
-                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job</th>
-                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job (debug)</th>
-                <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Call (debug)</th>
+                {!isAwaitingAssignment && (
+                  <>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job</th>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job (debug)</th>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Call (debug)</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -286,9 +298,11 @@ export function CsrCallDetailClient({
                     <td className="py-2 text-zinc-900 dark:text-zinc-50">
                       {r.customer_name ?? r.customer_phone ?? "—"}
                     </td>
-                    <td className="py-2 text-zinc-700 dark:text-zinc-300">
-                      {r.customer_city ?? "—"}
-                    </td>
+                    {!isAwaitingAssignment && (
+                      <td className="py-2 text-zinc-700 dark:text-zinc-300">
+                        {r.customer_city ?? "—"}
+                      </td>
+                    )}
                     <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
                       {r.duration_seconds != null
                         ? formatDuration(r.duration_seconds)
@@ -307,7 +321,18 @@ export function CsrCallDetailClient({
                         {r.booking_value}
                       </span>
                     </td>
-                    {isAdmin && (
+                    {isAwaitingAssignment && (
+                      <td className="py-2 text-zinc-700 dark:text-zinc-300">
+                        {r.transcript ? (
+                          <p className="max-w-[360px] truncate" title={r.transcript}>
+                            {r.transcript}
+                          </p>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    )}
+                    {(isAdmin || !isAwaitingAssignment) && (
                       <td className="py-2">
                         <button
                           type="button"
@@ -318,52 +343,56 @@ export function CsrCallDetailClient({
                         </button>
                       </td>
                     )}
-                    <td className="py-2 text-zinc-600 dark:text-zinc-400">
-                      {r.job_hcp_id ? (
-                        <span className="font-mono text-xs" title="Linked to HCP job for revenue tracking">
-                          ✓ {r.job_hcp_id.slice(0, 8)}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-2">
-                      {r.job_debug ? (
-                        <button
-                          type="button"
-                          onClick={() => setExpandedJobId(expandedJobId === r.id ? null : r.id)}
-                          className="text-xs text-amber-600 hover:underline dark:text-amber-400"
-                        >
-                          {expandedJobId === r.id ? "Hide" : "Show"}
-                        </button>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-2">
-                      {r.call_debug ? (
-                        <button
-                          type="button"
-                          onClick={() => setExpandedCallId(expandedCallId === r.id ? null : r.id)}
-                          className="text-xs text-amber-600 hover:underline dark:text-amber-400"
-                        >
-                          {expandedCallId === r.id ? "Hide" : "Show"}
-                        </button>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedId(expandedId === r.id ? null : r.id)
-                        }
-                        className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
-                      >
-                        {expandedId === r.id ? "Hide transcript" : "Show transcript"}
-                      </button>
-                    </td>
+                    {!isAwaitingAssignment && (
+                      <>
+                        <td className="py-2 text-zinc-600 dark:text-zinc-400">
+                          {r.job_hcp_id ? (
+                            <span className="font-mono text-xs" title="Linked to HCP job for revenue tracking">
+                              ✓ {r.job_hcp_id.slice(0, 8)}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="py-2">
+                          {r.job_debug ? (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedJobId(expandedJobId === r.id ? null : r.id)}
+                              className="text-xs text-amber-600 hover:underline dark:text-amber-400"
+                            >
+                              {expandedJobId === r.id ? "Hide" : "Show"}
+                            </button>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="py-2">
+                          {r.call_debug ? (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedCallId(expandedCallId === r.id ? null : r.id)}
+                              className="text-xs text-amber-600 hover:underline dark:text-amber-400"
+                            >
+                              {expandedCallId === r.id ? "Hide" : "Show"}
+                            </button>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="py-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedId(expandedId === r.id ? null : r.id)
+                            }
+                            className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
+                          >
+                            {expandedId === r.id ? "Hide transcript" : "Show transcript"}
+                          </button>
+                        </td>
+                      </>
+                    )}
                   </tr>,
                 ...(editingId === r.id
                   ? [
@@ -371,7 +400,15 @@ export function CsrCallDetailClient({
                         key={`${r.id}-edit`}
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
-                        <td colSpan={isAdmin ? 11 : 10} className="bg-sky-50/50 py-3 pl-4 pr-4 dark:bg-sky-950/20">
+                        <td colSpan={isAwaitingAssignment ? 7 : isAdmin ? 11 : 10} className="bg-sky-50/50 py-3 pl-4 pr-4 dark:bg-sky-950/20">
+                          {isAwaitingAssignment && (
+                            <div className="mb-3 rounded border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">
+                              <div className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">Transcript</div>
+                              <p className="whitespace-pre-wrap text-xs text-zinc-700 dark:text-zinc-300">
+                                {r.transcript ?? "No transcript available."}
+                              </p>
+                            </div>
+                          )}
                           <div className="flex flex-wrap items-end gap-3">
                             <div className="min-w-[220px]">
                               <div className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">Assign CSR</div>
@@ -440,6 +477,7 @@ export function CsrCallDetailClient({
                     ]
                   : []),
                 ...(expandedId === r.id && r.transcript
+                  && !isAwaitingAssignment
                   ? [
                       <tr
                         key={`${r.id}-transcript`}
@@ -454,6 +492,7 @@ export function CsrCallDetailClient({
                     ]
                   : []),
                 ...(expandedJobId === r.id && r.job_debug
+                  && !isAwaitingAssignment
                   ? [
                       <tr
                         key={`${r.id}-job-debug`}
@@ -469,6 +508,7 @@ export function CsrCallDetailClient({
                     ]
                   : []),
                 ...(expandedCallId === r.id && r.call_debug
+                  && !isAwaitingAssignment
                   ? [
                       <tr
                         key={`${r.id}-call-debug`}

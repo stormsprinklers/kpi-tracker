@@ -14,6 +14,7 @@ export interface TechnicianRevenue {
   totalRevenue: number;
   conversionRate: number | null;
   revenuePerHour: number | null;
+  avgTicket: number | null;
 }
 
 export interface TechnicianRevenueResult {
@@ -373,6 +374,7 @@ export async function getTechnicianRevenue(
   }
 
   const revenueByTech = new Map<string, number>();
+  const billableJobsByTech = new Map<string, number>();
   const revenueByTechAndDate = new Map<string, Map<string, number>>();
 
   const { startDate, endDate, activeInCurrentYearOnly = true } = filters ?? {};
@@ -470,6 +472,9 @@ export async function getTechnicianRevenue(
     for (const techId of techIds) {
       const current = revenueByTech.get(techId) ?? 0;
       revenueByTech.set(techId, current + amountPerTech);
+      if (paidAmount > 0) {
+        billableJobsByTech.set(techId, (billableJobsByTech.get(techId) ?? 0) + 1);
+      }
       if (jobDay) {
         let byDate = revenueByTechAndDate.get(techId);
         if (!byDate) {
@@ -547,12 +552,15 @@ export async function getTechnicianRevenue(
         }
         revenuePerHour = totalHours > 0 ? totalRevenueOnDaysWithHours / totalHours : null;
       }
+      const billableJobs = billableJobsByTech.get(id) ?? 0;
+      const avgTicket = billableJobs > 0 ? totalRevenue / billableJobs : null;
       return {
         technicianId: id,
         technicianName: nameMap.get(id) ?? (id.startsWith("pro_") || id.startsWith("emp_") ? "Former technician" : `Technician ${id}`),
         totalRevenue,
         conversionRate,
         revenuePerHour,
+        avgTicket,
       };
     })
     .sort((a, b) => b.totalRevenue - a.totalRevenue);
