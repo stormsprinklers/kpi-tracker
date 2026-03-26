@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ExpectedPayResult } from "@/lib/performancePay";
 import { MetricTooltip } from "../MetricTooltip";
 
@@ -90,6 +90,18 @@ export function ExpectedPayTable({
     fetchExpected();
   }, [fetchExpected]);
 
+  const totals = useMemo(() => {
+    let totalHours = 0;
+    let totalPay = 0;
+    for (const r of results) {
+      totalHours += typeof r.hoursWorked === "number" ? r.hoursWorked : 0;
+      totalPay += typeof r.expectedPay === "number" ? r.expectedPay : 0;
+    }
+    const blendedEffective =
+      totalHours > 0 ? Math.round((totalPay / totalHours) * 100) / 100 : null;
+    return { totalHours, totalPay, blendedEffective };
+  }, [results]);
+
   return (
     <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
@@ -137,16 +149,16 @@ export function ExpectedPayTable({
               <th className="pb-2 pl-4 text-left font-medium text-zinc-700 dark:text-zinc-300">
                 Employee
               </th>
-              <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
+              <th className="pb-2 pr-6 text-right font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
                   label="Hours"
                   tooltip="Total hours from timesheets in this period."
                 />
               </th>
-              <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">
+              <th className="pb-2 pl-1 text-left font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
                   label="Pay type"
-                  tooltip="Performance Pay structure: hourly, commission, hybrid, or CSR booking-based hourly."
+                  tooltip="How this period is paid: hourly, commission, or combined structures. For hourly-or-commission plans, shows which side actually pays (higher of the two)."
                 />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
@@ -169,10 +181,10 @@ export function ExpectedPayTable({
                 <td className="py-2 pl-4 text-zinc-900 dark:text-zinc-50">
                   {r.employeeName ?? r.hcpEmployeeId}
                 </td>
-                <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+                <td className="py-2 pr-6 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
                   {r.hoursWorked != null ? r.hoursWorked.toFixed(2) : "—"}
                 </td>
-                <td className="py-2 text-zinc-700 dark:text-zinc-300">{r.payTypeLabel ?? "—"}</td>
+                <td className="py-2 pl-1 text-zinc-700 dark:text-zinc-300">{r.payTypeLabel ?? "—"}</td>
                 <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
                   {r.effectiveHourlyRate != null ? formatMoney(r.effectiveHourlyRate) : "—"}
                 </td>
@@ -182,6 +194,25 @@ export function ExpectedPayTable({
               </tr>
             ))}
           </tbody>
+          {results.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-zinc-300 bg-zinc-50/80 dark:border-zinc-600 dark:bg-zinc-900/80">
+                <td className="py-2.5 pl-4 font-semibold text-zinc-900 dark:text-zinc-50">
+                  Total
+                </td>
+                <td className="py-2.5 pr-6 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {totals.totalHours.toFixed(2)}
+                </td>
+                <td className="py-2.5 pl-1" />
+                <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {totals.blendedEffective != null ? formatMoney(totals.blendedEffective) : "—"}
+                </td>
+                <td className="py-2.5 pr-4 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {formatMoney(totals.totalPay)}
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
       {results.length === 0 && !loading && !error && (

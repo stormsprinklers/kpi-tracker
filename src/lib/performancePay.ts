@@ -46,7 +46,7 @@ function payTypeLabelForStructure(structureType: StructureType): string {
     case "hourly_commission_tiers":
       return "Hourly + commission";
     case "hourly_to_commission":
-      return "Hourly or commission (greater)";
+      return "Hourly or commission";
     case "pure_commission":
       return "Commission";
     case "hourly_metrics":
@@ -56,6 +56,21 @@ function payTypeLabelForStructure(structureType: StructureType): string {
     default:
       return "Performance pay";
   }
+}
+
+/** Which side of hourly_to_commission actually pays (Math.max of hourly vs commission). */
+function payTypeLabelHourlyVsCommission(
+  hourlyPay: number,
+  commissionPay: number
+): string {
+  const eps = 0.005;
+  if (Math.abs(hourlyPay - commissionPay) < eps) {
+    return "Hourly / commission (equal)";
+  }
+  if (hourlyPay > commissionPay) {
+    return "Hourly (paying)";
+  }
+  return "Commission (paying)";
 }
 
 export interface CalculateExpectedPayOptions {
@@ -295,6 +310,15 @@ export async function calculateExpectedPay(
         breakdown.base = 0;
     }
 
+    let payTypeLabel = payTypeLabelForStructure(
+      config.structure_type as StructureType
+    );
+    if (config.structure_type === "hourly_to_commission") {
+      const hourlyPay = breakdown.hourly ?? 0;
+      const commissionPay = breakdown.commission ?? 0;
+      payTypeLabel = payTypeLabelHourlyVsCommission(hourlyPay, commissionPay);
+    }
+
     let bonusTotal = 0;
     for (const b of bonuses) {
       const amt =
@@ -314,7 +338,7 @@ export async function calculateExpectedPay(
       expectedPay: expectedPayTotal,
       breakdown,
       hoursWorked: Math.round(hours * 100) / 100,
-      payTypeLabel: payTypeLabelForStructure(config.structure_type as StructureType),
+      payTypeLabel,
       effectiveHourlyRate,
     });
   }
