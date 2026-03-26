@@ -8,6 +8,7 @@ import {
   getTimeEntriesByOrganization,
   getJobRevenueAssignments,
 } from "../db/queries";
+import { extractJobHcpId } from "../sync/extractors";
 
 export interface TechnicianRevenue {
   technicianId: string;
@@ -230,26 +231,34 @@ function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDat
   return true;
 }
 
-/** Extract technician IDs from estimate.assigned_employees (same structure as jobs). Excludes office staff. */
-function getEstimateTechnicianIds(
+/**
+ * Technician IDs for conversion: same rules as jobs (including pro_id / employee fallbacks).
+ * If the estimate has no assignees, use the linked job's technicians (HCP often omits assignees on estimates).
+ * Respects manual job revenue routing so conversion stays aligned with revenue.
+ */
+function resolveTechnicianIdsForEstimate(
   estimate: Record<string, unknown>,
-  officeStaffIds: Set<string>
+  jobByHcpId: Map<string, Record<string, unknown>>,
+  officeStaffIds: Set<string>,
+  manualJobAssignmentByJobId: Map<string, string>
 ): string[] {
-  const assigned = estimate.assigned_employees ?? estimate.assigned_pro ?? estimate.assigned_employee;
-  const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
-  const ids: string[] = [];
-  for (const a of items) {
-    if (typeof a === "string") {
-      ids.push(a);
-      continue;
-    }
-    if (a && typeof a === "object" && "id" in a) {
-      const r = a as Record<string, unknown>;
-      if (isOfficeStaff(r.role ?? r.employee_type ?? r.type)) continue;
-      ids.push(String(r.id));
-    }
-  }
-  return ids.filter((id) => !officeStaffIds.has(id));
+  let ids = getTechnicianIds(estimate).filter((id) => !officeStaffIds.has(id));
+  if (ids.length > 0) return ids;
+
+  const jobHcpId = extractJobHcpId(estimate);
+  if (!jobHcpId) return [];
+
+  const manual = manualJobAssignmentByJobId.get(jobHcpId);
+  if (manual && !officeStaffIds.has(manual)) return [manual];
+
+  const job = jobByHcpId.get(jobHcpId);
+  if (!job) return [];
+
+  const j = job as Record<string, unknown>;
+  const jobIdStr = j.id != null ? String(j.id) : "";
+  const manualFromJobId = jobIdStr ? manualJobAssignmentByJobId.get(jobIdStr) : undefined;
+  let fromJob = manualFromJobId ? [manualFromJobId] : getTechnicianIds(j);
+  return fromJob.filter((id) => !officeStaffIds.has(id));
 }
 
 /** Extract estimate date for filtering. Same pattern as getJobDate. */
@@ -280,14 +289,28 @@ function estimateInDateRange(
   return true;
 }
 
-/** True if any option has approval_status "approved" or "pro approved". One estimate with many options = 1 estimate. */
+/**
+ * True if the estimate is considered "converted" (approved). Technician KPIs only — Key Metrics uses its own logic.
+ * Handles common HCP variants: timestamps on the estimate, option approval_status (case-insensitive).
+ */
 function hasApprovedOption(estimate: Record<string, unknown>): boolean {
+  const stampApproved =
+    (estimate.customer_approved_at != null && String(estimate.customer_approved_at).trim() !== "") ||
+    (estimate.pro_approved_at != null && String(estimate.pro_approved_at).trim() !== "") ||
+    (estimate.signed_at != null && String(estimate.signed_at).trim() !== "");
+  if (stampApproved) return true;
+
   const options = estimate.options as Array<Record<string, unknown>> | undefined;
   if (!Array.isArray(options)) return false;
-  return options.some(
-    (opt) =>
-      opt.approval_status === "approved" || opt.approval_status === "pro approved"
-  );
+  return options.some((opt) => {
+    const s = String(opt.approval_status ?? opt.status ?? "").toLowerCase();
+    return (
+      s === "approved" ||
+      s === "pro approved" ||
+      s === "customer approved" ||
+      s === "accepted"
+    );
+  });
 }
 
 export async function getTechnicianRevenue(
@@ -504,6 +527,13 @@ export async function getTechnicianRevenue(
   }
 
   // Estimate conversion: prefer DB, fallback to API
+  const jobByHcpId = new Map<string, Record<string, unknown>>();
+  for (const job of jobs) {
+    const j = job as Record<string, unknown>;
+    const jid = j.id ?? j.uuid;
+    if (jid != null) jobByHcpId.set(String(jid), j);
+  }
+
   const conversionByTech = new Map<string, { total: number; approved: number }>();
   let estimates: unknown[] = [];
   try {
@@ -523,7 +553,12 @@ export async function getTechnicianRevenue(
   for (const est of estimates) {
     const e = est as Record<string, unknown>;
     if (!estimateInDateRange(e, startDate, endDate)) continue;
-    const techIds = getEstimateTechnicianIds(e, officeStaffIds);
+    const techIds = resolveTechnicianIdsForEstimate(
+      e,
+      jobByHcpId,
+      officeStaffIds,
+      manualJobAssignmentByJobId
+    );
     if (techIds.length === 0) continue;
     const isConverted = hasApprovedOption(e);
     for (const techId of techIds) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ExpectedPayTable } from "@/components/team/ExpectedPayTable";
 import { MetricTooltip } from "./MetricTooltip";
 
 interface TechnicianJobsPerDay {
@@ -101,6 +102,8 @@ export function TimeInsightsClient() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const range = getDateRange(datePreset, customStartDate, customEndDate);
 
   const dateSelector = (
     <div className="flex flex-wrap items-center gap-2">
@@ -240,6 +243,12 @@ export function TimeInsightsClient() {
               </div>
             </div>
           </section>
+
+          <ExpectedPayTable
+            {...(range.startDate && range.endDate
+              ? { syncedStartDate: range.startDate, syncedEndDate: range.endDate }
+              : {})}
+          />
         </>
       )}
     </div>

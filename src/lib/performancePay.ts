@@ -31,6 +31,31 @@ export interface ExpectedPayResult {
   employeeName?: string;
   expectedPay: number;
   breakdown?: Record<string, number>;
+  /** Total hours from timesheets in the period. */
+  hoursWorked: number;
+  /** Human-readable pay structure (hourly vs commission, etc.). */
+  payTypeLabel: string;
+  /** expectedPay / hoursWorked when hours are logged; otherwise null. */
+  effectiveHourlyRate: number | null;
+}
+
+function payTypeLabelForStructure(structureType: StructureType): string {
+  switch (structureType) {
+    case "pure_hourly":
+      return "Hourly";
+    case "hourly_commission_tiers":
+      return "Hourly + commission";
+    case "hourly_to_commission":
+      return "Hourly or commission (greater)";
+    case "pure_commission":
+      return "Commission";
+    case "hourly_metrics":
+      return "Hourly (metric tiers)";
+    case "csr_hourly_booking_rate":
+      return "Hourly (booking rate)";
+    default:
+      return "Performance pay";
+  }
 }
 
 export interface CalculateExpectedPayOptions {
@@ -279,11 +304,18 @@ export async function calculateExpectedPay(
     }
     if (bonusTotal > 0) breakdown.bonuses = bonusTotal;
 
+    const expectedPayTotal = basePay + bonusTotal;
+    const effectiveHourlyRate =
+      hours > 0 ? Math.round((expectedPayTotal / hours) * 100) / 100 : null;
+
     results.push({
       hcpEmployeeId: empId,
       employeeName: employeeNames.get(empId),
-      expectedPay: basePay + bonusTotal,
+      expectedPay: expectedPayTotal,
       breakdown,
+      hoursWorked: Math.round(hours * 100) / 100,
+      payTypeLabel: payTypeLabelForStructure(config.structure_type as StructureType),
+      effectiveHourlyRate,
     });
   }
 

@@ -183,14 +183,11 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
   }
 
   let jobCount = 0;
-  let paidJobCount = 0;
   let revenue = 0;
 
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
     if (!jobInDateRange(j, startDate, endDate)) continue;
-
-    jobCount += 1;
 
     const isPaid = isPaidOrCompleted(j);
     let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
@@ -218,7 +215,7 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
 
     revenue += paidAmount;
     if (paidAmount > 0) {
-      paidJobCount += 1;
+      jobCount += 1;
     }
   }
 
@@ -257,8 +254,8 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
   revenue = techRevenue.totalRevenue;
 
   const conversionRate = totalEstimates > 0 ? (approvedEstimates / totalEstimates) * 100 : null;
-  // Average ticket excludes $0 jobs from the divisor.
-  const avgJobValue = paidJobCount > 0 ? revenue / paidJobCount : null;
+  // Job count and average ticket exclude $0 jobs (same divisor as revenue alignment below).
+  const avgJobValue = jobCount > 0 ? revenue / jobCount : null;
 
   return {
     jobCount,
