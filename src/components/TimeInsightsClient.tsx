@@ -123,45 +123,7 @@ export function TimeInsightsClient() {
 
       {!loading && !error && data && (
         <>
-          {/* 1. Average Jobs per Day per Technician */}
-          <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-            <h3 className="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              <MetricTooltip
-                label="Average Jobs per Day per Technician"
-                tooltip="Average number of jobs completed per working day per technician. Based on job assignments and job dates."
-              />
-            </h3>
-            {data.averageJobsPerDayPerTechnician.length === 0 ? (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                No technician data for this period.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[280px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                      <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Technician</th>
-                      <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                        <MetricTooltip label="Avg Jobs/Day" tooltip="Average jobs completed per working day for this technician in the period." />
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.averageJobsPerDayPerTechnician.map((t) => (
-                      <tr key={t.technicianId} className="border-b border-zinc-100 dark:border-zinc-800">
-                        <td className="py-2 text-zinc-900 dark:text-zinc-50">{t.technicianName}</td>
-                        <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
-                          {t.avgJobsPerDay.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* 2. Rollup Averages */}
+          {/* Main rollup metrics */}
           <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
@@ -214,6 +176,9 @@ export function TimeInsightsClient() {
           <ExpectedPayTable
             syncedStartDate={range.startDate}
             syncedEndDate={range.endDate}
+            avgJobsPerDayByEmployee={Object.fromEntries(
+              data.averageJobsPerDayPerTechnician.map((t) => [t.technicianId, t.avgJobsPerDay])
+            )}
           />
         </>
       )}

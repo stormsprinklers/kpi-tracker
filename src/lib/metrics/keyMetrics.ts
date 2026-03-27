@@ -70,17 +70,8 @@ function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
 }
 
 function isPaidOrCompleted(job: Record<string, unknown>): boolean {
-  const status = (job.status ?? job.job_status ?? job.work_status ?? job.state ?? "").toString().toLowerCase();
-  return (
-    status === "paid" ||
-    status === "completed" ||
-    status === "complete" ||
-    status === "closed" ||
-    status === "done" ||
-    status === "paid_in_full" ||
-    status === "invoiced" ||
-    status === "finished"
-  );
+  const status = (job.work_status ?? "").toString().trim().toLowerCase();
+  return status === "in_progress" || status === "completed";
 }
 
 function getJobDate(job: Record<string, unknown>): Date | null {

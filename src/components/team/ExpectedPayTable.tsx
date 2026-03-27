@@ -11,6 +11,7 @@ type ExpectedPayTableProps = {
    */
   syncedStartDate?: string;
   syncedEndDate?: string;
+  avgJobsPerDayByEmployee?: Record<string, number>;
 };
 
 function formatMoney(n: number): string {
@@ -25,6 +26,7 @@ function formatMoney(n: number): string {
 export function ExpectedPayTable({
   syncedStartDate,
   syncedEndDate,
+  avgJobsPerDayByEmployee,
 }: ExpectedPayTableProps = {}) {
   const isSynced =
     typeof syncedStartDate === "string" &&
@@ -155,6 +157,12 @@ export function ExpectedPayTable({
                   tooltip="Total hours from timesheets in this period."
                 />
               </th>
+              <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                <MetricTooltip
+                  label="Avg Jobs/Day"
+                  tooltip="Average jobs completed per working day in this pay period."
+                />
+              </th>
               <th className="pb-2 pl-1 text-left font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
                   label="Pay type"
@@ -196,6 +204,11 @@ export function ExpectedPayTable({
                 <td className="py-2 pr-6 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
                   {r.hoursWorked != null ? r.hoursWorked.toFixed(2) : "—"}
                 </td>
+                <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+                  {typeof avgJobsPerDayByEmployee?.[r.hcpEmployeeId] === "number"
+                    ? avgJobsPerDayByEmployee[r.hcpEmployeeId].toFixed(2)
+                    : "—"}
+                </td>
                 <td className="py-2 pl-1 text-zinc-700 dark:text-zinc-300">{r.payTypeLabel ?? "—"}</td>
                 <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
                   {formatMoney(r.totalRevenue ?? 0)}
@@ -220,6 +233,9 @@ export function ExpectedPayTable({
                 </td>
                 <td className="py-2.5 pr-6 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                   {totals.totalHours.toFixed(2)}
+                </td>
+                <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  —
                 </td>
                 <td className="py-2.5 pl-1" />
                 <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">

@@ -83,6 +83,11 @@ function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDat
   return true;
 }
 
+function isKpiJobStatus(job: Record<string, unknown>): boolean {
+  const status = String(job.work_status ?? "").trim().toLowerCase();
+  return status === "in_progress" || status === "completed";
+}
+
 /** Extract timestamps from job. Handles job-level work_timestamps and per-assigned-employee. */
 function extractTimestamps(job: Record<string, unknown>): {
   enRouteAt: Date | null;
@@ -218,7 +223,9 @@ export async function getTimeInsights(
     }
   }
 
-  const filteredJobs = jobs.filter((j) => jobInDateRange(j, startDate, endDate));
+  const filteredJobs = jobs.filter(
+    (j) => jobInDateRange(j, startDate, endDate) && isKpiJobStatus(j)
+  );
 
   // 1. Average jobs per day per technician
   const jobsByTechAndDate = new Map<string, Map<string, number>>();
