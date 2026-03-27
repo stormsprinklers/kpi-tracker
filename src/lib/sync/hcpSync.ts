@@ -1,7 +1,6 @@
 import { getHcpClient } from "../housecallpro";
 import { sql } from "@/lib/db";
 import { initSchema } from "../db";
-import { upsertJobLineItems } from "../db/queries";
 
 const DELAY_MS = 100;
 
@@ -62,12 +61,9 @@ export interface SyncResult {
 export async function runFullSync(organizationId: string): Promise<SyncResult> {
   const start = Date.now();
   const entitiesSynced: Record<string, number> = {
-    customers: 0,
     jobs: 0,
-    job_line_items: 0,
     invoices: 0,
     estimates: 0,
-    appointments: 0,
     employees: 0,
     pros: 0,
   };
@@ -82,22 +78,7 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       throw new Error("Could not get company ID from Housecall Pro");
     }
 
-    const customers = await client.getCustomersAllPages();
-    await delay(DELAY_MS);
-    for (const c of customers) {
-      const r = c as Record<string, unknown>;
-      const hcpId = extractId(r);
-      if (!hcpId) continue;
-      await sql`
-        INSERT INTO customers (hcp_id, company_id, raw, updated_at)
-        VALUES (${hcpId}, ${companyId}, ${JSON.stringify(r)}::jsonb, NOW())
-        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-          raw = EXCLUDED.raw,
-          updated_at = NOW()
-      `;
-      entitiesSynced.customers++;
-    }
-
+    // KPI-focused sync: only entities required for KPI reporting.
     const jobs = await client.getJobsAllPages();
     await delay(DELAY_MS);
     for (const j of jobs) {
@@ -118,23 +99,6 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
           updated_at = NOW()
       `;
       entitiesSynced.jobs++;
-
-      // Sync line items for this job (rate limit to avoid API throttling)
-      try {
-        const lineItemsRes = await client.getJobLineItems(hcpId);
-        const lineItemsList = Array.isArray(lineItemsRes)
-          ? lineItemsRes
-          : (lineItemsRes as { line_items?: unknown[] })?.line_items ??
-            (lineItemsRes as { items?: unknown[] })?.items ??
-            (lineItemsRes as { data?: unknown[] })?.data ??
-            [];
-        const items = lineItemsList as Record<string, unknown>[];
-        const synced = await upsertJobLineItems(companyId, hcpId, items);
-        entitiesSynced.job_line_items += synced;
-        await delay(50);
-      } catch {
-        /* skip line items on error */
-      }
     }
 
     const invoices = await client.getInvoicesAllPages().catch(() => [] as unknown[]);
@@ -173,24 +137,6 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
           updated_at = NOW()
       `;
       entitiesSynced.estimates++;
-    }
-
-    const appointments = await client.getAppointmentsAllPages().catch(() => [] as unknown[]);
-    await delay(DELAY_MS);
-    for (const apt of appointments) {
-      const r = apt as Record<string, unknown>;
-      const hcpId = extractId(r);
-      if (!hcpId) continue;
-      const jobHcpId = extractJobHcpId(r);
-      await sql`
-        INSERT INTO appointments (hcp_id, company_id, job_hcp_id, raw, updated_at)
-        VALUES (${hcpId}, ${companyId}, ${jobHcpId}, ${JSON.stringify(r)}::jsonb, NOW())
-        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-          job_hcp_id = EXCLUDED.job_hcp_id,
-          raw = EXCLUDED.raw,
-          updated_at = NOW()
-      `;
-      entitiesSynced.appointments++;
     }
 
     const employees = await client.getEmployeesAllPages().catch(() => [] as unknown[]);
@@ -246,7 +192,7 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       }
     }
 
-    const entityTypes = ["customers", "jobs", "job_line_items", "invoices", "estimates", "appointments", "employees", "pros"];
+    const entityTypes = ["jobs", "invoices", "estimates", "employees", "pros"];
     for (const entityType of entityTypes) {
       await sql`
         INSERT INTO sync_state (company_id, entity_type, last_sync_at)
