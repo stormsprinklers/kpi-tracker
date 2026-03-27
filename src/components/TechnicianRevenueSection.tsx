@@ -150,6 +150,12 @@ export function TechnicianRevenueSection() {
           : null;
       const photosData = photosRes?.ok ? await photosRes.json() : {};
       const photos: Record<string, string> = photosData.photos ?? {};
+      const reviewsRes =
+        technicianIds.length > 0
+          ? await fetch(`/api/team/reviews/counts?ids=${technicianIds.join(",")}`)
+          : null;
+      const reviewsData = reviewsRes?.ok ? await reviewsRes.json() : {};
+      const reviewCounts: Record<string, number> = reviewsData.counts ?? {};
 
       const merged: TechnicianCard[] = result.technicians.map((t) => ({
         technicianId: t.technicianId,
@@ -158,7 +164,7 @@ export function TechnicianRevenueSection() {
         totalRevenue: t.totalRevenue,
         conversionRate: t.conversionRate,
         avgTicket: t.avgTicket,
-        fiveStarReviews: null,
+        fiveStarReviews: reviewCounts[t.technicianId] ?? 0,
         photoUrl: photos[t.technicianId] ?? null,
       }));
       setCards(merged);
@@ -477,7 +483,7 @@ export function TechnicianRevenueSection() {
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-zinc-500 dark:text-zinc-400">
-                      <MetricTooltip label="5-star Reviews" tooltip="Number of 5-star reviews attributed to this technician. Populated when review data is connected." />
+                      <MetricTooltip label="Reviews" tooltip="Number of Google reviews assigned to this technician in Team > Reviews." />
                     </dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                       {card.fiveStarReviews != null ? card.fiveStarReviews : "—"}

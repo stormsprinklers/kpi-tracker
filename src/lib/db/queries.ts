@@ -1352,6 +1352,157 @@ export async function upsertJobRevenueAssignment(params: {
   `;
 }
 
+export interface GoogleBusinessProfile {
+  organization_id: string;
+  account_id: string;
+  location_id: string;
+  location_name: string | null;
+}
+
+export async function getGoogleBusinessProfile(
+  organizationId: string
+): Promise<GoogleBusinessProfile | null> {
+  const result = await sql`
+    SELECT organization_id, account_id, location_id, location_name
+    FROM google_business_profiles
+    WHERE organization_id = ${organizationId}::uuid
+    LIMIT 1
+  `;
+  const row = (result.rows ?? [])[0] as GoogleBusinessProfile | undefined;
+  return row ?? null;
+}
+
+export async function upsertGoogleBusinessProfile(params: {
+  organization_id: string;
+  account_id: string;
+  location_id: string;
+  location_name?: string | null;
+}): Promise<void> {
+  await sql`
+    INSERT INTO google_business_profiles (organization_id, account_id, location_id, location_name, updated_at)
+    VALUES (${params.organization_id}::uuid, ${params.account_id}, ${params.location_id}, ${params.location_name ?? null}, NOW())
+    ON CONFLICT (organization_id) DO UPDATE SET
+      account_id = ${params.account_id},
+      location_id = ${params.location_id},
+      location_name = ${params.location_name ?? null},
+      updated_at = NOW()
+  `;
+}
+
+export interface GoogleBusinessReview {
+  review_id: string;
+  reviewer_name: string | null;
+  star_rating: number | null;
+  comment: string | null;
+  create_time: string | null;
+  update_time: string | null;
+  assigned_hcp_employee_id: string | null;
+}
+
+export async function upsertGoogleBusinessReview(params: {
+  organization_id: string;
+  review_id: string;
+  reviewer_name?: string | null;
+  star_rating?: number | null;
+  comment?: string | null;
+  create_time?: string | null;
+  update_time?: string | null;
+  raw?: Record<string, unknown>;
+}): Promise<void> {
+  await sql`
+    INSERT INTO google_business_reviews (
+      organization_id,
+      review_id,
+      reviewer_name,
+      star_rating,
+      comment,
+      create_time,
+      update_time,
+      raw,
+      synced_at,
+      updated_at
+    )
+    VALUES (
+      ${params.organization_id}::uuid,
+      ${params.review_id},
+      ${params.reviewer_name ?? null},
+      ${params.star_rating ?? null},
+      ${params.comment ?? null},
+      ${params.create_time ?? null},
+      ${params.update_time ?? null},
+      ${JSON.stringify(params.raw ?? {})}::jsonb,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (organization_id, review_id) DO UPDATE SET
+      reviewer_name = EXCLUDED.reviewer_name,
+      star_rating = EXCLUDED.star_rating,
+      comment = EXCLUDED.comment,
+      create_time = EXCLUDED.create_time,
+      update_time = EXCLUDED.update_time,
+      raw = EXCLUDED.raw,
+      synced_at = NOW(),
+      updated_at = NOW()
+  `;
+}
+
+export async function getGoogleBusinessReviewsByOrg(
+  organizationId: string
+): Promise<GoogleBusinessReview[]> {
+  const result = await sql`
+    SELECT
+      review_id,
+      reviewer_name,
+      star_rating,
+      comment,
+      create_time::text,
+      update_time::text,
+      assigned_hcp_employee_id
+    FROM google_business_reviews
+    WHERE organization_id = ${organizationId}::uuid
+    ORDER BY COALESCE(update_time, create_time) DESC NULLS LAST
+  `;
+  return (result.rows ?? []) as GoogleBusinessReview[];
+}
+
+export async function assignGoogleBusinessReview(params: {
+  organization_id: string;
+  review_id: string;
+  assigned_hcp_employee_id: string | null;
+}): Promise<void> {
+  await sql`
+    UPDATE google_business_reviews
+    SET assigned_hcp_employee_id = ${params.assigned_hcp_employee_id},
+        updated_at = NOW()
+    WHERE organization_id = ${params.organization_id}::uuid
+      AND review_id = ${params.review_id}
+  `;
+}
+
+export async function getAssignedGoogleReviewCounts(
+  organizationId: string,
+  hcpEmployeeIds: string[]
+): Promise<Record<string, number>> {
+  if (hcpEmployeeIds.length === 0) return {};
+  const ids = Array.from(new Set(hcpEmployeeIds.filter(Boolean)));
+  if (ids.length === 0) return {};
+  const result = await sql`
+    SELECT assigned_hcp_employee_id, COUNT(*)::int AS count
+    FROM google_business_reviews
+    WHERE organization_id = ${organizationId}::uuid
+      AND assigned_hcp_employee_id IS NOT NULL
+    GROUP BY assigned_hcp_employee_id
+  `;
+  const map: Record<string, number> = {};
+  for (const row of result.rows ?? []) {
+    const r = row as { assigned_hcp_employee_id: string; count: number };
+    if (ids.includes(r.assigned_hcp_employee_id)) {
+      map[r.assigned_hcp_employee_id] = r.count;
+    }
+  }
+  return map;
+}
+
 const COMPLETED_JOB_STATUSES = [
   "paid",
   "completed",

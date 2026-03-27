@@ -685,4 +685,38 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_job_revenue_assignments_org_employee
     ON job_revenue_assignments (organization_id, hcp_employee_id)
   `;
+
+  // Linked Google Business Profile per organization (for review sync).
+  await sql`
+    CREATE TABLE IF NOT EXISTS google_business_profiles (
+      organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+      account_id TEXT NOT NULL,
+      location_id TEXT NOT NULL,
+      location_name TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  // Synced Google reviews, optionally assigned to an employee for KPI attribution.
+  await sql`
+    CREATE TABLE IF NOT EXISTS google_business_reviews (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      review_id TEXT NOT NULL,
+      reviewer_name TEXT,
+      star_rating INT,
+      comment TEXT,
+      create_time TIMESTAMPTZ,
+      update_time TIMESTAMPTZ,
+      assigned_hcp_employee_id TEXT,
+      raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(organization_id, review_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_google_business_reviews_org_employee
+    ON google_business_reviews (organization_id, assigned_hcp_employee_id)
+  `;
 }

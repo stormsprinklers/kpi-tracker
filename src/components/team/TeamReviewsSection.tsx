@@ -1,0 +1,295 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+interface Candidate {
+  id: string;
+  name: string;
+}
+
+interface ReviewRow {
+  review_id: string;
+  reviewer_name: string | null;
+  star_rating: number | null;
+  comment: string | null;
+  create_time: string | null;
+  update_time: string | null;
+  assigned_hcp_employee_id: string | null;
+}
+
+interface Profile {
+  account_id: string;
+  location_id: string;
+  location_name: string | null;
+}
+
+interface Payload {
+  profile: Profile | null;
+  reviews: ReviewRow[];
+  candidates: Candidate[];
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString();
+}
+
+export function TeamReviewsSection() {
+  const [loading, setLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+
+  const [accountId, setAccountId] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [locationName, setLocationName] = useState("");
+
+  const [selectedByReview, setSelectedByReview] = useState<Record<string, string>>({});
+
+  const candidateMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of candidates) m.set(c.id, c.name);
+    return m;
+  }, [candidates]);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/team/reviews");
+      if (!res.ok) throw new Error("Failed to load reviews");
+      const data = (await res.json()) as Payload;
+      setProfile(data.profile);
+      setReviews(data.reviews ?? []);
+      setCandidates(data.candidates ?? []);
+      setAccountId(data.profile?.account_id ?? "");
+      setLocationId(data.profile?.location_id ?? "");
+      setLocationName(data.profile?.location_name ?? "");
+      setSelectedByReview(
+        Object.fromEntries(
+          (data.reviews ?? []).map((r) => [r.review_id, r.assigned_hcp_employee_id ?? ""])
+        )
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/team/reviews/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId,
+          locationId,
+          locationName: locationName || null,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to save profile");
+      setSuccess("Google Business Profile linked.");
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const syncReviews = async () => {
+    setSyncing(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/team/reviews/sync", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        synced?: number;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Sync failed");
+      setSuccess(`Synced ${data.synced ?? 0} reviews.`);
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const assignReview = async (reviewId: string) => {
+    const hcpEmployeeId = (selectedByReview[reviewId] ?? "").trim() || null;
+    setAssigningId(reviewId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/team/reviews/${encodeURIComponent(reviewId)}/assign`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hcpEmployeeId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to assign review");
+      setReviews((prev) =>
+        prev.map((r) =>
+          r.review_id === reviewId
+            ? { ...r, assigned_hcp_employee_id: hcpEmployeeId }
+            : r
+        )
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to assign review");
+    } finally {
+      setAssigningId(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Google Business Profile
+        </h2>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Link your profile and sync Google reviews. Then assign each review to an employee for KPI attribution.
+        </p>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <input
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            placeholder="Account ID"
+            className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+          <input
+            value={locationId}
+            onChange={(e) => setLocationId(e.target.value)}
+            placeholder="Location ID"
+            className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+          <input
+            value={locationName}
+            onChange={(e) => setLocationName(e.target.value)}
+            placeholder="Location Name (optional)"
+            className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={saveProfile}
+            disabled={savingProfile || !accountId.trim() || !locationId.trim()}
+            className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            {savingProfile ? "Saving..." : "Save Profile"}
+          </button>
+          <button
+            type="button"
+            onClick={syncReviews}
+            disabled={syncing || !profile}
+            className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200"
+          >
+            {syncing ? "Syncing..." : "Sync Reviews"}
+          </button>
+        </div>
+        {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {success && <p className="mt-2 text-sm text-green-700 dark:text-green-400">{success}</p>}
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Reviews</h3>
+        {loading ? (
+          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
+        ) : reviews.length === 0 ? (
+          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
+            No synced reviews yet.
+          </p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Reviewer</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Stars</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Date</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Comment</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Assigned Employee</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reviews.map((r) => (
+                  <tr key={r.review_id} className="border-b border-zinc-100 dark:border-zinc-800">
+                    <td className="py-2 text-zinc-900 dark:text-zinc-50">
+                      {r.reviewer_name || "Anonymous"}
+                    </td>
+                    <td className="py-2 text-zinc-700 dark:text-zinc-300">
+                      {r.star_rating != null ? `${r.star_rating}★` : "—"}
+                    </td>
+                    <td className="py-2 text-zinc-700 dark:text-zinc-300">
+                      {formatDate(r.update_time ?? r.create_time)}
+                    </td>
+                    <td className="max-w-[320px] py-2 text-zinc-700 dark:text-zinc-300">
+                      <span title={r.comment ?? ""} className="line-clamp-2">
+                        {r.comment || "—"}
+                      </span>
+                    </td>
+                    <td className="py-2">
+                      <select
+                        value={selectedByReview[r.review_id] ?? ""}
+                        onChange={(e) =>
+                          setSelectedByReview((prev) => ({
+                            ...prev,
+                            [r.review_id]: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                      >
+                        <option value="">Unassigned</option>
+                        {candidates.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-2">
+                      <button
+                        type="button"
+                        onClick={() => assignReview(r.review_id)}
+                        disabled={assigningId === r.review_id}
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      >
+                        {assigningId === r.review_id ? "Saving..." : "Save"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {reviews.length > 0 && (
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Assigned counts feed the Technician KPI review metric.
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
