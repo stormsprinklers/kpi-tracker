@@ -5,6 +5,7 @@ import {
   getGoogleBusinessProfile,
   upsertGoogleBusinessReview,
 } from "@/lib/db/queries";
+import { getGoogleBusinessAccessTokenForOrg } from "@/lib/googleBusinessTokens";
 
 interface GoogleReviewApiItem {
   name?: string;
@@ -42,24 +43,33 @@ export async function POST() {
 
   await initSchema();
   const profile = await getGoogleBusinessProfile(session.user.organizationId);
-  if (!profile) {
+  if (!profile?.google_account_connected) {
     return NextResponse.json(
-      { error: "Google Business Profile not linked" },
+      { error: "Connect a Google account with access to your Business Profile first." },
+      { status: 400 }
+    );
+  }
+  const accountId = profile.account_id?.trim();
+  const locationId = profile.location_id?.trim();
+  if (!accountId || !locationId) {
+    return NextResponse.json(
+      { error: "Select a Business Profile location before syncing." },
       { status: 400 }
     );
   }
 
-  const accessToken = process.env.GOOGLE_BUSINESS_ACCESS_TOKEN?.trim();
-  if (!accessToken) {
-    return NextResponse.json(
-      { error: "Missing GOOGLE_BUSINESS_ACCESS_TOKEN" },
-      { status: 500 }
-    );
+  let accessToken: string;
+  try {
+    accessToken = await getGoogleBusinessAccessTokenForOrg(session.user.organizationId);
+  } catch (e) {
+    const msg =
+      e instanceof Error ? e.message : "Could not refresh Google access token";
+    return NextResponse.json({ error: msg }, { status: 502 });
   }
 
   const baseUrl = `https://mybusiness.googleapis.com/v4/accounts/${encodeURIComponent(
-    profile.account_id
-  )}/locations/${encodeURIComponent(profile.location_id)}/reviews`;
+    accountId
+  )}/locations/${encodeURIComponent(locationId)}/reviews`;
 
   let nextPageToken: string | null = null;
   let synced = 0;

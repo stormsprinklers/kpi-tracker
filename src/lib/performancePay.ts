@@ -58,7 +58,7 @@ function payTypeLabelForStructure(structureType: StructureType): string {
   }
 }
 
-/** Which side of hourly_to_commission actually pays (Math.max of hourly vs commission). */
+/** Display-only: which side of hourly_to_commission wins (Math.max). Does not affect pay math. */
 function payTypeLabelHourlyVsCommission(
   hourlyPay: number,
   commissionPay: number
@@ -68,9 +68,9 @@ function payTypeLabelHourlyVsCommission(
     return "Hourly / commission (equal)";
   }
   if (hourlyPay > commissionPay) {
-    return "Hourly (paying)";
+    return "Hourly";
   }
-  return "Commission (paying)";
+  return "Commission";
 }
 
 export interface CalculateExpectedPayOptions {

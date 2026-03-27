@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
+  clearGoogleBusinessConnection,
   getGoogleBusinessProfile,
+  getGoogleRefreshToken,
   upsertGoogleBusinessProfile,
 } from "@/lib/db/queries";
 
@@ -49,6 +51,13 @@ export async function POST(request: Request) {
   }
 
   await initSchema();
+  const refresh = await getGoogleRefreshToken(session.user.organizationId);
+  if (!refresh) {
+    return NextResponse.json(
+      { error: "Connect your Google account before saving a location." },
+      { status: 400 }
+    );
+  }
   await upsertGoogleBusinessProfile({
     organization_id: session.user.organizationId,
     account_id: accountId,
@@ -56,5 +65,19 @@ export async function POST(request: Request) {
     location_name: locationName,
   });
 
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE() {
+  const session = await auth();
+  if (!session?.user?.organizationId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.user.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await initSchema();
+  await clearGoogleBusinessConnection(session.user.organizationId);
   return NextResponse.json({ ok: true });
 }

@@ -18,15 +18,22 @@ interface ReviewRow {
 }
 
 interface Profile {
-  account_id: string;
-  location_id: string;
+  account_id: string | null;
+  location_id: string | null;
   location_name: string | null;
+  google_account_connected: boolean;
 }
 
 interface Payload {
   profile: Profile | null;
   reviews: ReviewRow[];
   candidates: Candidate[];
+}
+
+interface CatalogAccount {
+  accountId: string;
+  accountName: string;
+  locations: { locationId: string; title: string }[];
 }
 
 function formatDate(value: string | null): string {
@@ -48,9 +55,13 @@ export function TeamReviewsSection() {
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
 
-  const [accountId, setAccountId] = useState("");
-  const [locationId, setLocationId] = useState("");
-  const [locationName, setLocationName] = useState("");
+  const [catalog, setCatalog] = useState<CatalogAccount[] | null>(null);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [locationNameOverride, setLocationNameOverride] = useState("");
 
   const [selectedByReview, setSelectedByReview] = useState<Record<string, string>>({});
 
@@ -59,6 +70,12 @@ export function TeamReviewsSection() {
     for (const c of candidates) m.set(c.id, c.name);
     return m;
   }, [candidates]);
+
+  const locationsForAccount = useMemo(() => {
+    if (!selectedAccountId || !catalog) return [];
+    const acc = catalog.find((a) => a.accountId === selectedAccountId);
+    return acc?.locations ?? [];
+  }, [catalog, selectedAccountId]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -70,9 +87,10 @@ export function TeamReviewsSection() {
       setProfile(data.profile);
       setReviews(data.reviews ?? []);
       setCandidates(data.candidates ?? []);
-      setAccountId(data.profile?.account_id ?? "");
-      setLocationId(data.profile?.location_id ?? "");
-      setLocationName(data.profile?.location_name ?? "");
+      const p = data.profile;
+      setSelectedAccountId(p?.account_id?.trim() ?? "");
+      setSelectedLocationId(p?.location_id?.trim() ?? "");
+      setLocationNameOverride(p?.location_name?.trim() ?? "");
       setSelectedByReview(
         Object.fromEntries(
           (data.reviews ?? []).map((r) => [r.review_id, r.assigned_hcp_employee_id ?? ""])
@@ -89,10 +107,94 @@ export function TeamReviewsSection() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const google = params.get("google");
+    const reason = params.get("reason");
+    if (google === "connected") {
+      setSuccess("Google account connected. Choose your Business Profile location below.");
+      void fetchData();
+    } else if (google === "error") {
+      const label =
+        reason === "no_refresh_token"
+          ? "Google did not return a refresh token. Try again and ensure you grant access when prompted."
+          : reason === "invalid_state"
+            ? "Session expired. Please try connecting again."
+            : reason
+              ? `Connection failed (${reason}).`
+              : "Connection failed.";
+      setError(label);
+    }
+    if (google) {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("google");
+      u.searchParams.delete("reason");
+      window.history.replaceState({}, "", u.pathname + (u.search || ""));
+    }
+  }, [fetchData]);
+
+  const loadCatalog = useCallback(async () => {
+    setLoadingCatalog(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/team/reviews/google/catalog");
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        accounts?: CatalogAccount[];
+      };
+      if (!res.ok) throw new Error(data.error ?? "Failed to load Google locations");
+      setCatalog(data.accounts ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load locations");
+    } finally {
+      setLoadingCatalog(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!profile?.google_account_connected) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingCatalog(true);
+      try {
+        const res = await fetch("/api/team/reviews/google/catalog");
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          accounts?: CatalogAccount[];
+        };
+        if (!res.ok) throw new Error(data.error ?? "Failed to load Google locations");
+        if (!cancelled) setCatalog(data.accounts ?? []);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load locations");
+        }
+      } finally {
+        if (!cancelled) setLoadingCatalog(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.google_account_connected]);
+
+  const onAccountChange = (accountId: string) => {
+    setSelectedAccountId(accountId);
+    setSelectedLocationId("");
+  };
+
   const saveProfile = async () => {
     setSavingProfile(true);
     setError(null);
     setSuccess(null);
+    const accountId = selectedAccountId.trim();
+    const locationId = selectedLocationId.trim();
+    const fromCatalog = locationsForAccount.find((l) => l.locationId === locationId);
+    const locationName =
+      locationNameOverride.trim() ||
+      fromCatalog?.title ||
+      profile?.location_name ||
+      null;
     try {
       const res = await fetch("/api/team/reviews/profile", {
         method: "POST",
@@ -100,17 +202,38 @@ export function TeamReviewsSection() {
         body: JSON.stringify({
           accountId,
           locationId,
-          locationName: locationName || null,
+          locationName,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to save profile");
-      setSuccess("Google Business Profile linked.");
+      setSuccess("Business Profile location saved.");
       await fetchData();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const disconnectGoogle = async () => {
+    setDisconnecting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/team/reviews/profile", { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to disconnect");
+      setCatalog(null);
+      setSelectedAccountId("");
+      setSelectedLocationId("");
+      setLocationNameOverride("");
+      setSuccess("Google account disconnected.");
+      await fetchData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to disconnect");
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -160,6 +283,16 @@ export function TeamReviewsSection() {
     }
   };
 
+  const canSaveLocation =
+    profile?.google_account_connected &&
+    selectedAccountId.trim() &&
+    selectedLocationId.trim();
+
+  const canSync =
+    profile?.google_account_connected &&
+    profile.account_id?.trim() &&
+    profile.location_id?.trim();
+
   return (
     <div className="flex flex-col gap-4">
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -167,44 +300,115 @@ export function TeamReviewsSection() {
           Google Business Profile
         </h2>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          Link your profile and sync Google reviews. Then assign each review to an employee for KPI attribution.
+          Connect the Google account that manages your Business Profile, then pick the location to
+          sync reviews. Reviews are fetched with OAuth (not an API key).
         </p>
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <input
-            value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-            placeholder="Account ID"
-            className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-          />
-          <input
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-            placeholder="Location ID"
-            className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-          />
-          <input
-            value={locationName}
-            onChange={(e) => setLocationName(e.target.value)}
-            placeholder="Location Name (optional)"
-            className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-          />
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {!profile?.google_account_connected ? (
+            <a
+              href="/api/team/reviews/google/oauth/start"
+              className="inline-flex rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              Connect Google account
+            </a>
+          ) : (
+            <>
+              <span className="text-sm text-green-700 dark:text-green-400">
+                Google account connected
+              </span>
+              <button
+                type="button"
+                onClick={() => void loadCatalog()}
+                disabled={loadingCatalog}
+                className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200"
+              >
+                {loadingCatalog ? "Loading locations…" : "Refresh location list"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void disconnectGoogle()}
+                disabled={disconnecting}
+                className="rounded border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 disabled:opacity-50 dark:border-red-800 dark:bg-zinc-900 dark:text-red-400"
+              >
+                {disconnecting ? "Disconnecting…" : "Disconnect Google"}
+              </button>
+            </>
+          )}
         </div>
+
+        {profile?.google_account_connected && (
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-zinc-600 dark:text-zinc-400">Business account</span>
+              <select
+                value={selectedAccountId}
+                onChange={(e) => onAccountChange(e.target.value)}
+                disabled={loadingCatalog || !catalog?.length}
+                className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+              >
+                <option value="">
+                  {loadingCatalog ? "Loading…" : catalog?.length ? "Select account" : "No accounts"}
+                </option>
+                {(catalog ?? []).map((a) => (
+                  <option key={a.accountId} value={a.accountId}>
+                    {a.accountName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-zinc-600 dark:text-zinc-400">Location</span>
+              <select
+                value={selectedLocationId}
+                onChange={(e) => setSelectedLocationId(e.target.value)}
+                disabled={!selectedAccountId || !locationsForAccount.length}
+                className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+              >
+                <option value="">
+                  {!selectedAccountId
+                    ? "Choose an account first"
+                    : locationsForAccount.length
+                      ? "Select location"
+                      : "No locations"}
+                </option>
+                {locationsForAccount.map((l) => (
+                  <option key={l.locationId} value={l.locationId}>
+                    {l.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+              <span className="text-zinc-600 dark:text-zinc-400">
+                Display name (optional override)
+              </span>
+              <input
+                value={locationNameOverride}
+                onChange={(e) => setLocationNameOverride(e.target.value)}
+                placeholder="Defaults to the location title from Google"
+                className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
+          </div>
+        )}
+
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={saveProfile}
-            disabled={savingProfile || !accountId.trim() || !locationId.trim()}
+            onClick={() => void saveProfile()}
+            disabled={savingProfile || !canSaveLocation}
             className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
           >
-            {savingProfile ? "Saving..." : "Save Profile"}
+            {savingProfile ? "Saving…" : "Save location"}
           </button>
           <button
             type="button"
-            onClick={syncReviews}
-            disabled={syncing || !profile}
+            onClick={() => void syncReviews()}
+            disabled={syncing || !canSync}
             className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200"
           >
-            {syncing ? "Syncing..." : "Sync Reviews"}
+            {syncing ? "Syncing…" : "Sync reviews"}
           </button>
         </div>
         {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}

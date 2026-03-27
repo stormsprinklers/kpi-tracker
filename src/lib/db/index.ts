@@ -719,4 +719,28 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_google_business_reviews_org_employee
     ON google_business_reviews (organization_id, assigned_hcp_employee_id)
   `;
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'google_business_profiles' AND column_name = 'google_refresh_token'
+      ) THEN
+        ALTER TABLE google_business_profiles ADD COLUMN google_refresh_token TEXT;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'google_business_profiles' AND column_name = 'account_id' AND is_nullable = 'NO'
+      ) THEN
+        ALTER TABLE google_business_profiles ALTER COLUMN account_id DROP NOT NULL;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'google_business_profiles' AND column_name = 'location_id' AND is_nullable = 'NO'
+      ) THEN
+        ALTER TABLE google_business_profiles ALTER COLUMN location_id DROP NOT NULL;
+      END IF;
+    END $$
+  `;
 }

@@ -1354,22 +1354,53 @@ export async function upsertJobRevenueAssignment(params: {
 
 export interface GoogleBusinessProfile {
   organization_id: string;
-  account_id: string;
-  location_id: string;
+  account_id: string | null;
+  location_id: string | null;
   location_name: string | null;
+  /** True when OAuth completed (refresh token stored). Never expose token to clients. */
+  google_account_connected: boolean;
 }
 
 export async function getGoogleBusinessProfile(
   organizationId: string
 ): Promise<GoogleBusinessProfile | null> {
   const result = await sql`
-    SELECT organization_id, account_id, location_id, location_name
+    SELECT
+      organization_id,
+      account_id,
+      location_id,
+      location_name,
+      (google_refresh_token IS NOT NULL AND TRIM(google_refresh_token) != '') AS google_account_connected
     FROM google_business_profiles
     WHERE organization_id = ${organizationId}::uuid
     LIMIT 1
   `;
   const row = (result.rows ?? [])[0] as GoogleBusinessProfile | undefined;
   return row ?? null;
+}
+
+export async function getGoogleRefreshToken(organizationId: string): Promise<string | null> {
+  const result = await sql`
+    SELECT google_refresh_token FROM google_business_profiles
+    WHERE organization_id = ${organizationId}::uuid
+    LIMIT 1
+  `;
+  const row = result.rows?.[0] as { google_refresh_token?: string | null } | undefined;
+  const t = row?.google_refresh_token?.trim();
+  return t || null;
+}
+
+export async function upsertGoogleBusinessOAuthRefreshToken(params: {
+  organization_id: string;
+  google_refresh_token: string;
+}): Promise<void> {
+  await sql`
+    INSERT INTO google_business_profiles (organization_id, google_refresh_token, updated_at)
+    VALUES (${params.organization_id}::uuid, ${params.google_refresh_token}, NOW())
+    ON CONFLICT (organization_id) DO UPDATE SET
+      google_refresh_token = ${params.google_refresh_token},
+      updated_at = NOW()
+  `;
 }
 
 export async function upsertGoogleBusinessProfile(params: {
@@ -1386,6 +1417,19 @@ export async function upsertGoogleBusinessProfile(params: {
       location_id = ${params.location_id},
       location_name = ${params.location_name ?? null},
       updated_at = NOW()
+  `;
+}
+
+export async function clearGoogleBusinessConnection(organizationId: string): Promise<void> {
+  await sql`
+    UPDATE google_business_profiles
+    SET
+      google_refresh_token = NULL,
+      account_id = NULL,
+      location_id = NULL,
+      location_name = NULL,
+      updated_at = NOW()
+    WHERE organization_id = ${organizationId}::uuid
   `;
 }
 
