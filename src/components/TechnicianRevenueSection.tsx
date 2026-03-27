@@ -36,11 +36,6 @@ interface UnassignedRevenueJob {
   amount: number;
 }
 
-interface RevenueAssignee {
-  id: string;
-  name: string;
-}
-
 type DatePreset = "all" | "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "custom";
 
 function formatCurrency(value: number): string {
@@ -123,10 +118,7 @@ export function TechnicianRevenueSection() {
   const [error, setError] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [unassignedJobs, setUnassignedJobs] = useState<UnassignedRevenueJob[]>([]);
-  const [assignees, setAssignees] = useState<RevenueAssignee[]>([]);
-  const [selectedAssigneeByJob, setSelectedAssigneeByJob] = useState<Record<string, string>>({});
   const [loadingUnassigned, setLoadingUnassigned] = useState(false);
-  const [assigningJobId, setAssigningJobId] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const fetchData = useCallback(async () => {
@@ -188,13 +180,10 @@ export function TechnicianRevenueSection() {
       if (!res.ok) throw new Error("Failed to load unassigned revenue");
       const payload = (await res.json()) as {
         jobs?: UnassignedRevenueJob[];
-        candidates?: RevenueAssignee[];
       };
       setUnassignedJobs(payload.jobs ?? []);
-      setAssignees(payload.candidates ?? []);
     } catch {
       setUnassignedJobs([]);
-      setAssignees([]);
     } finally {
       setLoadingUnassigned(false);
     }
@@ -234,29 +223,7 @@ export function TechnicianRevenueSection() {
     return role === "admin" || (role === "employee" && hcpId === technicianId);
   };
 
-  const assignRevenue = async (jobHcpId: string) => {
-    const hcpEmployeeId = (selectedAssigneeByJob[jobHcpId] ?? "").trim();
-    if (!hcpEmployeeId) return;
-    setAssigningJobId(jobHcpId);
-    try {
-      const res = await fetch("/api/metrics/technician-revenue/unassigned", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobHcpId, hcpEmployeeId }),
-      });
-      if (!res.ok) throw new Error("Failed to assign revenue");
-      await Promise.all([fetchData(), fetchUnassignedRevenue()]);
-      setSelectedAssigneeByJob((prev) => {
-        const next = { ...prev };
-        delete next[jobHcpId];
-        return next;
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to assign revenue");
-    } finally {
-      setAssigningJobId(null);
-    }
-  };
+  const unassignedRevenueTotal = unassignedJobs.reduce((sum, j) => sum + j.amount, 0);
 
   const dateSelector = (
     <div className="flex flex-wrap items-center gap-2">
@@ -503,78 +470,15 @@ export function TechnicianRevenueSection() {
           </div>
         </>
       )}
-      {isAdmin && !loading && !error && (
-        <div className="mt-6 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-          <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Unassigned Revenue (Manual Routing)
-          </h3>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Paid jobs with no technician assignment. Assign each job to the correct technician to include it in KPI cards.
+      {isAdmin && !loading && !error && !loadingUnassigned && unassignedJobs.length > 0 && (
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900/60 dark:bg-red-950/20">
+          <p className="text-sm font-medium text-red-700 dark:text-red-300">
+            Unassigned revenue detected: {unassignedJobs.length} paid job
+            {unassignedJobs.length === 1 ? "" : "s"} totaling {formatCurrency(unassignedRevenueTotal)} in this date range.
           </p>
-          {loadingUnassigned ? (
-            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Loading unassigned jobs...</p>
-          ) : unassignedJobs.length === 0 ? (
-            <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">No unassigned paid jobs in this date range.</p>
-          ) : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[420px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job</th>
-                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Customer</th>
-                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Date</th>
-                    <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">Amount</th>
-                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Assign To</th>
-                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unassignedJobs.map((job) => (
-                    <tr key={job.jobHcpId} className="border-b border-zinc-100 dark:border-zinc-800">
-                      <td className="py-2 text-zinc-800 dark:text-zinc-100">{job.jobHcpId}</td>
-                      <td className="py-2 text-zinc-800 dark:text-zinc-100">{job.customerName}</td>
-                      <td className="py-2 text-zinc-700 dark:text-zinc-300">{job.date ?? "—"}</td>
-                      <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
-                        {formatCurrency(job.amount)}
-                      </td>
-                      <td className="py-2">
-                        <select
-                          value={selectedAssigneeByJob[job.jobHcpId] ?? ""}
-                          onChange={(e) =>
-                            setSelectedAssigneeByJob((prev) => ({
-                              ...prev,
-                              [job.jobHcpId]: e.target.value,
-                            }))
-                          }
-                          className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-                        >
-                          <option value="">Select technician</option>
-                          {assignees.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-2">
-                        <button
-                          type="button"
-                          onClick={() => assignRevenue(job.jobHcpId)}
-                          disabled={
-                            assigningJobId === job.jobHcpId ||
-                            !(selectedAssigneeByJob[job.jobHcpId] ?? "").trim()
-                          }
-                          className="rounded bg-zinc-800 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                        >
-                          {assigningJobId === job.jobHcpId ? "Saving..." : "Assign"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+            This revenue may not be fully reflected in employee-level payout rows until assignment mapping is corrected.
+          </p>
         </div>
       )}
     </section>
