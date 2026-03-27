@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { MetricTooltip } from "./MetricTooltip";
 
-type KeyMetricsRange = "7d" | "30d" | "all";
+type KeyMetricsRange = "thisPayPeriod" | "lastPayPeriod" | "7d" | "30d" | "all";
 
 interface KeyMetrics {
   jobCount: number;
@@ -13,6 +13,8 @@ interface KeyMetrics {
 }
 
 const RANGE_LABELS: Record<KeyMetricsRange, string> = {
+  thisPayPeriod: "This pay period",
+  lastPayPeriod: "Last pay period",
   "7d": "Last 7 days",
   "30d": "Last 30 days",
   all: "All time",
@@ -28,7 +30,7 @@ function formatCurrency(value: number): string {
 }
 
 export function KeyMetricsSection({ connected }: { connected: boolean }) {
-  const [range, setRange] = useState<KeyMetricsRange>("7d");
+  const [range, setRange] = useState<KeyMetricsRange>("thisPayPeriod");
   const [metrics, setMetrics] = useState<KeyMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

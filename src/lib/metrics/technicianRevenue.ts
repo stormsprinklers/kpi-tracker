@@ -212,6 +212,22 @@ function getJobDate(job: Record<string, unknown>): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function getScheduledJobDate(job: Record<string, unknown>): Date | null {
+  const sched = job.schedule as Record<string, unknown> | undefined;
+  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
+  const dateStr = scheduled as string | undefined;
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): boolean {
+  const scheduled = getScheduledJobDate(job);
+  if (!scheduled) return false;
+  const scheduledDay = scheduled.toISOString().slice(0, 10);
+  return scheduledDay > todayYmd;
+}
+
 function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDate?: string): boolean {
   if (!startDate && !endDate) return true;
   const jobDate = getJobDate(job);
@@ -355,6 +371,7 @@ export async function getTechnicianRevenue(
   let totalRevenueAllJobs = 0;
 
   const { startDate, endDate, activeInCurrentYearOnly = true } = filters ?? {};
+  const todayYmd = new Date().toISOString().slice(0, 10);
   const assignmentRows = await getJobRevenueAssignments(organizationId).catch(() => []);
   const manualJobAssignmentByJobId = new Map<string, string>();
   for (const row of assignmentRows) {
@@ -396,6 +413,7 @@ export async function getTechnicianRevenue(
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
     if (!jobInDateRange(j, startDate, endDate)) continue;
+    if (isFutureScheduledJob(j, todayYmd)) continue;
     mergeNamesFromJob(nameMap, j);
 
     const isPaid = isPaidOrCompleted(j);
@@ -490,6 +508,7 @@ export async function getTechnicianRevenue(
     const yearEnd = `${currentYear}-12-31`;
     for (const job of jobs) {
       const j = job as Record<string, unknown>;
+      if (isFutureScheduledJob(j, todayYmd)) continue;
       const jobDate = getJobDate(j);
       if (!jobDate) continue;
       const jobDay = jobDate.toISOString().slice(0, 10);

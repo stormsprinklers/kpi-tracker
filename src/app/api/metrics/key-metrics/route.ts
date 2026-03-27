@@ -9,8 +9,17 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const rangeParam = searchParams.get("range") ?? "7d";
-  const range = (rangeParam === "30d" || rangeParam === "all" ? rangeParam : "7d") as "7d" | "30d" | "all";
+  const rangeParam = searchParams.get("range") ?? "thisPayPeriod";
+  const validRanges: KeyMetricsRange[] = [
+    "7d",
+    "30d",
+    "all",
+    "thisPayPeriod",
+    "lastPayPeriod",
+  ];
+  const range = validRanges.includes(rangeParam as KeyMetricsRange)
+    ? (rangeParam as KeyMetricsRange)
+    : "thisPayPeriod";
 
   try {
     const metrics = await getKeyMetrics(session.user.organizationId, range);

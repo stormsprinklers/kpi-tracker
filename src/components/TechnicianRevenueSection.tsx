@@ -36,7 +36,35 @@ interface UnassignedRevenueJob {
   amount: number;
 }
 
-type DatePreset = "all" | "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "custom";
+type DatePreset =
+  | "thisPayPeriod"
+  | "lastPayPeriod"
+  | "all"
+  | "7d"
+  | "14d"
+  | "30d"
+  | "thisMonth"
+  | "lastMonth"
+  | "custom";
+
+function getPayPeriodRange(offset: 0 | -1): { startDate: string; endDate: string } {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const periodDays = 14;
+  const anchorStart = new Date(Date.UTC(2026, 2, 21)); // 2026-03-21
+  const now = new Date();
+  const todayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const diffDays = Math.floor((todayUtc.getTime() - anchorStart.getTime()) / dayMs);
+  const currentIndex = Math.floor(diffDays / periodDays);
+  const index = currentIndex + offset;
+  const start = new Date(anchorStart.getTime() + index * periodDays * dayMs);
+  const end = new Date(start.getTime() + (periodDays - 1) * dayMs);
+  return {
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+  };
+}
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -48,6 +76,15 @@ function formatCurrency(value: number): string {
 }
 
 function getDateRange(preset: DatePreset, customStart?: string, customEnd?: string): { startDate?: string; endDate?: string } {
+  if (preset === "thisPayPeriod") {
+    const p = getPayPeriodRange(0);
+    return { startDate: p.startDate, endDate: p.endDate };
+  }
+  if (preset === "lastPayPeriod") {
+    const p = getPayPeriodRange(-1);
+    return { startDate: p.startDate, endDate: p.endDate };
+  }
+
   const today = new Date();
   const end = new Date(today);
   end.setHours(23, 59, 59, 999);
@@ -96,6 +133,8 @@ function getInitials(name: string): string {
 }
 
 const PRESET_LABELS: Record<DatePreset, string> = {
+  thisPayPeriod: "This pay period",
+  lastPayPeriod: "Last pay period",
   "7d": "Last 7 days",
   "14d": "Last 14 days",
   "30d": "Last 30 days",
@@ -109,7 +148,7 @@ export function TechnicianRevenueSection() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
   const [viewTab, setViewTab] = useState<"cards" | "tables">("cards");
-  const [datePreset, setDatePreset] = useState<DatePreset>("7d");
+  const [datePreset, setDatePreset] = useState<DatePreset>("thisPayPeriod");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [data, setData] = useState<TechnicianRevenueResult | null>(null);

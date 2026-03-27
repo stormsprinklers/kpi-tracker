@@ -6,7 +6,12 @@ import {
 } from "../db/queries";
 import { getTechnicianRevenue } from "./technicianRevenue";
 
-export type KeyMetricsRange = "7d" | "30d" | "all";
+export type KeyMetricsRange =
+  | "7d"
+  | "30d"
+  | "all"
+  | "thisPayPeriod"
+  | "lastPayPeriod";
 
 export interface KeyMetrics {
   jobCount: number;
@@ -107,6 +112,41 @@ function getEstimateDate(estimate: Record<string, unknown>): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function getScheduledJobDate(job: Record<string, unknown>): Date | null {
+  const sched = job.schedule as Record<string, unknown> | undefined;
+  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
+  const dateStr = scheduled as string | undefined;
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): boolean {
+  const scheduled = getScheduledJobDate(job);
+  if (!scheduled) return false;
+  const scheduledDay = scheduled.toISOString().slice(0, 10);
+  return scheduledDay > todayYmd;
+}
+
+function getPayPeriodRange(offset: 0 | -1): { startDate: string; endDate: string } {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const periodDays = 14;
+  const anchorStart = new Date(Date.UTC(2026, 2, 21)); // 2026-03-21
+  const now = new Date();
+  const todayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const diffDays = Math.floor((todayUtc.getTime() - anchorStart.getTime()) / dayMs);
+  const currentIndex = Math.floor(diffDays / periodDays);
+  const index = currentIndex + offset;
+  const start = new Date(anchorStart.getTime() + index * periodDays * dayMs);
+  const end = new Date(start.getTime() + (periodDays - 1) * dayMs);
+  return {
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+  };
+}
+
 function estimateInDateRange(estimate: Record<string, unknown>, startDate: string | null, endDate: string | null): boolean {
   if (!startDate || !endDate) return true;
   const estDate = getEstimateDate(estimate);
@@ -124,6 +164,15 @@ function hasApprovedOption(estimate: Record<string, unknown>): boolean {
 }
 
 function getDateRangeForPeriod(range: KeyMetricsRange): { startDate: string | null; endDate: string | null } {
+  if (range === "thisPayPeriod") {
+    const p = getPayPeriodRange(0);
+    return { startDate: p.startDate, endDate: p.endDate };
+  }
+  if (range === "lastPayPeriod") {
+    const p = getPayPeriodRange(-1);
+    return { startDate: p.startDate, endDate: p.endDate };
+  }
+
   const today = new Date();
   const end = new Date(today);
   end.setHours(23, 59, 59, 999);
@@ -155,10 +204,12 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
 
   let jobCount = 0;
   let revenue = 0;
+  const todayYmd = new Date().toISOString().slice(0, 10);
 
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
     if (!jobInDateRange(j, startDate, endDate)) continue;
+    if (isFutureScheduledJob(j, todayYmd)) continue;
 
     const isPaid = isPaidOrCompleted(j);
     let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
