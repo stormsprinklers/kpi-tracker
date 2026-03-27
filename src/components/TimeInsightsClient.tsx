@@ -18,75 +18,48 @@ interface TimeInsightsResult {
   averageRevenuePerHour: number | null;
 }
 
-type DatePreset = "all" | "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "custom";
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PAY_PERIOD_DAYS = 14;
+const ANCHOR_START = "2026-03-21"; // First period: 2026-03-21 -> 2026-04-03
 
-function getDateRange(preset: DatePreset, customStart?: string, customEnd?: string): { startDate?: string; endDate?: string } {
-  const today = new Date();
-  const end = new Date(today);
-  end.setHours(23, 59, 59, 999);
-  const endStr = end.toISOString().slice(0, 10);
-
-  if (preset === "custom" && customStart && customEnd) {
-    return { startDate: customStart, endDate: customEnd };
-  }
-  if (preset === "custom") return {};
-  if (preset === "all") return {};
-  if (preset === "7d") {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 7);
-    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
-  }
-  if (preset === "14d") {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 14);
-    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
-  }
-  if (preset === "30d") {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 30);
-    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
-  }
-  if (preset === "thisMonth") {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
-  }
-  if (preset === "lastMonth") {
-    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const endLast = new Date(today.getFullYear(), today.getMonth(), 0);
-    return {
-      startDate: start.toISOString().slice(0, 10),
-      endDate: endLast.toISOString().slice(0, 10),
-    };
-  }
-  return {};
+function parseYmdUtc(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map((v) => Number(v));
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
 }
 
-const PRESET_LABELS: Record<DatePreset, string> = {
-  "7d": "Last 7 days",
-  "14d": "Last 14 days",
-  "30d": "Last 30 days",
-  thisMonth: "This month",
-  lastMonth: "Last month",
-  all: "All time",
-  custom: "Custom range",
-};
+function formatYmdUtc(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function getBiweeklyRange(periodOffset = 0): { startDate: string; endDate: string } {
+  const anchor = parseYmdUtc(ANCHOR_START);
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const diffDays = Math.floor((todayUtc.getTime() - anchor.getTime()) / DAY_MS);
+  const currentPeriodIndex = Math.floor(diffDays / PAY_PERIOD_DAYS);
+  const periodIndex = currentPeriodIndex + periodOffset;
+  const start = new Date(anchor.getTime() + periodIndex * PAY_PERIOD_DAYS * DAY_MS);
+  const end = new Date(start.getTime() + (PAY_PERIOD_DAYS - 1) * DAY_MS);
+  return { startDate: formatYmdUtc(start), endDate: formatYmdUtc(end) };
+}
 
 export function TimeInsightsClient() {
-  const [datePreset, setDatePreset] = useState<DatePreset>("7d");
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
+  const [periodOffset, setPeriodOffset] = useState(0);
   const [data, setData] = useState<TimeInsightsResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const range = getBiweeklyRange(periodOffset);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const range = getDateRange(datePreset, customStartDate, customEndDate);
     const params = new URLSearchParams();
-    if (range.startDate) params.set("startDate", range.startDate);
-    if (range.endDate) params.set("endDate", range.endDate);
-    const url = `/api/metrics/time-insights${params.toString() ? `?${params}` : ""}`;
+    params.set("startDate", range.startDate);
+    params.set("endDate", range.endDate);
+    const url = `/api/metrics/time-insights?${params.toString()}`;
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to load time insights");
@@ -97,44 +70,38 @@ export function TimeInsightsClient() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset, customStartDate, customEndDate]);
+  }, [range.endDate, range.startDate]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  const range = getDateRange(datePreset, customStartDate, customEndDate);
-
   const dateSelector = (
     <div className="flex flex-wrap items-center gap-2">
-      <select
-        value={datePreset}
-        onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+      <button
+        type="button"
+        onClick={() => setPeriodOffset((prev) => prev - 1)}
         className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
       >
-        {(Object.keys(PRESET_LABELS) as DatePreset[]).map((key) => (
-          <option key={key} value={key}>
-            {PRESET_LABELS[key]}
-          </option>
-        ))}
-      </select>
-      {datePreset === "custom" && (
-        <>
-          <input
-            type="date"
-            value={customStartDate}
-            onChange={(e) => setCustomStartDate(e.target.value)}
-            className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-          />
-          <span className="text-sm text-zinc-500">to</span>
-          <input
-            type="date"
-            value={customEndDate}
-            onChange={(e) => setCustomEndDate(e.target.value)}
-            className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-          />
-        </>
-      )}
+        Prev
+      </button>
+      <p className="text-sm text-zinc-700 dark:text-zinc-300">
+        {range.startDate} to {range.endDate}
+      </p>
+      <button
+        type="button"
+        onClick={() => setPeriodOffset((prev) => prev + 1)}
+        className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+      >
+        Next
+      </button>
+      <button
+        type="button"
+        onClick={() => setPeriodOffset(0)}
+        className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+      >
+        Current period
+      </button>
     </div>
   );
 
@@ -245,9 +212,8 @@ export function TimeInsightsClient() {
           </section>
 
           <ExpectedPayTable
-            {...(range.startDate && range.endDate
-              ? { syncedStartDate: range.startDate, syncedEndDate: range.endDate }
-              : {})}
+            syncedStartDate={range.startDate}
+            syncedEndDate={range.endDate}
           />
         </>
       )}

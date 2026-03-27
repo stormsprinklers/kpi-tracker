@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { PerformancePayWizard } from "@/components/team/PerformancePayWizard";
 import { PerformancePayConfigList } from "@/components/team/PerformancePayConfigList";
-import { ExpectedPayTable } from "@/components/team/ExpectedPayTable";
 
 interface Config {
   scope_type: string;
@@ -85,8 +84,6 @@ export function PerformancePayPageClient() {
           onRefresh={fetchSetup}
         />
       )}
-
-      <ExpectedPayTable />
     </div>
   );
 }

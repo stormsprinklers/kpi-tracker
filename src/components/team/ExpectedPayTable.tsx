@@ -163,6 +163,18 @@ export function ExpectedPayTable({
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
+                  label="Total revenue"
+                  tooltip="Total technician revenue attributed in this period from Technician KPI calculations."
+                />
+              </th>
+              <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                <MetricTooltip
+                  label="Reviews"
+                  tooltip="Google reviews assigned to this employee in this period."
+                />
+              </th>
+              <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                <MetricTooltip
                   label="Effective $/hr"
                   tooltip="Expected pay divided by hours worked. Shows — if no hours are logged."
                 />
@@ -186,6 +198,12 @@ export function ExpectedPayTable({
                 </td>
                 <td className="py-2 pl-1 text-zinc-700 dark:text-zinc-300">{r.payTypeLabel ?? "—"}</td>
                 <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+                  {formatMoney(r.totalRevenue ?? 0)}
+                </td>
+                <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+                  {typeof r.reviews === "number" ? r.reviews : 0}
+                </td>
+                <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
                   {r.effectiveHourlyRate != null ? formatMoney(r.effectiveHourlyRate) : "—"}
                 </td>
                 <td className="py-2 pr-4 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-50">
@@ -204,6 +222,14 @@ export function ExpectedPayTable({
                   {totals.totalHours.toFixed(2)}
                 </td>
                 <td className="py-2.5 pl-1" />
+                <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {formatMoney(
+                    results.reduce((sum, r) => sum + (typeof r.totalRevenue === "number" ? r.totalRevenue : 0), 0)
+                  )}
+                </td>
+                <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {results.reduce((sum, r) => sum + (typeof r.reviews === "number" ? r.reviews : 0), 0)}
+                </td>
                 <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                   {totals.blendedEffective != null ? formatMoney(totals.blendedEffective) : "—"}
                 </td>

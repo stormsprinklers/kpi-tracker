@@ -1547,6 +1547,34 @@ export async function getAssignedGoogleReviewCounts(
   return map;
 }
 
+export async function getAssignedGoogleReviewCountsForPeriod(
+  organizationId: string,
+  hcpEmployeeIds: string[],
+  startDate: string,
+  endDate: string
+): Promise<Record<string, number>> {
+  if (hcpEmployeeIds.length === 0) return {};
+  const ids = Array.from(new Set(hcpEmployeeIds.filter(Boolean)));
+  if (ids.length === 0) return {};
+  const result = await sql`
+    SELECT assigned_hcp_employee_id, COUNT(*)::int AS count
+    FROM google_business_reviews
+    WHERE organization_id = ${organizationId}::uuid
+      AND assigned_hcp_employee_id IS NOT NULL
+      AND LEFT(COALESCE(update_time, create_time, ''), 10) >= ${startDate}
+      AND LEFT(COALESCE(update_time, create_time, ''), 10) <= ${endDate}
+    GROUP BY assigned_hcp_employee_id
+  `;
+  const map: Record<string, number> = {};
+  for (const row of result.rows ?? []) {
+    const r = row as { assigned_hcp_employee_id: string; count: number };
+    if (ids.includes(r.assigned_hcp_employee_id)) {
+      map[r.assigned_hcp_employee_id] = r.count;
+    }
+  }
+  return map;
+}
+
 const COMPLETED_JOB_STATUSES = [
   "paid",
   "completed",

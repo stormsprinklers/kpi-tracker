@@ -5,6 +5,7 @@ import {
   getPerformancePayRoles,
   getTimeEntriesByOrganization,
   getEmployeesAndProsForCsrSelector,
+  getAssignedGoogleReviewCountsForPeriod,
 } from "./db/queries";
 import { getTechnicianRevenue } from "./metrics/technicianRevenue";
 import { getCsrKpiList } from "./metrics/csrKpis";
@@ -29,6 +30,8 @@ export type BonusType =
 export interface ExpectedPayResult {
   hcpEmployeeId: string;
   employeeName?: string;
+  totalRevenue: number;
+  reviews: number;
   expectedPay: number;
   breakdown?: Record<string, number>;
   /** Total hours from timesheets in the period. */
@@ -212,6 +215,13 @@ export async function calculateExpectedPay(
     ])
   );
 
+  const reviewCounts = await getAssignedGoogleReviewCountsForPeriod(
+    organizationId,
+    targetIds,
+    startDate,
+    endDate
+  ).catch(() => ({} as Record<string, number>));
+
   const results: ExpectedPayResult[] = [];
 
   for (const empId of targetIds) {
@@ -222,6 +232,7 @@ export async function calculateExpectedPay(
     const tech = techByEmployee.get(empId);
     const csr = csrByEmployee.get(empId);
     const revenue = tech?.totalRevenue ?? 0;
+    const reviews = reviewCounts[empId] ?? 0;
     const revenuePerHour = tech?.revenuePerHour ?? 0;
     const bookingRate = csr?.bookingRate ?? 0;
     const avgBookedRevenue = csr?.avgBookedCallRevenue ?? 0;
@@ -335,6 +346,8 @@ export async function calculateExpectedPay(
     results.push({
       hcpEmployeeId: empId,
       employeeName: employeeNames.get(empId),
+      totalRevenue: Math.round(revenue * 100) / 100,
+      reviews,
       expectedPay: expectedPayTotal,
       breakdown,
       hoursWorked: Math.round(hours * 100) / 100,
