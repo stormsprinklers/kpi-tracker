@@ -2,15 +2,7 @@
   "crons": [
     {
       "path": "/api/sync",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/ai-insights",
-      "schedule": "0 0 * * 0"
-    },
-    {
-      "path": "/api/cron/seo",
-      "schedule": "0 0 * * 0"
+      "schedule": "0 3 * * *"
     }
   ]
 }

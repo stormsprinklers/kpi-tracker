@@ -57,7 +57,7 @@ export function SyncStatusSection() {
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
-    return d.toLocaleDateString(undefined, { dateStyle: "short", timeStyle: "short" });
+    return d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
   }
 
   return (

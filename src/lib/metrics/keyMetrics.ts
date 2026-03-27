@@ -1,5 +1,9 @@
-import { getHcpClient } from "../housecallpro";
-import { getJobsFromDb, getInvoicesFromDb, getEstimatesFromDb } from "../db/queries";
+import {
+  getEstimatesFromDb,
+  getInvoicesFromDb,
+  getJobsFromDb,
+  getOrganizationById,
+} from "../db/queries";
 import { getTechnicianRevenue } from "./technicianRevenue";
 
 export type KeyMetricsRange = "7d" | "30d" | "all";
@@ -143,43 +147,19 @@ function getDateRangeForPeriod(range: KeyMetricsRange): { startDate: string | nu
 }
 
 export async function getKeyMetrics(organizationId: string, range: KeyMetricsRange = "7d"): Promise<KeyMetrics> {
-  let companyId = "default";
-  const client = await getHcpClient(organizationId);
-  try {
-    const company = (await client.getCompany()) as { id?: string; company_id?: string };
-    companyId = company?.id ?? company?.company_id ?? "default";
-  } catch {
-    /* fall through */
+  const org = await getOrganizationById(organizationId);
+  const companyId = org?.hcp_company_id?.trim() || "";
+  if (!companyId) {
+    return { jobCount: 0, revenue: 0, avgJobValue: null, conversionRate: null };
   }
 
   const { startDate, endDate } = getDateRangeForPeriod(range);
 
   let jobs: unknown[] = [];
-  let jobsFromApi = false;
   try {
     jobs = await getJobsFromDb(companyId);
   } catch {
     /* skip */
-  }
-  if (jobs.length === 0) {
-    try {
-      jobs = await client.getJobsAllPages();
-      jobsFromApi = true;
-    } catch {
-      /* skip */
-    }
-  }
-
-  if (jobsFromApi) {
-    jobs = (jobs as Record<string, unknown>[]).map((j) => {
-      const copy = { ...j };
-      const totalCents = j.total_amount ?? j.subtotal ?? j.total;
-      const outCents = j.outstanding_balance ?? j.balance_due ?? j.amount_due ?? 0;
-      if (typeof totalCents === "number" && !Number.isNaN(totalCents)) copy.total_amount = totalCents / 100;
-      if (typeof outCents === "number" && !Number.isNaN(outCents)) copy.outstanding_balance = outCents / 100;
-      else copy.outstanding_balance = 0;
-      return copy;
-    });
   }
 
   let jobCount = 0;
@@ -201,15 +181,7 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
         /* skip */
       }
       if (paidAmount <= 0) {
-        try {
-          const invoices = await client.getJobInvoices(String(j.id));
-          const invList = Array.isArray(invoices) ? invoices : (invoices as { invoices?: unknown[] })?.invoices ?? (invoices as { data?: unknown[] })?.data ?? [];
-          for (const inv of invList) {
-            paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
-          }
-        } catch {
-          /* skip */
-        }
+        // DB-only KPI mode: no live API fallback
       }
     }
 
@@ -224,15 +196,6 @@ export async function getKeyMetrics(organizationId: string, range: KeyMetricsRan
     estimates = await getEstimatesFromDb(companyId);
   } catch {
     /* skip */
-  }
-  if (estimates.length === 0) {
-    try {
-      const estimatesRes = await client.getEstimatesAllPages();
-      const data = estimatesRes as { estimates?: unknown[] };
-      estimates = data?.estimates ?? (Array.isArray(estimatesRes) ? estimatesRes : []);
-    } catch {
-      /* skip */
-    }
   }
 
   let totalEstimates = 0;

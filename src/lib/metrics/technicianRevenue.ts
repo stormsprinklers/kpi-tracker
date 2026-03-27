@@ -1,4 +1,3 @@
-import { getHcpClient } from "../housecallpro";
 import {
   getJobsFromDb,
   getEmployeesFromDb,
@@ -7,6 +6,7 @@ import {
   getEstimatesFromDb,
   getTimeEntriesByOrganization,
   getJobRevenueAssignments,
+  getOrganizationById,
 } from "../db/queries";
 import { extractJobHcpId } from "../sync/extractors";
 
@@ -319,14 +319,10 @@ export async function getTechnicianRevenue(
 ): Promise<TechnicianRevenueResult> {
   const nameMap = new Map<string, string>();
   const officeStaffIds = new Set<string>();
-  let companyId = "default";
-
-  const client = await getHcpClient(organizationId);
-  try {
-    const company = (await client.getCompany()) as { id?: string; company_id?: string };
-    companyId = company?.id ?? company?.company_id ?? "default";
-  } catch {
-    // Fall through - use default
+  const org = await getOrganizationById(organizationId);
+  const companyId = org?.hcp_company_id?.trim() || "";
+  if (!companyId) {
+    return { technicians: [], totalRevenue: 0 };
   }
 
   // Build employee name map and office staff IDs (from DB first, then API)
@@ -346,24 +342,6 @@ export async function getTechnicianRevenue(
     /* skip */
   }
 
-  if (nameMap.size === 0) {
-    try {
-      const employeesList = await client.getEmployeesAllPages();
-      const empMap = buildNameMap(
-        employeesList,
-        ["id", "employee_id", "pro_id"],
-        [["name", "display_name"], ["first_name", "last_name"]]
-      );
-      empMap.forEach((v, k) => nameMap.set(k, v));
-      for (const emp of employeesList as Record<string, unknown>[]) {
-        const id = emp?.id ?? emp?.employee_id ?? emp?.pro_id;
-        if (id && isOfficeStaff(emp?.role ?? emp?.employee_type ?? emp?.type)) officeStaffIds.add(String(id));
-      }
-    } catch {
-      /* skip */
-    }
-  }
-
   // Always merge pros into name map and office staff IDs
   try {
     const prosList = await getProsFromDb(companyId);
@@ -380,23 +358,6 @@ export async function getTechnicianRevenue(
   } catch {
     /* skip */
   }
-  try {
-    const prosRes = await client.getPros();
-    const prosList = Array.isArray(prosRes) ? prosRes : (prosRes as { pros?: unknown[] })?.pros ?? (prosRes as { data?: unknown[] })?.data ?? [];
-    const proMap = buildNameMap(
-      prosList,
-      ["id", "pro_id"],
-      [["name", "display_name"], ["first_name", "last_name"]]
-    );
-    proMap.forEach((v, k) => nameMap.set(k, v));
-    for (const p of prosList as Record<string, unknown>[]) {
-      const id = p?.id ?? p?.pro_id;
-      if (id && isOfficeStaff(p?.role ?? p?.employee_type ?? p?.type)) officeStaffIds.add(String(id));
-    }
-  } catch {
-    /* skip */
-  }
-
   const revenueByTech = new Map<string, number>();
   const billableJobsByTech = new Map<string, number>();
   const revenueByTechAndDate = new Map<string, Map<string, number>>();
@@ -433,34 +394,12 @@ export async function getTechnicianRevenue(
     /* skip - no time entries or DB error */
   }
 
-  // Prefer DB for jobs; fall back to API if empty
+  // DB-only KPI mode: use synced jobs only.
   let jobs: unknown[] = [];
-  let jobsFromApi = false;
   try {
     jobs = await getJobsFromDb(companyId);
   } catch {
     /* skip */
-  }
-  if (jobs.length === 0) {
-    try {
-      jobs = await client.getJobsAllPages();
-      jobsFromApi = true;
-    } catch {
-      /* skip */
-    }
-  }
-
-  // HCP API returns amounts in cents; normalize to dollars when using API data
-  if (jobsFromApi) {
-    jobs = (jobs as Record<string, unknown>[]).map((j) => {
-      const copy = { ...j };
-      const totalCents = j.total_amount ?? j.subtotal ?? j.total;
-      const outCents = j.outstanding_balance ?? j.balance_due ?? j.amount_due ?? 0;
-      if (typeof totalCents === "number" && !Number.isNaN(totalCents)) copy.total_amount = totalCents / 100;
-      if (typeof outCents === "number" && !Number.isNaN(outCents)) copy.outstanding_balance = outCents / 100;
-      else copy.outstanding_balance = 0;
-      return copy;
-    });
   }
 
   for (const job of jobs) {
@@ -481,15 +420,7 @@ export async function getTechnicianRevenue(
         /* skip */
       }
       if (paidAmount <= 0) {
-        try {
-          const invoices = await client.getJobInvoices(String(j.id));
-          const invList = Array.isArray(invoices) ? invoices : (invoices as { invoices?: unknown[] })?.invoices ?? (invoices as { data?: unknown[] })?.data ?? [];
-          for (const inv of invList) {
-            paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
-          }
-        } catch {
-          /* skip */
-        }
+        // DB-only KPI mode: no live API fallback
       }
     }
     if (paidAmount > 0) {
@@ -526,7 +457,7 @@ export async function getTechnicianRevenue(
     }
   }
 
-  // Estimate conversion: prefer DB, fallback to API
+  // Estimate conversion: DB-only KPI mode.
   const jobByHcpId = new Map<string, Record<string, unknown>>();
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
@@ -540,15 +471,6 @@ export async function getTechnicianRevenue(
     estimates = await getEstimatesFromDb(companyId);
   } catch {
     /* skip */
-  }
-  if (estimates.length === 0) {
-    try {
-      const estimatesRes = await client.getEstimatesAllPages();
-      const data = estimatesRes as { estimates?: unknown[] };
-      estimates = data?.estimates ?? (Array.isArray(estimatesRes) ? estimatesRes : []);
-    } catch {
-      /* skip */
-    }
   }
   for (const est of estimates) {
     const e = est as Record<string, unknown>;
