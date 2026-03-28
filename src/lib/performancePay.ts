@@ -42,6 +42,8 @@ export interface ExpectedPayResult {
   payTypeLabel: string;
   /** expectedPay / hoursWorked when hours are logged; otherwise null. */
   effectiveHourlyRate: number | null;
+  /** Used to exclude office/CSR pay from labor % of revenue while still listing rows in the expected pay table. */
+  structureType: StructureType;
 }
 
 function payTypeLabelForStructure(structureType: StructureType): string {
@@ -439,6 +441,7 @@ export async function calculateExpectedPay(
       hoursWorked: Math.round(hours * 100) / 100,
       payTypeLabel,
       effectiveHourlyRate,
+      structureType: config.structure_type as StructureType,
     });
   }
 

@@ -33,7 +33,11 @@ export interface TimeInsightsResult {
   averageRevenuePerOnJobHour: number | null;
   /** Total paid revenue in period ÷ sum of all timesheet hours, field staff only (excludes CSR selections or office staff). */
   averageRevenuePerLoggedHour: number | null;
-  /** Sum(expected pay) / sum(attributed revenue) from Performance Pay for the period, as 0–100+ (e.g. 35.5 = 35.5%). */
+  /**
+   * Sum(expected pay) / sum(attributed revenue) from Performance Pay for the period (field / technician
+   * structures only). Excludes office CSR booking-rate pay and its attributed revenue so the ratio reflects
+   * field labor vs technician revenue. CSR rows still appear in the expected pay table.
+   */
   laborPercentOfRevenue: number | null;
 }
 
@@ -535,6 +539,7 @@ export async function getTimeInsights(
       let totalExpectedPay = 0;
       let totalAttributedRevenue = 0;
       for (const r of expectedRows) {
+        if (r.structureType === "csr_hourly_booking_rate") continue;
         totalExpectedPay += typeof r.expectedPay === "number" ? r.expectedPay : 0;
         totalAttributedRevenue += typeof r.totalRevenue === "number" ? r.totalRevenue : 0;
       }

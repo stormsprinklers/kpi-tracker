@@ -6,7 +6,8 @@ import { getTimeInsights } from "@/lib/metrics/timeInsights";
  * GET /api/metrics/time-insights
  * Query params: startDate, endDate (optional, ISO YYYY-MM-DD)
  * Returns: averageJobsPerDayPerTechnician, averageDriveTimeMinutes, averageLaborTimeMinutes,
- *          averageRevenuePerJob, averageRevenuePerOnJobHour, averageRevenuePerLoggedHour, laborPercentOfRevenue
+ *          averageRevenuePerJob, averageRevenuePerOnJobHour, averageRevenuePerLoggedHour,
+ *          laborPercentOfRevenue (field/tech expected pay ÷ attributed tech revenue; excludes CSR booking-rate pay)
  */
 export async function GET(request: Request) {
   const session = await auth();

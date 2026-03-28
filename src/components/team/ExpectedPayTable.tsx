@@ -25,6 +25,43 @@ function formatMoney(n: number): string {
   }).format(n);
 }
 
+function ExpectedPayTableRow({
+  r,
+  avgJobsPerDayByEmployee,
+}: {
+  r: ExpectedPayResult;
+  avgJobsPerDayByEmployee?: Record<string, number>;
+}) {
+  return (
+    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+      <td className="py-2 pl-4 text-zinc-900 dark:text-zinc-50">
+        {r.employeeName ?? r.hcpEmployeeId}
+      </td>
+      <td className="py-2 pr-6 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+        {r.hoursWorked != null ? r.hoursWorked.toFixed(2) : "—"}
+      </td>
+      <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+        {typeof avgJobsPerDayByEmployee?.[r.hcpEmployeeId] === "number"
+          ? avgJobsPerDayByEmployee[r.hcpEmployeeId].toFixed(2)
+          : "—"}
+      </td>
+      <td className="py-2 pl-1 text-zinc-700 dark:text-zinc-300">{r.payTypeLabel ?? "—"}</td>
+      <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+        {formatMoney(r.totalRevenue ?? 0)}
+      </td>
+      <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+        {typeof r.reviews === "number" ? r.reviews : 0}
+      </td>
+      <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+        {r.effectiveHourlyRate != null ? formatMoney(r.effectiveHourlyRate) : "—"}
+      </td>
+      <td className="py-2 pr-4 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-50">
+        {formatMoney(r.expectedPay)}
+      </td>
+    </tr>
+  );
+}
+
 export function ExpectedPayTable({
   syncedStartDate,
   syncedEndDate,
@@ -99,6 +136,16 @@ export function ExpectedPayTable({
     if (!excludeZeroHours) return results;
     return results.filter((r) => (typeof r.hoursWorked === "number" ? r.hoursWorked : 0) > 0);
   }, [results, excludeZeroHours]);
+
+  const { fieldRows, csrRows } = useMemo(() => {
+    const field: ExpectedPayResult[] = [];
+    const csr: ExpectedPayResult[] = [];
+    for (const r of visibleResults) {
+      if (r.structureType === "csr_hourly_booking_rate") csr.push(r);
+      else field.push(r);
+    }
+    return { fieldRows: field, csrRows: csr };
+  }, [visibleResults]);
 
   const totals = useMemo(() => {
     let totalHours = 0;
@@ -204,34 +251,32 @@ export function ExpectedPayTable({
             </tr>
           </thead>
           <tbody>
-            {visibleResults.map((r) => (
-              <tr key={r.hcpEmployeeId} className="border-b border-zinc-100 dark:border-zinc-800">
-                <td className="py-2 pl-4 text-zinc-900 dark:text-zinc-50">
-                  {r.employeeName ?? r.hcpEmployeeId}
-                </td>
-                <td className="py-2 pr-6 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
-                  {r.hoursWorked != null ? r.hoursWorked.toFixed(2) : "—"}
-                </td>
-                <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
-                  {typeof avgJobsPerDayByEmployee?.[r.hcpEmployeeId] === "number"
-                    ? avgJobsPerDayByEmployee[r.hcpEmployeeId].toFixed(2)
-                    : "—"}
-                </td>
-                <td className="py-2 pl-1 text-zinc-700 dark:text-zinc-300">{r.payTypeLabel ?? "—"}</td>
-                <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
-                  {formatMoney(r.totalRevenue ?? 0)}
-                </td>
-                <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
-                  {typeof r.reviews === "number" ? r.reviews : 0}
-                </td>
-                <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
-                  {r.effectiveHourlyRate != null ? formatMoney(r.effectiveHourlyRate) : "—"}
-                </td>
-                <td className="py-2 pr-4 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-50">
-                  {formatMoney(r.expectedPay)}
-                </td>
-              </tr>
+            {fieldRows.map((r) => (
+              <ExpectedPayTableRow
+                key={r.hcpEmployeeId}
+                r={r}
+                avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
+              />
             ))}
+            {csrRows.length > 0 && (
+              <>
+                <tr className="border-b border-zinc-200 bg-zinc-100/90 dark:border-zinc-700 dark:bg-zinc-800/80">
+                  <td
+                    colSpan={8}
+                    className="py-2 pl-4 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
+                  >
+                    Office staff (CSR pay)
+                  </td>
+                </tr>
+                {csrRows.map((r) => (
+                  <ExpectedPayTableRow
+                    key={r.hcpEmployeeId}
+                    r={r}
+                    avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
+                  />
+                ))}
+              </>
+            )}
           </tbody>
           {visibleResults.length > 0 && (
             <tfoot>

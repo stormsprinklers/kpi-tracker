@@ -196,7 +196,7 @@ export function TimeInsightsClient() {
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Labor % of revenue"
-                    tooltip="Total expected pay for everyone in this period (Performance Pay) divided by total attributed technician revenue in the same period, shown as a percentage."
+                    tooltip="Expected pay from field and technician Performance Pay plans divided by attributed technician revenue in this period. Office staff (CSR booking-rate) pay is excluded from this ratio but still listed in the expected pay table below."
                   />
                 </p>
               </div>
