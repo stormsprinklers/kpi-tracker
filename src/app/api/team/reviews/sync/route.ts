@@ -23,11 +23,20 @@ function parseReviewId(name: string | undefined): string | null {
   return id?.trim() || null;
 }
 
+const GOOGLE_STAR_WORDS: Record<string, number> = {
+  ONE: 1,
+  TWO: 2,
+  THREE: 3,
+  FOUR: 4,
+  FIVE: 5,
+};
+
 function parseStarRating(value: string | number | undefined): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (!value) return null;
   const s = String(value).trim().toUpperCase();
   if (!s) return null;
+  if (GOOGLE_STAR_WORDS[s] != null) return GOOGLE_STAR_WORDS[s];
   const m = s.match(/^(\d)/);
   return m ? Number(m[1]) : null;
 }

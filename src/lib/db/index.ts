@@ -568,6 +568,17 @@ export async function initSchema(): Promise<void> {
     )
   `;
   await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'performance_pay_org' AND column_name = 'bonus_per_five_star_review'
+      ) THEN
+        ALTER TABLE performance_pay_org ADD COLUMN bonus_per_five_star_review DOUBLE PRECISION;
+      END IF;
+    END $$;
+  `;
+  await sql`
     CREATE TABLE IF NOT EXISTS performance_pay_roles (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

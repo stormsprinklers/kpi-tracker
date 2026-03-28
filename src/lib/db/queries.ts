@@ -1554,22 +1554,64 @@ export async function getAssignedGoogleReviewCountsForPeriod(
   endDate: string
 ): Promise<Record<string, number>> {
   if (hcpEmployeeIds.length === 0) return {};
-  const ids = Array.from(new Set(hcpEmployeeIds.filter(Boolean)));
-  if (ids.length === 0) return {};
+  const ids = new Set(
+    Array.from(new Set(hcpEmployeeIds.filter(Boolean))).map((id) => id.trim())
+  );
+  if (ids.size === 0) return {};
+  /** Posted date of the review: create_time first (stable). update_time changes on edits/sync and broke period filters. */
   const result = await sql`
     SELECT assigned_hcp_employee_id, COUNT(*)::int AS count
     FROM google_business_reviews
     WHERE organization_id = ${organizationId}::uuid
       AND assigned_hcp_employee_id IS NOT NULL
-      AND LEFT(COALESCE(update_time, create_time, ''), 10) >= ${startDate}
-      AND LEFT(COALESCE(update_time, create_time, ''), 10) <= ${endDate}
+      AND COALESCE(create_time, update_time) IS NOT NULL
+      AND (COALESCE(create_time, update_time))::date >= ${startDate}::date
+      AND (COALESCE(create_time, update_time))::date <= ${endDate}::date
     GROUP BY assigned_hcp_employee_id
   `;
   const map: Record<string, number> = {};
   for (const row of result.rows ?? []) {
     const r = row as { assigned_hcp_employee_id: string; count: number };
-    if (ids.includes(r.assigned_hcp_employee_id)) {
-      map[r.assigned_hcp_employee_id] = r.count;
+    const empId = String(r.assigned_hcp_employee_id ?? "").trim();
+    if (empId && ids.has(empId)) {
+      map[empId] = r.count;
+    }
+  }
+  return map;
+}
+
+/** Assigned Google reviews in period with star_rating = 5 (posted date, same rules as getAssignedGoogleReviewCountsForPeriod). */
+export async function getAssignedFiveStarGoogleReviewCountsForPeriod(
+  organizationId: string,
+  hcpEmployeeIds: string[],
+  startDate: string,
+  endDate: string
+): Promise<Record<string, number>> {
+  if (hcpEmployeeIds.length === 0) return {};
+  const ids = new Set(
+    Array.from(new Set(hcpEmployeeIds.filter(Boolean))).map((id) => id.trim())
+  );
+  if (ids.size === 0) return {};
+  const result = await sql`
+    SELECT assigned_hcp_employee_id, COUNT(*)::int AS count
+    FROM google_business_reviews
+    WHERE organization_id = ${organizationId}::uuid
+      AND assigned_hcp_employee_id IS NOT NULL
+      AND (
+        star_rating = 5
+        OR UPPER(TRIM(COALESCE(raw->>'starRating', ''))) = 'FIVE'
+      )
+      AND COALESCE(create_time, update_time) IS NOT NULL
+      AND (COALESCE(create_time, update_time))::date >= ${startDate}::date
+      AND (COALESCE(create_time, update_time))::date <= ${endDate}::date
+    GROUP BY assigned_hcp_employee_id
+  `;
+  const map: Record<string, number> = {};
+  for (const row of result.rows ?? []) {
+    const r = row as { assigned_hcp_employee_id: string; count: number };
+    const empId = String(r.assigned_hcp_employee_id ?? "").trim();
+    if (empId && ids.has(empId)) {
+      map[empId] = r.count;
     }
   }
   return map;
@@ -1731,6 +1773,8 @@ export interface PerformancePayOrg {
   organization_id: string;
   setup_completed: boolean;
   pay_period_start_weekday: number;
+  /** Flat bonus in dollars per assigned 5★ Google review in the pay period (org-wide). */
+  bonus_per_five_star_review: number | null;
   updated_at: string;
 }
 
@@ -1760,11 +1804,22 @@ export interface PerformancePayConfig {
 
 export async function getPerformancePayOrg(organizationId: string): Promise<PerformancePayOrg | null> {
   const result = await sql`
-    SELECT organization_id, setup_completed, pay_period_start_weekday, updated_at
+    SELECT organization_id, setup_completed, pay_period_start_weekday,
+      bonus_per_five_star_review::float8 AS bonus_per_five_star_review,
+      updated_at
     FROM performance_pay_org
     WHERE organization_id = ${organizationId}::uuid
   `;
-  return (result.rows?.[0] as PerformancePayOrg) ?? null;
+  const row = result.rows?.[0] as PerformancePayOrg | undefined;
+  if (!row) return null;
+  const b = row.bonus_per_five_star_review;
+  let bonus: number | null = null;
+  if (typeof b === "number" && !Number.isNaN(b)) bonus = b;
+  else if (b != null && String(b).trim() !== "") {
+    const n = Number(b);
+    if (!Number.isNaN(n)) bonus = n;
+  }
+  return { ...row, bonus_per_five_star_review: bonus };
 }
 
 export async function upsertPerformancePayOrg(
@@ -1777,6 +1832,20 @@ export async function upsertPerformancePayOrg(
     ON CONFLICT (organization_id) DO UPDATE SET
       setup_completed = COALESCE(${params.setup_completed ?? null}::boolean, performance_pay_org.setup_completed),
       pay_period_start_weekday = COALESCE(${params.pay_period_start_weekday ?? null}::int, performance_pay_org.pay_period_start_weekday),
+      updated_at = NOW()
+  `;
+}
+
+/** Set org-wide $ per 5★ Google review (expected pay). Pass null to clear. */
+export async function setPerformancePayOrgFiveStarBonus(
+  organizationId: string,
+  bonusPerReview: number | null
+): Promise<void> {
+  await sql`
+    INSERT INTO performance_pay_org (organization_id, setup_completed, pay_period_start_weekday, bonus_per_five_star_review, updated_at)
+    VALUES (${organizationId}::uuid, false, 1, ${bonusPerReview}, NOW())
+    ON CONFLICT (organization_id) DO UPDATE SET
+      bonus_per_five_star_review = ${bonusPerReview},
       updated_at = NOW()
   `;
 }

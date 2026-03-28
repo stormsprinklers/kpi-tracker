@@ -80,7 +80,8 @@ export async function fetchDashboardData(
         avgDriveTimeMinutes: timeInsights.averageDriveTimeMinutes,
         avgLaborTimeMinutes: timeInsights.averageLaborTimeMinutes,
         avgRevenuePerJob: timeInsights.averageRevenuePerJob,
-        avgRevenuePerHour: timeInsights.averageRevenuePerHour,
+        avgRevenuePerOnJobHour: timeInsights.averageRevenuePerOnJobHour,
+        avgRevenuePerLoggedHour: timeInsights.averageRevenuePerLoggedHour,
         laborPercentOfRevenue: timeInsights.laborPercentOfRevenue,
       };
     }

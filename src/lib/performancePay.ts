@@ -6,6 +6,8 @@ import {
   getTimeEntriesByOrganization,
   getEmployeesAndProsForCsrSelector,
   getAssignedGoogleReviewCountsForPeriod,
+  getAssignedFiveStarGoogleReviewCountsForPeriod,
+  type TimeEntry,
 } from "./db/queries";
 import { getTechnicianRevenue } from "./metrics/technicianRevenue";
 import { getCsrKpiList } from "./metrics/csrKpis";
@@ -99,6 +101,57 @@ export function getBiweeklyPeriod(
   return [start, end];
 }
 
+const WEEKLY_OT_THRESHOLD_HOURS = 40;
+const OT_PREMIUM_MULTIPLIER = 1.5;
+
+function hoursFromTimeEntry(e: TimeEntry): number {
+  const fromCol =
+    typeof e.hours === "number" && !Number.isNaN(e.hours)
+      ? e.hours
+      : typeof e.hours === "string"
+        ? parseFloat(e.hours) || 0
+        : 0;
+  if (fromCol > 0) return fromCol;
+  if (!e.start_time || !e.end_time || !e.entry_date) return 0;
+  const [y, mo, d] = e.entry_date.split("-").map(Number);
+  const [sh, sm] = e.start_time.split(":").map(Number);
+  const [eh, em] = e.end_time.split(":").map(Number);
+  const start = new Date(y, (mo || 1) - 1, d || 1, sh || 0, sm || 0, 0, 0);
+  const end = new Date(y, (mo || 1) - 1, d || 1, eh || 0, em || 0, 0, 0);
+  const ms = end.getTime() - start.getTime();
+  if (ms <= 0) return 0;
+  return Math.round((ms / (1000 * 60 * 60)) * 100) / 100;
+}
+
+/** Monday YYYY-MM-DD of the workweek containing this entry date (local calendar). */
+function mondayWeekKeyFromEntryDate(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map((v) => Number(v));
+  if (!y || !m || !d) return ymd;
+  const dt = new Date(y, m - 1, d);
+  const dow = dt.getDay();
+  const daysFromMonday = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(dt);
+  monday.setDate(dt.getDate() - daysFromMonday);
+  const yy = monday.getFullYear();
+  const mm = String(monday.getMonth() + 1).padStart(2, "0");
+  const dd = String(monday.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Straight time up to 40h per week, then 1.5× base for additional hours in that week. */
+function hourlyPayWithWeeklyOvertime(
+  hoursByWeek: Map<string, number>,
+  baseRatePerHour: number
+): number {
+  let total = 0;
+  for (const weekHours of hoursByWeek.values()) {
+    const regular = Math.min(weekHours, WEEKLY_OT_THRESHOLD_HOURS);
+    const overtime = Math.max(0, weekHours - WEEKLY_OT_THRESHOLD_HOURS);
+    total += regular * baseRatePerHour + overtime * baseRatePerHour * OT_PREMIUM_MULTIPLIER;
+  }
+  return Math.round(total * 100) / 100;
+}
+
 /** Stub bonus amount for bonus types that don't have data yet. Returns 0. */
 function getBonusAmount(
   _bonusType: BonusType,
@@ -115,7 +168,7 @@ export async function calculateExpectedPay(
   const { organizationId, startDate, endDate, hcpEmployeeId: filterEmployeeId } =
     options;
 
-  const [org, configs, assignments, roles] = await Promise.all([
+  const [ppOrg, configs, assignments, roles] = await Promise.all([
     getPerformancePayOrg(organizationId),
     getPerformancePayConfigs(organizationId),
     getPerformancePayAssignments(organizationId),
@@ -182,17 +235,20 @@ export async function calculateExpectedPay(
   }
 
   const hoursByEmployee = new Map<string, number>();
+  /** empId -> (week Monday YMD -> hours in that week) */
+  const hoursByEmployeeWeek = new Map<string, Map<string, number>>();
   for (const e of timeEntries) {
-    const h =
-      typeof e.hours === "number" && !Number.isNaN(e.hours)
-        ? e.hours
-        : typeof e.hours === "string"
-          ? parseFloat(e.hours) || 0
-          : 0;
-    hoursByEmployee.set(
-      e.hcp_employee_id,
-      (hoursByEmployee.get(e.hcp_employee_id) ?? 0) + h
-    );
+    const h = hoursFromTimeEntry(e);
+    if (h <= 0) continue;
+    const empId = e.hcp_employee_id;
+    hoursByEmployee.set(empId, (hoursByEmployee.get(empId) ?? 0) + h);
+    const weekKey = mondayWeekKeyFromEntryDate(e.entry_date);
+    let byWeek = hoursByEmployeeWeek.get(empId);
+    if (!byWeek) {
+      byWeek = new Map<string, number>();
+      hoursByEmployeeWeek.set(empId, byWeek);
+    }
+    byWeek.set(weekKey, (byWeek.get(weekKey) ?? 0) + h);
   }
 
   const techByEmployee = new Map(
@@ -222,6 +278,24 @@ export async function calculateExpectedPay(
     endDate
   ).catch(() => ({} as Record<string, number>));
 
+  const bonusPerFiveStarRaw = ppOrg?.bonus_per_five_star_review;
+  const bonusPerFiveStar =
+    typeof bonusPerFiveStarRaw === "number" && !Number.isNaN(bonusPerFiveStarRaw) && bonusPerFiveStarRaw > 0
+      ? bonusPerFiveStarRaw
+      : typeof bonusPerFiveStarRaw === "string" && parseFloat(bonusPerFiveStarRaw) > 0
+        ? parseFloat(bonusPerFiveStarRaw)
+        : 0;
+
+  const fiveStarReviewCounts =
+    bonusPerFiveStar > 0
+      ? await getAssignedFiveStarGoogleReviewCountsForPeriod(
+          organizationId,
+          targetIds,
+          startDate,
+          endDate
+        ).catch(() => ({} as Record<string, number>))
+      : {};
+
   const results: ExpectedPayResult[] = [];
 
   for (const empId of targetIds) {
@@ -232,7 +306,9 @@ export async function calculateExpectedPay(
     const tech = techByEmployee.get(empId);
     const csr = csrByEmployee.get(empId);
     const revenue = tech?.totalRevenue ?? 0;
-    const reviews = reviewCounts[empId] ?? 0;
+    const reviews = reviewCounts[empId.trim()] ?? reviewCounts[empId] ?? 0;
+    const fiveStarReviews =
+      fiveStarReviewCounts[empId.trim()] ?? fiveStarReviewCounts[empId] ?? 0;
     const revenuePerHour = tech?.revenuePerHour ?? 0;
     const bookingRate = csr?.bookingRate ?? 0;
     const avgBookedRevenue = csr?.avgBookedCallRevenue ?? 0;
@@ -276,7 +352,8 @@ export async function calculateExpectedPay(
       case "hourly_to_commission": {
         const rate = (cfg.hourly_rate as number) ?? 0;
         const commissionRate = (cfg.commission_rate_pct as number) ?? 0;
-        const hourlyPay = hours * rate;
+        const byWeek = hoursByEmployeeWeek.get(empId) ?? new Map<string, number>();
+        const hourlyPay = hourlyPayWithWeeklyOvertime(byWeek, rate);
         const commissionPay = revenue * (commissionRate / 100);
         basePay = Math.max(hourlyPay, commissionPay);
         breakdown.hourly = hourlyPay;
@@ -330,11 +407,20 @@ export async function calculateExpectedPay(
       payTypeLabel = payTypeLabelHourlyVsCommission(hourlyPay, commissionPay);
     }
 
-    let bonusTotal = 0;
+    const fiveStarBonus =
+      bonusPerFiveStar > 0
+        ? Math.round(fiveStarReviews * bonusPerFiveStar * 100) / 100
+        : 0;
+    if (fiveStarBonus > 0) {
+      breakdown.five_star_review_bonus = fiveStarBonus;
+    }
+
+    let bonusTotal = fiveStarBonus;
     for (const b of bonuses) {
       const amt =
-        b.amount ??
-        getBonusAmount(b.type, empId, startDate, endDate);
+        b.type === "5_star_review"
+          ? 0
+          : b.amount ?? getBonusAmount(b.type, empId, startDate, endDate);
       bonusTotal += amt;
     }
     if (bonusTotal > 0) breakdown.bonuses = bonusTotal;
