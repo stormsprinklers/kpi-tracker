@@ -186,14 +186,27 @@ function getDateRangeForPeriod(range: KeyMetricsRange): { startDate: string | nu
   return { startDate: startStr, endDate: endStr };
 }
 
-export async function getKeyMetrics(organizationId: string, range: KeyMetricsRange = "7d"): Promise<KeyMetrics> {
+export type KeyMetricsInput =
+  | KeyMetricsRange
+  | { startDate: string | null; endDate: string | null };
+
+function resolveKeyMetricsWindow(
+  input: KeyMetricsInput
+): { startDate: string | null; endDate: string | null } {
+  if (typeof input === "string") {
+    return getDateRangeForPeriod(input);
+  }
+  return { startDate: input.startDate, endDate: input.endDate };
+}
+
+export async function getKeyMetrics(organizationId: string, input: KeyMetricsInput = "7d"): Promise<KeyMetrics> {
   const org = await getOrganizationById(organizationId);
   const companyId = org?.hcp_company_id?.trim() || "";
   if (!companyId) {
     return { jobCount: 0, revenue: 0, avgJobValue: null, conversionRate: null };
   }
 
-  const { startDate, endDate } = getDateRangeForPeriod(range);
+  const { startDate, endDate } = resolveKeyMetricsWindow(input);
 
   let jobs: unknown[] = [];
   try {

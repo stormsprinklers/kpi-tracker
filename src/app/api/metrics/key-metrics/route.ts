@@ -9,7 +9,9 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const rangeParam = searchParams.get("range") ?? "thisPayPeriod";
+  const startDateParam = searchParams.get("startDate");
+  const endDateParam = searchParams.get("endDate");
+
   const validRanges: KeyMetricsRange[] = [
     "7d",
     "30d",
@@ -17,12 +19,19 @@ export async function GET(request: Request) {
     "thisPayPeriod",
     "lastPayPeriod",
   ];
+  const rangeParam = searchParams.get("range") ?? "thisPayPeriod";
   const range = validRanges.includes(rangeParam as KeyMetricsRange)
     ? (rangeParam as KeyMetricsRange)
     : "thisPayPeriod";
 
   try {
-    const metrics = await getKeyMetrics(session.user.organizationId, range);
+    const metrics =
+      startDateParam && endDateParam
+        ? await getKeyMetrics(session.user.organizationId, {
+            startDate: startDateParam,
+            endDate: endDateParam,
+          })
+        : await getKeyMetrics(session.user.organizationId, range);
     return NextResponse.json(metrics);
   } catch (error) {
     console.error("[Key Metrics] Error:", error);

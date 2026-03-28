@@ -1,9 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getOrganizationById } from "@/lib/db/queries";
-import { KeyMetricsSection } from "@/components/KeyMetricsSection";
-import { TechnicianRevenueSection } from "@/components/TechnicianRevenueSection";
-import { CsrKpisSection } from "@/components/CsrKpisSection";
+import { DashboardHomeClient } from "@/components/DashboardHomeClient";
 import { EmployeeDashboardBanner } from "@/components/EmployeeDashboardBanner";
 import { DashboardAutoSync } from "@/components/DashboardAutoSync";
 import { LandingPage } from "@/components/LandingPage";
@@ -28,9 +26,7 @@ export default async function Home() {
         {isEmployeeWithLink && (
           <EmployeeDashboardBanner hcpEmployeeId={session.user.hcpEmployeeId!} />
         )}
-        <KeyMetricsSection connected={connected} />
-        {connected && <TechnicianRevenueSection />}
-        {connected && <CsrKpisSection />}
+        <DashboardHomeClient connected={connected} />
       </main>
     </div>
   );

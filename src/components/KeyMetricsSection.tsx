@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { DashboardDateRange } from "@/lib/dashboardDateRange";
 import { MetricTooltip } from "./MetricTooltip";
-
-type KeyMetricsRange = "thisPayPeriod" | "lastPayPeriod" | "7d" | "30d" | "all";
 
 interface KeyMetrics {
   jobCount: number;
@@ -11,14 +10,6 @@ interface KeyMetrics {
   avgJobValue: number | null;
   conversionRate: number | null;
 }
-
-const RANGE_LABELS: Record<KeyMetricsRange, string> = {
-  thisPayPeriod: "This pay period",
-  lastPayPeriod: "Last pay period",
-  "7d": "Last 7 days",
-  "30d": "Last 30 days",
-  all: "All time",
-};
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -29,8 +20,23 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-export function KeyMetricsSection({ connected }: { connected: boolean }) {
-  const [range, setRange] = useState<KeyMetricsRange>("thisPayPeriod");
+function keyMetricsUrl(dateRange: DashboardDateRange): string {
+  if (dateRange.isAllTime) {
+    return "/api/metrics/key-metrics?range=all";
+  }
+  const params = new URLSearchParams();
+  params.set("startDate", dateRange.startDate!);
+  params.set("endDate", dateRange.endDate!);
+  return `/api/metrics/key-metrics?${params}`;
+}
+
+export function KeyMetricsSection({
+  connected,
+  dateRange,
+}: {
+  connected: boolean;
+  dateRange: DashboardDateRange;
+}) {
   const [metrics, setMetrics] = useState<KeyMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +46,7 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/metrics/key-metrics?range=${range}`);
+      const res = await fetch(keyMetricsUrl(dateRange));
       if (!res.ok) throw new Error("Failed to load metrics");
       const data = await res.json();
       setMetrics(data);
@@ -49,7 +55,7 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
     } finally {
       setLoading(false);
     }
-  }, [connected, range]);
+  }, [connected, dateRange]);
 
   useEffect(() => {
     fetchMetrics();
@@ -97,26 +103,10 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
 
   return (
     <section>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-4">
         <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
           Key Metrics
         </h2>
-        <div className="flex rounded border border-zinc-300 dark:border-zinc-600">
-          {(Object.keys(RANGE_LABELS) as KeyMetricsRange[]).map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setRange(r)}
-              className={`px-3 py-1.5 text-sm ${
-                range === r
-                  ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-50"
-                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              }`}
-            >
-              {RANGE_LABELS[r]}
-            </button>
-          ))}
-        </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
@@ -132,7 +122,7 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
               <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                 {metrics?.jobCount ?? "—"}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{RANGE_LABELS[range]}</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
             </>
           )}
         </div>
@@ -149,7 +139,7 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
               <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                 {metrics != null ? formatCurrency(metrics.revenue) : "—"}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{RANGE_LABELS[range]}</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
             </>
           )}
         </div>
@@ -166,7 +156,7 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
               <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                 {metrics?.avgJobValue != null ? formatCurrency(metrics.avgJobValue) : "—"}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{RANGE_LABELS[range]}</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
             </>
           )}
         </div>
@@ -183,7 +173,7 @@ export function KeyMetricsSection({ connected }: { connected: boolean }) {
               <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                 {metrics?.conversionRate != null ? `${metrics.conversionRate.toFixed(1)}%` : "—"}
               </p>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{RANGE_LABELS[range]}</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
             </>
           )}
         </div>

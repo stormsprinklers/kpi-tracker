@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DashboardDateRange } from "@/lib/dashboardDateRange";
 import { MetricTooltip } from "./MetricTooltip";
 import { useSession } from "next-auth/react";
 
@@ -36,36 +37,6 @@ interface UnassignedRevenueJob {
   amount: number;
 }
 
-type DatePreset =
-  | "thisPayPeriod"
-  | "lastPayPeriod"
-  | "all"
-  | "7d"
-  | "14d"
-  | "30d"
-  | "thisMonth"
-  | "lastMonth"
-  | "custom";
-
-function getPayPeriodRange(offset: 0 | -1): { startDate: string; endDate: string } {
-  const dayMs = 24 * 60 * 60 * 1000;
-  const periodDays = 14;
-  const anchorStart = new Date(Date.UTC(2026, 2, 21)); // 2026-03-21
-  const now = new Date();
-  const todayUtc = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  );
-  const diffDays = Math.floor((todayUtc.getTime() - anchorStart.getTime()) / dayMs);
-  const currentIndex = Math.floor(diffDays / periodDays);
-  const index = currentIndex + offset;
-  const start = new Date(anchorStart.getTime() + index * periodDays * dayMs);
-  const end = new Date(start.getTime() + (periodDays - 1) * dayMs);
-  return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
-  };
-}
-
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -75,56 +46,6 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function getDateRange(preset: DatePreset, customStart?: string, customEnd?: string): { startDate?: string; endDate?: string } {
-  if (preset === "thisPayPeriod") {
-    const p = getPayPeriodRange(0);
-    return { startDate: p.startDate, endDate: p.endDate };
-  }
-  if (preset === "lastPayPeriod") {
-    const p = getPayPeriodRange(-1);
-    return { startDate: p.startDate, endDate: p.endDate };
-  }
-
-  const today = new Date();
-  const end = new Date(today);
-  end.setHours(23, 59, 59, 999);
-  const endStr = end.toISOString().slice(0, 10);
-
-  if (preset === "custom" && customStart && customEnd) {
-    return { startDate: customStart, endDate: customEnd };
-  }
-  if (preset === "custom") return {};
-  if (preset === "all") return {};
-  if (preset === "7d") {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 7);
-    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
-  }
-  if (preset === "14d") {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 14);
-    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
-  }
-  if (preset === "30d") {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 30);
-    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
-  }
-  if (preset === "thisMonth") {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { startDate: start.toISOString().slice(0, 10), endDate: endStr };
-  }
-  if (preset === "lastMonth") {
-    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const endLast = new Date(today.getFullYear(), today.getMonth(), 0);
-    return {
-      startDate: start.toISOString().slice(0, 10),
-      endDate: endLast.toISOString().slice(0, 10),
-    };
-  }
-  return {};
-}
-
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 0) return "?";
@@ -132,25 +53,19 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-const PRESET_LABELS: Record<DatePreset, string> = {
-  thisPayPeriod: "This pay period",
-  lastPayPeriod: "Last pay period",
-  "7d": "Last 7 days",
-  "14d": "Last 14 days",
-  "30d": "Last 30 days",
-  thisMonth: "This month",
-  lastMonth: "Last month",
-  all: "All time",
-  custom: "Custom range",
-};
+function technicianRevenueQueryParams(dateRange: DashboardDateRange): URLSearchParams {
+  const params = new URLSearchParams();
+  if (!dateRange.isAllTime && dateRange.startDate && dateRange.endDate) {
+    params.set("startDate", dateRange.startDate);
+    params.set("endDate", dateRange.endDate);
+  }
+  return params;
+}
 
-export function TechnicianRevenueSection() {
+export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDateRange }) {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
   const [viewTab, setViewTab] = useState<"cards" | "tables">("cards");
-  const [datePreset, setDatePreset] = useState<DatePreset>("thisPayPeriod");
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
   const [data, setData] = useState<TechnicianRevenueResult | null>(null);
   const [cards, setCards] = useState<TechnicianCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -163,10 +78,7 @@ export function TechnicianRevenueSection() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const range = getDateRange(datePreset, customStartDate, customEndDate);
-    const params = new URLSearchParams();
-    if (range.startDate) params.set("startDate", range.startDate);
-    if (range.endDate) params.set("endDate", range.endDate);
+    const params = technicianRevenueQueryParams(dateRange);
     const url = `/api/metrics/technician-revenue${params.toString() ? `?${params}` : ""}`;
     try {
       const res = await fetch(url);
@@ -204,14 +116,11 @@ export function TechnicianRevenueSection() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset, customStartDate, customEndDate]);
+  }, [dateRange]);
 
   const fetchUnassignedRevenue = useCallback(async () => {
     if (!isAdmin) return;
-    const range = getDateRange(datePreset, customStartDate, customEndDate);
-    const params = new URLSearchParams();
-    if (range.startDate) params.set("startDate", range.startDate);
-    if (range.endDate) params.set("endDate", range.endDate);
+    const params = technicianRevenueQueryParams(dateRange);
     const url = `/api/metrics/technician-revenue/unassigned${params.toString() ? `?${params}` : ""}`;
     setLoadingUnassigned(true);
     try {
@@ -226,7 +135,7 @@ export function TechnicianRevenueSection() {
     } finally {
       setLoadingUnassigned(false);
     }
-  }, [isAdmin, datePreset, customStartDate, customEndDate]);
+  }, [isAdmin, dateRange]);
 
   useEffect(() => {
     fetchData();
@@ -264,39 +173,6 @@ export function TechnicianRevenueSection() {
 
   const unassignedRevenueTotal = unassignedJobs.reduce((sum, j) => sum + j.amount, 0);
 
-  const dateSelector = (
-    <div className="flex flex-wrap items-center gap-2">
-      <select
-        value={datePreset}
-        onChange={(e) => setDatePreset(e.target.value as DatePreset)}
-        className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-      >
-        {(Object.keys(PRESET_LABELS) as DatePreset[]).map((key) => (
-          <option key={key} value={key}>
-            {PRESET_LABELS[key]}
-          </option>
-        ))}
-      </select>
-      {datePreset === "custom" && (
-        <>
-          <input
-            type="date"
-            value={customStartDate}
-            onChange={(e) => setCustomStartDate(e.target.value)}
-            className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-          />
-          <span className="text-sm text-zinc-500">to</span>
-          <input
-            type="date"
-            value={customEndDate}
-            onChange={(e) => setCustomEndDate(e.target.value)}
-            className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-          />
-        </>
-      )}
-    </div>
-  );
-
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -308,27 +184,24 @@ export function TechnicianRevenueSection() {
             Revenue per hour, total revenue, conversion rate, and 5-star reviews. Only technicians with jobs in the current year.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && (
-            <div className="flex rounded border border-zinc-300 dark:border-zinc-600">
-              <button
-                type="button"
-                onClick={() => setViewTab("cards")}
-                className={`px-3 py-1.5 text-sm ${viewTab === "cards" ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50" : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-              >
-                Cards
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewTab("tables")}
-                className={`px-3 py-1.5 text-sm ${viewTab === "tables" ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50" : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-              >
-                Tables
-              </button>
-            </div>
-          )}
-          {dateSelector}
-        </div>
+        {isAdmin && (
+          <div className="flex rounded border border-zinc-300 dark:border-zinc-600">
+            <button
+              type="button"
+              onClick={() => setViewTab("cards")}
+              className={`px-3 py-1.5 text-sm ${viewTab === "cards" ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50" : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+            >
+              Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewTab("tables")}
+              className={`px-3 py-1.5 text-sm ${viewTab === "tables" ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50" : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+            >
+              Tables
+            </button>
+          </div>
+        )}
       </div>
       {loading && (
         <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>

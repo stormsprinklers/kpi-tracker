@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DashboardDateRange } from "@/lib/dashboardDateRange";
 import { MetricTooltip } from "./MetricTooltip";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -15,16 +16,14 @@ interface CsrKpiEntry {
   photoUrl?: string | null;
 }
 
-type DatePreset = "7d" | "14d" | "30d" | "thisMonth" | "lastMonth" | "all";
-
-const PRESET_LABELS: Record<DatePreset, string> = {
-  "7d": "Last 7 days",
-  "14d": "Last 14 days",
-  "30d": "Last 30 days",
-  thisMonth: "This month",
-  lastMonth: "Last month",
-  all: "All time",
-};
+function csrKpisQueryParams(dateRange: DashboardDateRange): URLSearchParams {
+  const params = new URLSearchParams();
+  if (!dateRange.isAllTime && dateRange.startDate && dateRange.endDate) {
+    params.set("startDate", dateRange.startDate);
+    params.set("endDate", dateRange.endDate);
+  }
+  return params;
+}
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -49,9 +48,8 @@ function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-export function CsrKpisSection() {
+export function CsrKpisSection({ dateRange }: { dateRange: DashboardDateRange }) {
   const { data: session } = useSession();
-  const [datePreset, setDatePreset] = useState<DatePreset>("7d");
   const [cards, setCards] = useState<CsrKpiEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,46 +59,10 @@ export function CsrKpisSection() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const today = new Date();
-    const end = new Date(today);
-    end.setHours(23, 59, 59, 999);
-    const endStr = end.toISOString().slice(0, 10);
-    const params = new URLSearchParams();
-    let startStr: string;
-    if (datePreset === "7d") {
-      const s = new Date(today);
-      s.setDate(s.getDate() - 7);
-      startStr = s.toISOString().slice(0, 10);
-      params.set("startDate", startStr);
-      params.set("endDate", endStr);
-    } else if (datePreset === "14d") {
-      const s = new Date(today);
-      s.setDate(s.getDate() - 14);
-      startStr = s.toISOString().slice(0, 10);
-      params.set("startDate", startStr);
-      params.set("endDate", endStr);
-    } else if (datePreset === "30d") {
-      const s = new Date(today);
-      s.setDate(s.getDate() - 30);
-      startStr = s.toISOString().slice(0, 10);
-      params.set("startDate", startStr);
-      params.set("endDate", endStr);
-    } else if (datePreset === "thisMonth") {
-      const s = new Date(today.getFullYear(), today.getMonth(), 1);
-      startStr = s.toISOString().slice(0, 10);
-      params.set("startDate", startStr);
-      params.set("endDate", endStr);
-    } else if (datePreset === "lastMonth") {
-      const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const e = new Date(today.getFullYear(), today.getMonth(), 0);
-      params.set("startDate", s.toISOString().slice(0, 10));
-      params.set("endDate", e.toISOString().slice(0, 10));
-    } else {
-      params.set("startDate", "2000-01-01");
-      params.set("endDate", "2100-12-31");
-    }
+    const params = csrKpisQueryParams(dateRange);
+    const qs = params.toString();
     try {
-      const res = await fetch(`/api/metrics/csr-kpis?${params}`);
+      const res = await fetch(`/api/metrics/csr-kpis${qs ? `?${qs}` : ""}`);
       if (!res.ok) throw new Error("Failed to load CSR KPIs");
       const data: CsrKpiEntry[] = await res.json();
       const csrIds = data.map((c) => c.csrId);
@@ -114,7 +76,7 @@ export function CsrKpisSection() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset]);
+  }, [dateRange]);
 
   useEffect(() => {
     fetchData();
@@ -153,32 +115,15 @@ export function CsrKpisSection() {
     return session.user.role === "admin" || (session.user.role === "employee" && session.user.hcpEmployeeId === csrId);
   };
 
-  const dateSelector = (
-    <select
-      value={datePreset}
-      onChange={(e) => setDatePreset(e.target.value as DatePreset)}
-      className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-    >
-      {(Object.keys(PRESET_LABELS) as DatePreset[]).map((key) => (
-        <option key={key} value={key}>
-          {PRESET_LABELS[key]}
-        </option>
-      ))}
-    </select>
-  );
-
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            CSR KPIs
-          </h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Office staff metrics: booking rate, call duration, lead response time. Data from GoHighLevel call webhooks.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">{dateSelector}</div>
+      <div>
+        <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+          CSR KPIs
+        </h2>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Office staff metrics: booking rate, call duration, lead response time. Data from GoHighLevel call webhooks.
+        </p>
       </div>
       {loading && (
         <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
