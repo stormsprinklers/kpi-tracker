@@ -176,6 +176,7 @@ export function TimeInsightsClient() {
           <ExpectedPayTable
             syncedStartDate={range.startDate}
             syncedEndDate={range.endDate}
+            excludeZeroHours
             avgJobsPerDayByEmployee={Object.fromEntries(
               data.averageJobsPerDayPerTechnician.map((t) => [t.technicianId, t.avgJobsPerDay])
             )}

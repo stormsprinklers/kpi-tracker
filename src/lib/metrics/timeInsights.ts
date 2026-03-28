@@ -1,4 +1,3 @@
-import { getHcpClient } from "../housecallpro";
 import {
   getJobsFromDb,
   getEmployeesFromDb,
@@ -86,6 +85,22 @@ function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDat
 function isKpiJobStatus(job: Record<string, unknown>): boolean {
   const status = String(job.work_status ?? "").trim().toLowerCase();
   return status === "in_progress" || status === "completed";
+}
+
+function getScheduledJobDate(job: Record<string, unknown>): Date | null {
+  const sched = job.schedule as Record<string, unknown> | undefined;
+  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
+  const dateStr = scheduled as string | undefined;
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): boolean {
+  const scheduled = getScheduledJobDate(job);
+  if (!scheduled) return false;
+  const scheduledDay = scheduled.toISOString().slice(0, 10);
+  return scheduledDay > todayYmd;
 }
 
 /** Extract timestamps from job. Handles job-level work_timestamps and per-assigned-employee. */
@@ -189,19 +204,8 @@ export async function getTimeInsights(
   organizationId: string,
   filters?: TimeInsightsFilters
 ): Promise<TimeInsightsResult> {
-  let companyId = "default";
-  try {
-    const org = await getOrganizationById(organizationId);
-    if (org?.hcp_company_id) {
-      companyId = org.hcp_company_id;
-    }
-    const client = await getHcpClient(organizationId);
-    const company = (await client.getCompany()) as { id?: string; company_id?: string };
-    companyId = company?.id ?? company?.company_id ?? companyId;
-  } catch {
-    const org = await getOrganizationById(organizationId).catch(() => null);
-    if (org?.hcp_company_id) companyId = org.hcp_company_id;
-  }
+  const org = await getOrganizationById(organizationId).catch(() => null);
+  const companyId = org?.hcp_company_id ?? "default";
 
   const { startDate, endDate } = filters ?? {};
 
@@ -212,19 +216,14 @@ export async function getTimeInsights(
     if (id) employeeMap.set(id, getEmployeeName(emp));
   }
 
-  let jobs = await getJobsFromDb(companyId).catch(() => [] as Record<string, unknown>[]);
-  if (jobs.length === 0) {
-    try {
-      const client = await getHcpClient(organizationId);
-      const apiJobs = await client.getJobsAllPages();
-      jobs = (Array.isArray(apiJobs) ? apiJobs : []) as Record<string, unknown>[];
-    } catch {
-      /* skip */
-    }
-  }
+  const jobs = await getJobsFromDb(companyId).catch(() => [] as Record<string, unknown>[]);
+  const todayYmd = new Date().toISOString().slice(0, 10);
 
   const filteredJobs = jobs.filter(
-    (j) => jobInDateRange(j, startDate, endDate) && isKpiJobStatus(j)
+    (j) =>
+      jobInDateRange(j, startDate, endDate) &&
+      isKpiJobStatus(j) &&
+      !isFutureScheduledJob(j, todayYmd)
   );
 
   // 1. Average jobs per day per technician

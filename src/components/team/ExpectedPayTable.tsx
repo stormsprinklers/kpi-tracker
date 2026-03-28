@@ -12,6 +12,8 @@ type ExpectedPayTableProps = {
   syncedStartDate?: string;
   syncedEndDate?: string;
   avgJobsPerDayByEmployee?: Record<string, number>;
+  /** Omit rows with no timesheet hours in the selected range (Time Insights). */
+  excludeZeroHours?: boolean;
 };
 
 function formatMoney(n: number): string {
@@ -27,6 +29,7 @@ export function ExpectedPayTable({
   syncedStartDate,
   syncedEndDate,
   avgJobsPerDayByEmployee,
+  excludeZeroHours = false,
 }: ExpectedPayTableProps = {}) {
   const isSynced =
     typeof syncedStartDate === "string" &&
@@ -92,17 +95,22 @@ export function ExpectedPayTable({
     fetchExpected();
   }, [fetchExpected]);
 
+  const visibleResults = useMemo(() => {
+    if (!excludeZeroHours) return results;
+    return results.filter((r) => (typeof r.hoursWorked === "number" ? r.hoursWorked : 0) > 0);
+  }, [results, excludeZeroHours]);
+
   const totals = useMemo(() => {
     let totalHours = 0;
     let totalPay = 0;
-    for (const r of results) {
+    for (const r of visibleResults) {
       totalHours += typeof r.hoursWorked === "number" ? r.hoursWorked : 0;
       totalPay += typeof r.expectedPay === "number" ? r.expectedPay : 0;
     }
     const blendedEffective =
       totalHours > 0 ? Math.round((totalPay / totalHours) * 100) / 100 : null;
     return { totalHours, totalPay, blendedEffective };
-  }, [results]);
+  }, [visibleResults]);
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -196,7 +204,7 @@ export function ExpectedPayTable({
             </tr>
           </thead>
           <tbody>
-            {results.map((r) => (
+            {visibleResults.map((r) => (
               <tr key={r.hcpEmployeeId} className="border-b border-zinc-100 dark:border-zinc-800">
                 <td className="py-2 pl-4 text-zinc-900 dark:text-zinc-50">
                   {r.employeeName ?? r.hcpEmployeeId}
@@ -225,7 +233,7 @@ export function ExpectedPayTable({
               </tr>
             ))}
           </tbody>
-          {results.length > 0 && (
+          {visibleResults.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-zinc-300 bg-zinc-50/80 dark:border-zinc-600 dark:bg-zinc-900/80">
                 <td className="py-2.5 pl-4 font-semibold text-zinc-900 dark:text-zinc-50">
@@ -240,11 +248,11 @@ export function ExpectedPayTable({
                 <td className="py-2.5 pl-1" />
                 <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                   {formatMoney(
-                    results.reduce((sum, r) => sum + (typeof r.totalRevenue === "number" ? r.totalRevenue : 0), 0)
+                    visibleResults.reduce((sum, r) => sum + (typeof r.totalRevenue === "number" ? r.totalRevenue : 0), 0)
                   )}
                 </td>
                 <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                  {results.reduce((sum, r) => sum + (typeof r.reviews === "number" ? r.reviews : 0), 0)}
+                  {visibleResults.reduce((sum, r) => sum + (typeof r.reviews === "number" ? r.reviews : 0), 0)}
                 </td>
                 <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                   {totals.blendedEffective != null ? formatMoney(totals.blendedEffective) : "—"}
@@ -257,9 +265,11 @@ export function ExpectedPayTable({
           )}
         </table>
       </div>
-      {results.length === 0 && !loading && !error && (
+      {visibleResults.length === 0 && !loading && !error && (
         <p className="px-4 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
-          No expected pay data for this period. Set up Performance Pay first.
+          {excludeZeroHours && results.length > 0
+            ? "No employees with logged hours in this period."
+            : "No expected pay data for this period. Set up Performance Pay first."}
         </p>
       )}
     </div>

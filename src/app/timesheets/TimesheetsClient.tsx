@@ -37,18 +37,32 @@ interface TimesheetsClientProps {
   hcpEmployeeId?: string;
 }
 
+/** Same biweekly anchor as dashboard / Time Insights (first period 2026-03-21 → 2026-04-03). */
+function getPayPeriodRange(offset: 0 | -1): { startDate: string; endDate: string } {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const periodDays = 14;
+  const anchorStart = new Date(Date.UTC(2026, 2, 21));
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const diffDays = Math.floor((todayUtc.getTime() - anchorStart.getTime()) / dayMs);
+  const currentIndex = Math.floor(diffDays / periodDays);
+  const index = currentIndex + offset;
+  const start = new Date(anchorStart.getTime() + index * periodDays * dayMs);
+  const end = new Date(start.getTime() + (periodDays - 1) * dayMs);
+  return {
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+  };
+}
+
 export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId }: TimesheetsClientProps = {}) {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [formEmployeeId, setFormEmployeeId] = useState<string>("");
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d.toISOString().slice(0, 10);
-  });
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(() => getPayPeriodRange(0).startDate);
+  const [endDate, setEndDate] = useState(() => getPayPeriodRange(0).endDate);
   const [showForm, setShowForm] = useState(false);
   const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
   const [formHours, setFormHours] = useState("8");

@@ -9,17 +9,6 @@ import {
   upsertJobRevenueAssignment,
 } from "@/lib/db/queries";
 
-const COMPLETED_JOB_STATUSES = new Set([
-  "paid",
-  "completed",
-  "complete",
-  "closed",
-  "done",
-  "paid_in_full",
-  "invoiced",
-  "finished",
-]);
-
 function toDollars(value: unknown): number {
   const n =
     typeof value === "number" && !Number.isNaN(value)
@@ -33,10 +22,8 @@ function toDollars(value: unknown): number {
 }
 
 function isPaidOrCompleted(job: Record<string, unknown>): boolean {
-  const status = (job.status ?? job.job_status ?? job.work_status ?? job.state ?? "")
-    .toString()
-    .toLowerCase();
-  return COMPLETED_JOB_STATUSES.has(status);
+  const status = String(job.work_status ?? "").trim().toLowerCase();
+  return status === "in_progress" || status === "completed";
 }
 
 function getPaidAmountFromJob(job: Record<string, unknown>): number {
@@ -74,6 +61,15 @@ function getJobDate(job: Record<string, unknown>): string | null {
   const dateStr = (completed ?? scheduled ?? created) as string | undefined;
   if (!dateStr) return null;
   const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+function getScheduledJobDate(job: Record<string, unknown>): string | null {
+  const sched = job.schedule as Record<string, unknown> | undefined;
+  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
+  if (!scheduled) return null;
+  const d = new Date(String(scheduled));
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString().slice(0, 10);
 }
@@ -133,6 +129,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get("startDate") ?? undefined;
   const endDate = searchParams.get("endDate") ?? undefined;
+  const todayYmd = new Date().toISOString().slice(0, 10);
 
   const unassigned = jobs
     .map((j) => j as Record<string, unknown>)
@@ -148,6 +145,8 @@ export async function GET(request: Request) {
       const day = getJobDate(job);
       if (startDate && day && day < startDate) return false;
       if (endDate && day && day > endDate) return false;
+      const scheduledDay = getScheduledJobDate(job);
+      if (scheduledDay && scheduledDay > todayYmd) return false;
       return true;
     })
     .slice(0, 200)
