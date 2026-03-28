@@ -16,6 +16,7 @@ interface TimeInsightsResult {
   averageLaborTimeMinutes: number | null;
   averageRevenuePerJob: number | null;
   averageRevenuePerHour: number | null;
+  laborPercentOfRevenue: number | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -125,7 +126,7 @@ export function TimeInsightsClient() {
         <>
           {/* Main rollup metrics */}
           <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
                 <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                   {data.averageDriveTimeMinutes != null ? `${data.averageDriveTimeMinutes} min` : "—"}
@@ -167,6 +168,19 @@ export function TimeInsightsClient() {
                   <MetricTooltip
                     label="Average Revenue per Hour"
                     tooltip="Paid revenue divided by total logged labor hours from job start/completion timestamps."
+                  />
+                </p>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-700 dark:bg-zinc-900/50">
+                <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+                  {data.laborPercentOfRevenue != null
+                    ? `${data.laborPercentOfRevenue.toFixed(1)}%`
+                    : "—"}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <MetricTooltip
+                    label="Labor % of revenue"
+                    tooltip="Total expected pay for everyone in this period (Performance Pay) divided by total attributed technician revenue in the same period, shown as a percentage."
                   />
                 </p>
               </div>

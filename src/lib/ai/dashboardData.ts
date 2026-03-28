@@ -81,6 +81,7 @@ export async function fetchDashboardData(
         avgLaborTimeMinutes: timeInsights.averageLaborTimeMinutes,
         avgRevenuePerJob: timeInsights.averageRevenuePerJob,
         avgRevenuePerHour: timeInsights.averageRevenuePerHour,
+        laborPercentOfRevenue: timeInsights.laborPercentOfRevenue,
       };
     }
 

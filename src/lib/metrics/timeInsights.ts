@@ -2,7 +2,9 @@ import {
   getJobsFromDb,
   getEmployeesFromDb,
   getOrganizationById,
+  getInvoicesFromDb,
 } from "../db/queries";
+import { calculateExpectedPay } from "../performancePay";
 
 export interface TimeInsightsFilters {
   startDate?: string; // ISO date YYYY-MM-DD
@@ -21,9 +23,62 @@ export interface TimeInsightsResult {
   averageLaborTimeMinutes: number | null;
   averageRevenuePerJob: number | null;
   averageRevenuePerHour: number | null;
+  /** Sum(expected pay) / sum(attributed revenue) from Performance Pay for the period, as 0–100+ (e.g. 35.5 = 35.5%). */
+  laborPercentOfRevenue: number | null;
 }
 
 const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
+
+/** Statuses that indicate finished / billable work (HCP varies by field and spelling). */
+const DONE_OR_PAID_STATUSES = new Set([
+  "completed",
+  "complete",
+  "closed",
+  "done",
+  "paid",
+  "paid_in_full",
+  "invoiced",
+  "finished",
+]);
+
+function normalizeJobStatus(job: Record<string, unknown>): string {
+  const raw =
+    job.work_status ??
+    job.status ??
+    job.job_status ??
+    job.state;
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function isCancelledJob(job: Record<string, unknown>): boolean {
+  const s = normalizeJobStatus(job);
+  return (
+    s.includes("cancel") ||
+    s === "void" ||
+    s === "voided" ||
+    s === "declined"
+  );
+}
+
+/** Same first hop as technician revenue: only these statuses read job-level paid fields. */
+function isPaidOrCompletedForJobBody(job: Record<string, unknown>): boolean {
+  const s = normalizeJobStatus(job);
+  return s === "in_progress" || s === "inprogress" || s === "completed" || s === "complete";
+}
+
+/**
+ * Include in Time Insights if the job is active/done-like or has paid invoice data.
+ * (Strict in_progress|completed-only filter dropped too many HCP jobs that still have timestamps/revenue.)
+ */
+function shouldIncludeJobInTimeInsights(paidAmount: number, job: Record<string, unknown>): boolean {
+  if (paidAmount > 0) return true;
+  const s = normalizeJobStatus(job);
+  if (s === "in_progress" || s === "inprogress") return true;
+  return DONE_OR_PAID_STATUSES.has(s);
+}
 
 function isOfficeStaff(role: unknown): boolean {
   const r = (role ?? "").toString().toLowerCase().replace(/\s+/g, " ");
@@ -59,14 +114,14 @@ function getEmployeeName(emp: Record<string, unknown>): string {
   return name || String(emp.email ?? emp.email_address ?? emp.id ?? "Unknown");
 }
 
+/** Match technician revenue / key metrics: completed → scheduled → created (no started_at for range). */
 function getJobDate(job: Record<string, unknown>): Date | null {
   const wt = job.work_timestamps as Record<string, unknown> | undefined;
   const sched = job.schedule as Record<string, unknown> | undefined;
   const completed = wt?.completed_at ?? wt?.completed;
-  const started = wt?.started_at ?? wt?.started ?? wt?.arrived_at ?? wt?.arrived;
   const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
   const created = job.created_at ?? job.createdAt;
-  const dateStr = (completed ?? started ?? scheduled ?? created) as string | undefined;
+  const dateStr = (completed ?? scheduled ?? created) as string | undefined;
   if (!dateStr) return null;
   const d = new Date(dateStr);
   return Number.isNaN(d.getTime()) ? null : d;
@@ -80,11 +135,6 @@ function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDat
   if (startDate && jobDay < startDate) return false;
   if (endDate && jobDay > endDate) return false;
   return true;
-}
-
-function isKpiJobStatus(job: Record<string, unknown>): boolean {
-  const status = String(job.work_status ?? "").trim().toLowerCase();
-  return status === "in_progress" || status === "completed";
 }
 
 function getScheduledJobDate(job: Record<string, unknown>): Date | null {
@@ -103,34 +153,11 @@ function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): b
   return scheduledDay > todayYmd;
 }
 
-/** Extract timestamps from job. Handles job-level work_timestamps and per-assigned-employee. */
-function extractTimestamps(job: Record<string, unknown>): {
+function parseWorkTimestampFields(wt: Record<string, unknown>): {
   enRouteAt: Date | null;
   startedAt: Date | null;
   completedAt: Date | null;
 } {
-  const wt = job.work_timestamps as Record<string, unknown> | undefined;
-  if (!wt) {
-    // Check assigned_employees for per-tech timestamps
-    const assigned = job.assigned_employees ?? job.assigned_pro ?? job.assigned_employee;
-    const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
-    for (const a of items) {
-      if (a && typeof a === "object") {
-        const awt = (a as Record<string, unknown>).work_timestamps as Record<string, unknown> | undefined;
-        if (awt) {
-          const enRoute = awt.on_my_way_at ?? awt.en_route_at ?? awt.en_route;
-          const started = awt.started_at ?? awt.started ?? awt.arrived_at ?? awt.arrived;
-          const completed = awt.completed_at ?? awt.completed;
-          const enRouteDate = enRoute ? new Date(enRoute as string) : null;
-          const startedDate = started ? new Date(started as string) : null;
-          const completedDate = completed ? new Date(completed as string) : null;
-          if (enRouteDate && !Number.isNaN(enRouteDate.getTime())) return { enRouteAt: enRouteDate, startedAt: startedDate && !Number.isNaN(startedDate.getTime()) ? startedDate : null, completedAt: completedDate && !Number.isNaN(completedDate.getTime()) ? completedDate : null };
-        }
-      }
-    }
-    return { enRouteAt: null, startedAt: null, completedAt: null };
-  }
-
   const enRoute = wt.on_my_way_at ?? wt.en_route_at ?? wt.en_route;
   const started = wt.started_at ?? wt.started ?? wt.arrived_at ?? wt.arrived;
   const completed = wt.completed_at ?? wt.completed;
@@ -142,6 +169,43 @@ function extractTimestamps(job: Record<string, unknown>): {
     startedAt: startedDate && !Number.isNaN(startedDate.getTime()) ? startedDate : null,
     completedAt: completedDate && !Number.isNaN(completedDate.getTime()) ? completedDate : null,
   };
+}
+
+function extractTimestampsFromAssigned(job: Record<string, unknown>): {
+  enRouteAt: Date | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+} {
+  const assigned = job.assigned_employees ?? job.assigned_pro ?? job.assigned_employee;
+  const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
+  const out = { enRouteAt: null as Date | null, startedAt: null as Date | null, completedAt: null as Date | null };
+  for (const a of items) {
+    if (!a || typeof a !== "object") continue;
+    const awt = (a as Record<string, unknown>).work_timestamps as Record<string, unknown> | undefined;
+    if (!awt) continue;
+    const t = parseWorkTimestampFields(awt);
+    if (!out.enRouteAt && t.enRouteAt) out.enRouteAt = t.enRouteAt;
+    if (!out.startedAt && t.startedAt) out.startedAt = t.startedAt;
+    if (!out.completedAt && t.completedAt) out.completedAt = t.completedAt;
+    if (out.enRouteAt && out.startedAt && out.completedAt) break;
+  }
+  return out;
+}
+
+/** Job-level work_timestamps; if empty, use per-assignee timestamps (common in HCP payloads). */
+function extractTimestamps(job: Record<string, unknown>): {
+  enRouteAt: Date | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+} {
+  const wt = job.work_timestamps as Record<string, unknown> | undefined;
+  if (wt && typeof wt === "object" && !Array.isArray(wt)) {
+    const fromWt = parseWorkTimestampFields(wt);
+    if (fromWt.enRouteAt || fromWt.startedAt || fromWt.completedAt) {
+      return fromWt;
+    }
+  }
+  return extractTimestampsFromAssigned(job);
 }
 
 /** Drive time in minutes. Returns null if timestamps missing. */
@@ -174,6 +238,7 @@ function toDollars(value: unknown): number {
   return n;
 }
 
+/** Match technician revenue / key metrics (cents fallbacks on job). */
 function getPaidAmountFromJob(job: Record<string, unknown>): number {
   const totals = job.totals as Record<string, unknown> | undefined;
   const financial = job.financial as Record<string, unknown> | undefined;
@@ -195,9 +260,54 @@ function getPaidAmountFromJob(job: Record<string, unknown>): number {
     totals?.outstanding_balance ??
     financial?.outstanding_balance ??
     0;
-  const totalNum = toDollars(total);
+  let totalNum = toDollars(total);
+  if (totalNum <= 0) {
+    const cents = job.amount_cents ?? job.total_cents ?? totals?.amount_cents;
+    if (typeof cents === "number" && cents > 0) totalNum = cents / 100;
+  }
+  if (Number.isInteger(totalNum) && totalNum > 3000) totalNum = totalNum / 100;
   const outNum = toDollars(outstanding);
   return Math.max(0, totalNum - outNum) || totalNum;
+}
+
+function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
+  const val =
+    inv.paid_amount ??
+    inv.amount_paid ??
+    inv.total ??
+    inv.paid_total ??
+    inv.amount ??
+    inv.total_amount;
+  const cents = inv.amount_cents ?? inv.paid_cents;
+  if (typeof cents === "number" && cents > 0) return cents / 100;
+  const n =
+    typeof val === "number" && !Number.isNaN(val)
+      ? val
+      : typeof val === "string"
+        ? parseFloat(val) || 0
+        : 0;
+  if (n <= 0) return 0;
+  if (Number.isInteger(n) && n > 3000) return n / 100;
+  return n;
+}
+
+async function resolvePaidAmountForJob(
+  companyId: string,
+  job: Record<string, unknown>
+): Promise<number> {
+  const isPaid = isPaidOrCompletedForJobBody(job);
+  let paidAmount = isPaid ? getPaidAmountFromJob(job) : 0;
+  if (paidAmount <= 0 && job.id) {
+    try {
+      const invoices = await getInvoicesFromDb(companyId, String(job.id));
+      for (const inv of invoices) {
+        paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
+      }
+    } catch {
+      /* skip */
+    }
+  }
+  return paidAmount;
 }
 
 export async function getTimeInsights(
@@ -205,7 +315,17 @@ export async function getTimeInsights(
   filters?: TimeInsightsFilters
 ): Promise<TimeInsightsResult> {
   const org = await getOrganizationById(organizationId).catch(() => null);
-  const companyId = org?.hcp_company_id ?? "default";
+  const companyId = org?.hcp_company_id?.trim() ?? "";
+  if (!companyId) {
+    return {
+      averageJobsPerDayPerTechnician: [],
+      averageDriveTimeMinutes: null,
+      averageLaborTimeMinutes: null,
+      averageRevenuePerJob: null,
+      averageRevenuePerHour: null,
+      laborPercentOfRevenue: null,
+    };
+  }
 
   const { startDate, endDate } = filters ?? {};
 
@@ -219,16 +339,20 @@ export async function getTimeInsights(
   const jobs = await getJobsFromDb(companyId).catch(() => [] as Record<string, unknown>[]);
   const todayYmd = new Date().toISOString().slice(0, 10);
 
-  const filteredJobs = jobs.filter(
-    (j) =>
-      jobInDateRange(j, startDate, endDate) &&
-      isKpiJobStatus(j) &&
-      !isFutureScheduledJob(j, todayYmd)
-  );
+  /** Same inclusion idea as technician revenue: date + not future-scheduled + not cancelled + paid or active/done status. */
+  const included: { job: Record<string, unknown>; paid: number }[] = [];
+  for (const j of jobs) {
+    if (!jobInDateRange(j, startDate, endDate)) continue;
+    if (isFutureScheduledJob(j, todayYmd)) continue;
+    if (isCancelledJob(j)) continue;
+    const paid = await resolvePaidAmountForJob(companyId, j);
+    if (!shouldIncludeJobInTimeInsights(paid, j)) continue;
+    included.push({ job: j, paid });
+  }
 
   // 1. Average jobs per day per technician
   const jobsByTechAndDate = new Map<string, Map<string, number>>();
-  for (const job of filteredJobs) {
+  for (const { job } of included) {
     const techIds = getTechnicianIds(job);
     const jobDate = getJobDate(job);
     const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
@@ -260,7 +384,7 @@ export async function getTimeInsights(
   // 2. Average drive time
   let totalDriveMinutes = 0;
   let driveCount = 0;
-  for (const job of filteredJobs) {
+  for (const { job } of included) {
     const drive = getDriveTimeMinutes(job);
     if (drive != null) {
       totalDriveMinutes += drive;
@@ -269,14 +393,13 @@ export async function getTimeInsights(
   }
   const averageDriveTimeMinutes = driveCount > 0 ? Math.round(totalDriveMinutes / driveCount) : null;
 
-  // 3. Overall labor and revenue rollups
+  // 3. Overall labor and revenue rollups (paid amounts include invoice fallback)
   let totalLaborMinutes = 0;
   let laborJobCount = 0;
   let totalPaidRevenue = 0;
   let paidJobCount = 0;
   let totalRevenueOnLaborJobs = 0;
-  for (const job of filteredJobs) {
-    const paid = getPaidAmountFromJob(job);
+  for (const { job, paid } of included) {
     if (paid > 0) {
       totalPaidRevenue += paid;
       paidJobCount += 1;
@@ -300,11 +423,35 @@ export async function getTimeInsights(
       ? Math.round((totalRevenueOnLaborJobs / (totalLaborMinutes / 60)) * 100) / 100
       : null;
 
+  let laborPercentOfRevenue: number | null = null;
+  if (startDate && endDate) {
+    try {
+      const expectedRows = await calculateExpectedPay({
+        organizationId,
+        startDate,
+        endDate,
+      });
+      let totalExpectedPay = 0;
+      let totalAttributedRevenue = 0;
+      for (const r of expectedRows) {
+        totalExpectedPay += typeof r.expectedPay === "number" ? r.expectedPay : 0;
+        totalAttributedRevenue += typeof r.totalRevenue === "number" ? r.totalRevenue : 0;
+      }
+      if (totalAttributedRevenue > 0) {
+        laborPercentOfRevenue =
+          Math.round((totalExpectedPay / totalAttributedRevenue) * 10000) / 100;
+      }
+    } catch {
+      laborPercentOfRevenue = null;
+    }
+  }
+
   return {
     averageJobsPerDayPerTechnician,
     averageDriveTimeMinutes,
     averageLaborTimeMinutes,
     averageRevenuePerJob,
     averageRevenuePerHour,
+    laborPercentOfRevenue,
   };
 }
