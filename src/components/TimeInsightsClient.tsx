@@ -170,7 +170,7 @@ export function TimeInsightsClient() {
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Avg RPH (on-the-job)"
-                    tooltip="Total paid revenue in this period divided by timesheet hours clocked to a job (entries with a job linked). Field staff only; CSR/office selections excluded."
+                    tooltip="Uses timesheet hours tied to a job (job_hcp_id) when you have them; otherwise paid revenue on jobs with HCP start→complete timestamps divided by that on-site labor time. Field-only timesheet hours when using the clock."
                   />
                 </p>
               </div>

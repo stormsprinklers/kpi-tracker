@@ -26,7 +26,10 @@ export interface TimeInsightsResult {
   averageDriveTimeMinutes: number | null;
   averageLaborTimeMinutes: number | null;
   averageRevenuePerJob: number | null;
-  /** Total paid revenue in period ÷ sum of timesheet hours tied to a job (job_hcp_id set), field staff only. */
+  /**
+   * On-job RPH: prefers timesheet hours with job_hcp_id (field staff) vs total paid revenue in period;
+   * if none, uses paid revenue on jobs with HCP start→complete time ÷ that labor time.
+   */
   averageRevenuePerOnJobHour: number | null;
   /** Total paid revenue in period ÷ sum of all timesheet hours, field staff only (excludes CSR selections or office staff). */
   averageRevenuePerLoggedHour: number | null;
@@ -461,6 +464,8 @@ export async function getTimeInsights(
   let laborJobCount = 0;
   let totalPaidRevenue = 0;
   let paidJobCount = 0;
+  /** Paid revenue on jobs that have HCP start→complete labor timestamps (fallback for on-job RPH). */
+  let totalRevenueOnLaborJobs = 0;
   for (const { job, paid } of included) {
     if (paid > 0) {
       totalPaidRevenue += paid;
@@ -471,6 +476,9 @@ export async function getTimeInsights(
     if (jobTime == null) continue;
     totalLaborMinutes += jobTime;
     laborJobCount += 1;
+    if (paid > 0) {
+      totalRevenueOnLaborJobs += paid;
+    }
   }
 
   const averageLaborTimeMinutes =
@@ -508,6 +516,12 @@ export async function getTimeInsights(
       averageRevenuePerLoggedHour =
         Math.round((totalPaidRevenue / totalFieldLoggedHours) * 100) / 100;
     }
+  }
+
+  if (averageRevenuePerOnJobHour == null && totalLaborMinutes > 0) {
+    /** No timesheet hours linked to jobs (clock often omits job_hcp_id). Use HCP on-site labor + paid revenue on those jobs. */
+    averageRevenuePerOnJobHour =
+      Math.round((totalRevenueOnLaborJobs / (totalLaborMinutes / 60)) * 100) / 100;
   }
 
   let laborPercentOfRevenue: number | null = null;
