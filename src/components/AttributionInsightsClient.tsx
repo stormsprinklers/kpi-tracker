@@ -316,7 +316,10 @@ export function AttributionInsightsClient() {
     setSubaccountBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/attribution/twilio-subaccount", { method: "POST" });
+      const res = await fetch("/api/attribution/twilio-subaccount", {
+        method: "POST",
+        credentials: "include",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Failed to create Twilio workspace");
       setInstall((prev) =>

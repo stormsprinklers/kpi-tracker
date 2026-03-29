@@ -11,6 +11,32 @@ import { getTwilioMasterClient } from "@/lib/twilio/client";
 
 export const dynamic = "force-dynamic";
 
+/** Twilio returns message "Authenticate" with 401 when Account SID / key / secret don’t match. */
+function friendlyTwilioProvisionError(e: unknown): string {
+  if (!(e && typeof e === "object")) {
+    return e instanceof Error ? e.message : "Provisioning failed";
+  }
+  const err = e as { message?: string; status?: number; code?: number };
+  const msg = (err.message ?? "").trim();
+  const status = err.status;
+  const code = err.code;
+  if (
+    msg === "Authenticate" ||
+    status === 401 ||
+    code === 20003 ||
+    /authentication/i.test(msg) ||
+    /authenticat/i.test(msg)
+  ) {
+    return (
+      "Twilio rejected the server credentials (not your browser login). " +
+      "In Vercel, set the parent Account SID as TWILIO_MASTER_ACCOUNT_SID or TWILIO_ACCOUNT_SID — it must start with AC. " +
+      "Pair it with TWILIO_MASTER_API_KEY_SID + TWILIO_MASTER_API_KEY_SECRET (or TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET). " +
+      "The SID starting with SK is the API key, not the account. You can use TWILIO_MASTER_AUTH_TOKEN + Account SID instead of an API key."
+    );
+  }
+  return msg || "Provisioning failed";
+}
+
 function requireAdmin(session: { user?: { organizationId?: string | null; role?: string } } | null) {
   if (!session?.user?.organizationId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (session.user.role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
@@ -94,9 +120,10 @@ export async function POST() {
       twilioSubaccountCreatedAt: updated?.twilio_subaccount_created_at ?? null,
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Provisioning failed";
+    const raw = e instanceof Error ? e.message : "Provisioning failed";
+    const msg = friendlyTwilioProvisionError(e);
     console.error("[attribution/twilio-subaccount POST]", e);
-    if (msg.includes("TWILIO_SUBACCOUNT_CREDENTIALS_ENCRYPTION_KEY")) {
+    if (raw.includes("TWILIO_SUBACCOUNT_CREDENTIALS_ENCRYPTION_KEY") || msg.includes("TWILIO_SUBACCOUNT_CREDENTIALS_ENCRYPTION_KEY")) {
       return NextResponse.json(
         {
           error:
@@ -105,6 +132,8 @@ export async function POST() {
         { status: 503 }
       );
     }
-    return NextResponse.json({ error: msg }, { status: 400 });
+    const status =
+      e && typeof e === "object" && (e as { status?: number }).status === 401 ? 502 : 400;
+    return NextResponse.json({ error: msg }, { status });
   }
 }
