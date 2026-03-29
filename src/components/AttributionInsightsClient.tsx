@@ -15,6 +15,10 @@ type InstallResponse = {
   verifiedAt: string | null;
   lastEventAt: string | null;
   website: string;
+  defaultForwardE164: string | null;
+  twilioIntelligenceServiceSid: string | null;
+  twilioSubaccountSid: string | null;
+  twilioSubaccountCreatedAt: string | null;
 };
 
 type EventsResponse = {
@@ -27,6 +31,27 @@ type EventsResponse = {
   }>;
   counts30d: Record<string, number>;
 };
+
+type ActivePhone = {
+  id: string;
+  source_id: string;
+  phone_e164: string;
+  forward_to_e164: string;
+};
+
+type TwilioCallRow = {
+  id: string;
+  call_sid: string;
+  from_e164: string | null;
+  to_e164: string | null;
+  duration_seconds: number | null;
+  transcript_status: string;
+  transcript_preview: string | null;
+  created_at: string;
+  source_label: string | null;
+};
+
+type SearchNumber = { phone_number: string; friendly_name?: string; locality?: string; region?: string };
 
 const WIZARD_STEPS = [
   {
@@ -44,6 +69,10 @@ const WIZARD_STEPS = [
   {
     title: "Tracking links per channel",
     short: "Links",
+  },
+  {
+    title: "Call tracking (Twilio)",
+    short: "Phones",
   },
   {
     title: "Verify & monitor",
@@ -69,23 +98,58 @@ export function AttributionInsightsClient() {
   const [savingOrigins, setSavingOrigins] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activePhones, setActivePhones] = useState<ActivePhone[]>([]);
+  const [twilioCalls, setTwilioCalls] = useState<TwilioCallRow[]>([]);
+  const [defaultForwardInput, setDefaultForwardInput] = useState("");
+  const [intelligenceSidInput, setIntelligenceSidInput] = useState("");
+  const [savingCallSettings, setSavingCallSettings] = useState(false);
+  const [searchAreaCode, setSearchAreaCode] = useState("");
+  const [searchLocality, setSearchLocality] = useState("");
+  const [searchRegion, setSearchRegion] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchNumber[]>([]);
+  const [provisionSourceId, setProvisionSourceId] = useState("");
+  const [provisionForwardOverride, setProvisionForwardOverride] = useState("");
+  const [subaccountBusy, setSubaccountBusy] = useState(false);
 
   async function loadAll() {
     setError(null);
-    const [installRes, sourceRes, eventsRes] = await Promise.all([
+    const [installRes, sourceRes, eventsRes, activeRes, callsRes] = await Promise.all([
       fetch("/api/attribution/install", { cache: "no-store" }),
       fetch("/api/attribution/sources", { cache: "no-store" }),
       fetch("/api/attribution/events", { cache: "no-store" }),
+      fetch("/api/attribution/phone-numbers/active", { cache: "no-store" }),
+      fetch("/api/attribution/twilio-calls", { cache: "no-store" }),
     ]);
     if (!installRes.ok || !sourceRes.ok || !eventsRes.ok) {
       throw new Error("Failed to load attribution data.");
     }
-    const installJson = (await installRes.json()) as InstallResponse;
-    setInstall(installJson);
+    const installJson = (await installRes.json()) as InstallResponse & {
+      twilioSubaccountSid?: string | null;
+      twilioSubaccountCreatedAt?: string | null;
+    };
+    setInstall({
+      ...installJson,
+      twilioSubaccountSid: installJson.twilioSubaccountSid ?? null,
+      twilioSubaccountCreatedAt: installJson.twilioSubaccountCreatedAt ?? null,
+    });
     setAllowedOriginsText((installJson.allowedOrigins ?? []).join("\n"));
+    setDefaultForwardInput(installJson.defaultForwardE164 ?? "");
+    setIntelligenceSidInput(installJson.twilioIntelligenceServiceSid ?? "");
     if (installJson.publishableKey) setNewPublishableKey(installJson.publishableKey);
     setSources((await sourceRes.json()) as Source[]);
     setEvents((await eventsRes.json()) as EventsResponse);
+    if (activeRes.ok) {
+      const a = (await activeRes.json()) as { active: ActivePhone[] };
+      setActivePhones(a.active ?? []);
+    } else {
+      setActivePhones([]);
+    }
+    if (callsRes.ok) {
+      const c = (await callsRes.json()) as { calls: TwilioCallRow[] };
+      setTwilioCalls(c.calls ?? []);
+    } else {
+      setTwilioCalls([]);
+    }
   }
 
   useEffect(() => {
@@ -122,7 +186,16 @@ export function AttributionInsightsClient() {
       if (!res.ok) throw new Error(data?.error ?? "Failed to save origins");
       setInstall((prev) =>
         prev
-          ? { ...prev, allowedOrigins: data.allowedOrigins, verifiedAt: data.verifiedAt, lastEventAt: data.lastEventAt }
+          ? {
+              ...prev,
+              allowedOrigins: data.allowedOrigins,
+              verifiedAt: data.verifiedAt,
+              lastEventAt: data.lastEventAt,
+              defaultForwardE164: data.defaultForwardE164 ?? prev.defaultForwardE164,
+              twilioIntelligenceServiceSid: data.twilioIntelligenceServiceSid ?? prev.twilioIntelligenceServiceSid,
+              twilioSubaccountSid: data.twilioSubaccountSid ?? prev.twilioSubaccountSid,
+              twilioSubaccountCreatedAt: data.twilioSubaccountCreatedAt ?? prev.twilioSubaccountCreatedAt,
+            }
           : prev
       );
     } catch (e) {
@@ -150,7 +223,16 @@ export function AttributionInsightsClient() {
       setNewPublishableKey(data.publishableKey ?? null);
       setInstall((prev) =>
         prev
-          ? { ...prev, allowedOrigins: data.allowedOrigins, verifiedAt: data.verifiedAt, lastEventAt: data.lastEventAt }
+          ? {
+              ...prev,
+              allowedOrigins: data.allowedOrigins,
+              verifiedAt: data.verifiedAt,
+              lastEventAt: data.lastEventAt,
+              defaultForwardE164: data.defaultForwardE164 ?? prev.defaultForwardE164,
+              twilioIntelligenceServiceSid: data.twilioIntelligenceServiceSid ?? prev.twilioIntelligenceServiceSid,
+              twilioSubaccountSid: data.twilioSubaccountSid ?? prev.twilioSubaccountSid,
+              twilioSubaccountCreatedAt: data.twilioSubaccountCreatedAt ?? prev.twilioSubaccountCreatedAt,
+            }
           : prev
       );
     } catch (e) {
@@ -193,6 +275,131 @@ export function AttributionInsightsClient() {
       setSources((prev) => prev.filter((s) => s.id !== sourceId));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to archive source");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCallTrackingSettings() {
+    setSavingCallSettings(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/attribution/install", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          defaultForwardE164: defaultForwardInput.trim() || null,
+          twilioIntelligenceServiceSid: intelligenceSidInput.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Failed to save call tracking settings");
+      setInstall((prev) =>
+        prev
+          ? {
+              ...prev,
+              defaultForwardE164: data.defaultForwardE164 ?? null,
+              twilioIntelligenceServiceSid: data.twilioIntelligenceServiceSid ?? null,
+              twilioSubaccountSid: data.twilioSubaccountSid ?? prev.twilioSubaccountSid,
+              twilioSubaccountCreatedAt: data.twilioSubaccountCreatedAt ?? prev.twilioSubaccountCreatedAt,
+            }
+          : prev
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save call tracking settings");
+    } finally {
+      setSavingCallSettings(false);
+    }
+  }
+
+  async function createTwilioSubaccount() {
+    setSubaccountBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/attribution/twilio-subaccount", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Failed to create Twilio workspace");
+      setInstall((prev) =>
+        prev
+          ? {
+              ...prev,
+              twilioSubaccountSid: data.twilioSubaccountSid ?? prev.twilioSubaccountSid,
+              twilioSubaccountCreatedAt: data.twilioSubaccountCreatedAt ?? prev.twilioSubaccountCreatedAt,
+            }
+          : prev
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create Twilio workspace");
+    } finally {
+      setSubaccountBusy(false);
+    }
+  }
+
+  async function searchTwilioNumbers() {
+    setBusy(true);
+    setError(null);
+    setSearchResults([]);
+    try {
+      const q = new URLSearchParams({ country: "US", voiceEnabled: "true" });
+      if (searchAreaCode.trim()) q.set("areaCode", searchAreaCode.trim());
+      if (searchLocality.trim()) q.set("inLocality", searchLocality.trim());
+      if (searchRegion.trim()) q.set("inRegion", searchRegion.trim());
+      const res = await fetch(`/api/attribution/phone-numbers?${q}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Search failed");
+      setSearchResults((data.numbers ?? []) as SearchNumber[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Search failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function provisionTwilioNumber(phoneNumber: string) {
+    if (!provisionSourceId) {
+      setError("Select a channel (source) first.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/attribution/phone-numbers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: provisionSourceId,
+          phoneNumber,
+          forwardToE164: provisionForwardOverride.trim() || undefined,
+          searchSnapshot: {
+            areaCode: searchAreaCode,
+            locality: searchLocality,
+            region: searchRegion,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Provisioning failed");
+      await loadAll();
+      setSearchResults([]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Provisioning failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function releaseTwilioNumber(phoneNumberId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/attribution/phone-numbers?phoneNumberId=${encodeURIComponent(phoneNumberId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Release failed");
+      await loadAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Release failed");
     } finally {
       setBusy(false);
     }
@@ -274,8 +481,9 @@ export function AttributionInsightsClient() {
               <p>
                 <strong className="text-zinc-800 dark:text-zinc-200">What you will do:</strong> (1) Tell us which website
                 origins may send data (security). (2) Paste a small script on your site. (3) Use a unique link for each
-                channel (Facebook, Instagram, Google Business Profile, Local Services Ads, etc.). (4) Confirm we are
-                receiving events.
+                channel (Facebook, Instagram, Google Business Profile, Local Services Ads, etc.). (4) Optionally provision a
+                Twilio tracking number per channel that forwards to your main line and records calls for transcription. (5)
+                Confirm we are receiving web events (and poll transcripts for calls if using Twilio).
               </p>
               <p>
                 <strong className="text-zinc-800 dark:text-zinc-200">What the script tracks:</strong> When someone opens a
@@ -468,6 +676,270 @@ export function AttributionInsightsClient() {
         {step === 4 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{WIZARD_STEPS[4].title}</h2>
+            <div className="space-y-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+              <p>
+                Pair each marketing <strong className="text-zinc-800 dark:text-zinc-200">source</strong> with a dedicated
+                local Twilio number. When someone dials that number, we forward the call to your main business line and
+                record the conversation (dual-channel). After the call, we request a transcript via Twilio{" "}
+                <strong className="text-zinc-800 dark:text-zinc-200">Conversational Intelligence</strong> (not the legacy
+                2-minute Record transcription). Use the same source list as your tracking links so reporting stays aligned.
+              </p>
+              <p>
+                <strong className="text-zinc-800 dark:text-zinc-200">Forwarding:</strong> Set a default E.164 number (your
+                office cell or main line). Each purchased tracking number dials that destination. You can override per
+                purchase if needed.
+              </p>
+              <p>
+                <strong className="text-zinc-800 dark:text-zinc-200">Legal:</strong> Recording laws vary by state and
+                country—obtain consent where required. Twilio bills number rental, minutes, recording, and Intelligence
+                separately.
+              </p>
+              <p className="text-xs text-zinc-500">
+                <strong className="text-zinc-600 dark:text-zinc-400">Platform:</strong> Your app uses a{" "}
+                <strong className="text-zinc-700 dark:text-zinc-300">parent</strong> Twilio API key to create a{" "}
+                <strong className="text-zinc-700 dark:text-zinc-300">subaccount per company</strong> so usage bills to that
+                segment. Subaccount auth token + API key are stored encrypted in Postgres. Webhook signatures use each
+                subaccount&apos;s auth token automatically. Also set{" "}
+                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">TWILIO_WEBHOOK_BASE_URL</code>,{" "}
+                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">TWILIO_SUBACCOUNT_CREDENTIALS_ENCRYPTION_KEY</code>
+                , and (for cron) <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">CRON_SECRET</code>. Legacy
+                single-account mode still works if you only set{" "}
+                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">TWILIO_ACCOUNT_SID</code> + token/API key and skip
+                subaccount setup.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-violet-200 bg-violet-50/80 p-4 dark:border-violet-900/50 dark:bg-violet-950/30">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">1. Company Twilio workspace (admin)</h3>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                Create a dedicated Twilio subaccount for this organization. Numbers you buy afterward live in that
+                subaccount; Twilio usage rolls up separately for billing. This only needs to be done once per company.
+              </p>
+              {install?.twilioSubaccountSid ? (
+                <p className="mt-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                  Subaccount: {install.twilioSubaccountSid}
+                  {install.twilioSubaccountCreatedAt
+                    ? ` · since ${new Date(install.twilioSubaccountCreatedAt).toLocaleString()}`
+                    : null}
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={createTwilioSubaccount}
+                  disabled={subaccountBusy}
+                  className="mt-3 rounded bg-violet-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-60 dark:bg-violet-600"
+                >
+                  {subaccountBusy ? "Creating workspace…" : "Create Twilio workspace for this company"}
+                </button>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-950/40">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">2. Default forwarding &amp; Intelligence</h3>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Conversational Intelligence Service SID (starts with <code className="font-mono">GA</code>) — can also be set
+                in env <code className="font-mono">TWILIO_INTELLIGENCE_SERVICE_SID</code> for all orgs.
+              </p>
+              <label className="mt-3 block text-xs font-medium text-zinc-700 dark:text-zinc-300">Default forward-to (E.164)</label>
+              <input
+                type="text"
+                value={defaultForwardInput}
+                onChange={(e) => setDefaultForwardInput(e.target.value)}
+                placeholder="+15551234567"
+                className="mt-1 w-full max-w-md rounded border border-zinc-300 bg-white px-2 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+              />
+              <label className="mt-3 block text-xs font-medium text-zinc-700 dark:text-zinc-300">Intelligence Service SID (optional)</label>
+              <input
+                type="text"
+                value={intelligenceSidInput}
+                onChange={(e) => setIntelligenceSidInput(e.target.value)}
+                placeholder="GAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                className="mt-1 w-full max-w-md rounded border border-zinc-300 bg-white px-2 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+              />
+              <button
+                type="button"
+                onClick={saveCallTrackingSettings}
+                disabled={savingCallSettings}
+                className="mt-3 rounded bg-zinc-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                {savingCallSettings ? "Saving…" : "Save call tracking settings (admin)"}
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">3. Search &amp; buy a number (admin)</h3>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                US local search: area code and/or city (locality) and state (region code, e.g. CA).
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  value={searchAreaCode}
+                  onChange={(e) => setSearchAreaCode(e.target.value)}
+                  placeholder="Area code e.g. 415"
+                  className="w-28 rounded border border-zinc-300 px-2 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                />
+                <input
+                  type="text"
+                  value={searchLocality}
+                  onChange={(e) => setSearchLocality(e.target.value)}
+                  placeholder="City / locality"
+                  className="w-40 rounded border border-zinc-300 px-2 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                />
+                <input
+                  type="text"
+                  value={searchRegion}
+                  onChange={(e) => setSearchRegion(e.target.value)}
+                  placeholder="State e.g. CA"
+                  className="w-24 rounded border border-zinc-300 px-2 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                />
+                <button
+                  type="button"
+                  onClick={searchTwilioNumbers}
+                  disabled={busy}
+                  className="rounded bg-zinc-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
+                >
+                  Search numbers
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-xs text-zinc-600 dark:text-zinc-400">Attach to source</label>
+                  <select
+                    value={provisionSourceId}
+                    onChange={(e) => setProvisionSourceId(e.target.value)}
+                    className="mt-1 rounded border border-zinc-300 bg-white px-2 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                  >
+                    <option value="">Select channel…</option>
+                    {sources.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-600 dark:text-zinc-400">Forward override (optional)</label>
+                  <input
+                    type="text"
+                    value={provisionForwardOverride}
+                    onChange={(e) => setProvisionForwardOverride(e.target.value)}
+                    placeholder="Uses default if empty"
+                    className="mt-1 w-44 rounded border border-zinc-300 px-2 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                  />
+                </div>
+              </div>
+              {searchResults.length > 0 ? (
+                <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-xs">
+                  {searchResults.map((n) => (
+                    <li
+                      key={n.phone_number}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border border-zinc-200 px-2 py-1 dark:border-zinc-700"
+                    >
+                      <span className="font-mono">{n.phone_number}</span>
+                      <span className="text-zinc-500">
+                        {[n.locality, n.region].filter(Boolean).join(", ")}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => provisionTwilioNumber(n.phone_number)}
+                        className="rounded border border-zinc-400 px-2 py-0.5 text-zinc-800 dark:border-zinc-500 dark:text-zinc-200"
+                      >
+                        Buy &amp; attach
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Active tracking numbers</h3>
+              {activePhones.length === 0 ? (
+                <p className="mt-2 text-xs text-zinc-500">None yet.</p>
+              ) : (
+                <ul className="mt-2 space-y-2 text-xs">
+                  {activePhones.map((p) => {
+                    const label = sources.find((s) => s.id === p.source_id)?.label ?? p.source_id;
+                    return (
+                      <li
+                        key={p.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-zinc-200 p-2 dark:border-zinc-700"
+                      >
+                        <div>
+                          <p className="font-medium text-zinc-900 dark:text-zinc-50">{label}</p>
+                          <p className="font-mono text-zinc-600 dark:text-zinc-400">{p.phone_e164}</p>
+                          <p className="text-zinc-500">→ {p.forward_to_e164}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => releaseTwilioNumber(p.id)}
+                          className="rounded border border-red-300 px-2 py-1 text-red-800 dark:border-red-800 dark:text-red-300"
+                        >
+                          Release (admin)
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Recent tracking calls</h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                Transcripts fill after Conversational Intelligence completes; run the cron job or wait for the next poll.
+              </p>
+              <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+                <table className="w-full min-w-[640px] text-left text-xs">
+                  <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                    <tr>
+                      <th className="px-2 py-2">Time</th>
+                      <th className="py-2">From</th>
+                      <th className="py-2">Source</th>
+                      <th className="py-2">Duration</th>
+                      <th className="py-2">Transcript</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {twilioCalls.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-2 py-3 text-zinc-500">
+                          No calls yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      twilioCalls.map((c) => (
+                        <tr key={c.id} className="border-t border-zinc-100 dark:border-zinc-800">
+                          <td className="px-2 py-2 text-zinc-600 dark:text-zinc-400">
+                            {new Date(c.created_at).toLocaleString()}
+                          </td>
+                          <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{c.from_e164 ?? "—"}</td>
+                          <td className="py-2">{c.source_label ?? "—"}</td>
+                          <td className="py-2">{c.duration_seconds != null ? `${c.duration_seconds}s` : "—"}</td>
+                          <td className="max-w-xs py-2 text-zinc-600 dark:text-zinc-400">
+                            <span className="text-zinc-500">{c.transcript_status}</span>
+                            {c.transcript_preview ? (
+                              <span className="mt-1 block truncate" title={c.transcript_preview}>
+                                {c.transcript_preview}
+                              </span>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 5 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{WIZARD_STEPS[5].title}</h2>
             <div className="space-y-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
               <p>
                 After the snippet is live, open your site using one of the tracking links (or browse normally). Then return

@@ -1,3 +1,4 @@
+import { decryptSubaccountSecret, encryptSubaccountSecret } from "@/lib/crypto/subaccountSecrets";
 import { sql } from "./index";
 
 export type WebAttributionEventType =
@@ -16,6 +17,10 @@ export interface WebAttributionInstallRow {
   verified_at: string | null;
   created_at: string;
   updated_at: string;
+  default_forward_e164: string | null;
+  twilio_intelligence_service_sid: string | null;
+  twilio_subaccount_sid: string | null;
+  twilio_subaccount_created_at: string | null;
 }
 
 export interface WebAttributionSourceRow {
@@ -46,7 +51,9 @@ export async function getWebAttributionInstall(
   organizationId: string
 ): Promise<WebAttributionInstallRow | null> {
   const result = await sql`
-    SELECT organization_id, publishable_key_hash, allowed_origins, last_event_at, verified_at, created_at, updated_at
+    SELECT organization_id, publishable_key_hash, allowed_origins, last_event_at, verified_at, created_at, updated_at,
+           default_forward_e164, twilio_intelligence_service_sid,
+           twilio_subaccount_sid, twilio_subaccount_created_at
     FROM web_attribution_install
     WHERE organization_id = ${organizationId}::uuid
     LIMIT 1
@@ -56,6 +63,10 @@ export async function getWebAttributionInstall(
   return {
     ...row,
     allowed_origins: Array.isArray(row.allowed_origins) ? row.allowed_origins : [],
+    default_forward_e164: row.default_forward_e164 ?? null,
+    twilio_intelligence_service_sid: row.twilio_intelligence_service_sid ?? null,
+    twilio_subaccount_sid: row.twilio_subaccount_sid ?? null,
+    twilio_subaccount_created_at: row.twilio_subaccount_created_at ?? null,
   };
 }
 
@@ -63,7 +74,9 @@ export async function getWebAttributionInstallByKeyHash(
   publishableKeyHash: string
 ): Promise<WebAttributionInstallRow | null> {
   const result = await sql`
-    SELECT organization_id, publishable_key_hash, allowed_origins, last_event_at, verified_at, created_at, updated_at
+    SELECT organization_id, publishable_key_hash, allowed_origins, last_event_at, verified_at, created_at, updated_at,
+           default_forward_e164, twilio_intelligence_service_sid,
+           twilio_subaccount_sid, twilio_subaccount_created_at
     FROM web_attribution_install
     WHERE publishable_key_hash = ${publishableKeyHash}
     LIMIT 1
@@ -73,6 +86,10 @@ export async function getWebAttributionInstallByKeyHash(
   return {
     ...row,
     allowed_origins: Array.isArray(row.allowed_origins) ? row.allowed_origins : [],
+    default_forward_e164: row.default_forward_e164 ?? null,
+    twilio_intelligence_service_sid: row.twilio_intelligence_service_sid ?? null,
+    twilio_subaccount_sid: row.twilio_subaccount_sid ?? null,
+    twilio_subaccount_created_at: row.twilio_subaccount_created_at ?? null,
   };
 }
 
@@ -107,6 +124,27 @@ export async function updateWebAttributionAllowedOrigins(params: {
     SET allowed_origins = ${params.allowedOrigins}::text[], updated_at = NOW()
     WHERE organization_id = ${params.organizationId}::uuid
   `;
+}
+
+export async function updateWebAttributionCallTrackingSettings(params: {
+  organizationId: string;
+  defaultForwardE164?: string | null;
+  twilioIntelligenceServiceSid?: string | null;
+}): Promise<void> {
+  if (params.defaultForwardE164 !== undefined) {
+    await sql`
+      UPDATE web_attribution_install
+      SET default_forward_e164 = ${params.defaultForwardE164?.trim() || null}, updated_at = NOW()
+      WHERE organization_id = ${params.organizationId}::uuid
+    `;
+  }
+  if (params.twilioIntelligenceServiceSid !== undefined) {
+    await sql`
+      UPDATE web_attribution_install
+      SET twilio_intelligence_service_sid = ${params.twilioIntelligenceServiceSid?.trim() || null}, updated_at = NOW()
+      WHERE organization_id = ${params.organizationId}::uuid
+    `;
+  }
 }
 
 export async function touchWebAttributionEvent(organizationId: string): Promise<void> {
@@ -265,5 +303,92 @@ export async function getWebAttributionEventCounts(
     out[r.event_type] = r.count;
   }
   return out;
+}
+
+export async function saveTwilioSubaccountCredentials(params: {
+  organizationId: string;
+  subaccountSid: string;
+  plainAuthToken: string;
+  apiKeySid: string;
+  plainApiKeySecret: string;
+}): Promise<void> {
+  await sql`
+    UPDATE web_attribution_install
+    SET
+      twilio_subaccount_sid = ${params.subaccountSid},
+      twilio_subaccount_auth_token_encrypted = ${encryptSubaccountSecret(params.plainAuthToken)},
+      twilio_subaccount_api_key_sid = ${params.apiKeySid},
+      twilio_subaccount_api_key_secret_encrypted = ${encryptSubaccountSecret(params.plainApiKeySecret)},
+      twilio_subaccount_created_at = NOW(),
+      updated_at = NOW()
+    WHERE organization_id = ${params.organizationId}::uuid
+  `;
+}
+
+/** REST + Intelligence for this org’s Twilio subaccount (API key auth). */
+export async function getDecryptedTwilioSubaccountRestCredentials(
+  organizationId: string
+): Promise<{ accountSid: string; apiKeySid: string; apiKeySecret: string } | null> {
+  const result = await sql`
+    SELECT twilio_subaccount_sid, twilio_subaccount_api_key_sid, twilio_subaccount_api_key_secret_encrypted
+    FROM web_attribution_install
+    WHERE organization_id = ${organizationId}::uuid
+    LIMIT 1
+  `;
+  const row = (result.rows ?? [])[0] as
+    | {
+        twilio_subaccount_sid: string | null;
+        twilio_subaccount_api_key_sid: string | null;
+        twilio_subaccount_api_key_secret_encrypted: string | null;
+      }
+    | undefined;
+  if (
+    !row?.twilio_subaccount_sid ||
+    !row.twilio_subaccount_api_key_sid ||
+    !row.twilio_subaccount_api_key_secret_encrypted
+  ) {
+    return null;
+  }
+  try {
+    return {
+      accountSid: row.twilio_subaccount_sid,
+      apiKeySid: row.twilio_subaccount_api_key_sid,
+      apiKeySecret: decryptSubaccountSecret(row.twilio_subaccount_api_key_secret_encrypted),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Webhook signature validation uses the subaccount Auth Token. */
+export async function getOrganizationIdByTwilioSubaccountSid(
+  accountSid: string
+): Promise<string | null> {
+  const result = await sql`
+    SELECT organization_id
+    FROM web_attribution_install
+    WHERE twilio_subaccount_sid = ${accountSid}
+    LIMIT 1
+  `;
+  const row = (result.rows ?? [])[0] as { organization_id: string } | undefined;
+  return row?.organization_id ?? null;
+}
+
+export async function getTwilioWebhookAuthTokenForSubaccountSid(
+  accountSid: string
+): Promise<string | null> {
+  const result = await sql`
+    SELECT twilio_subaccount_auth_token_encrypted
+    FROM web_attribution_install
+    WHERE twilio_subaccount_sid = ${accountSid}
+    LIMIT 1
+  `;
+  const enc = (result.rows ?? [])[0] as { twilio_subaccount_auth_token_encrypted: string | null } | undefined;
+  if (!enc?.twilio_subaccount_auth_token_encrypted) return null;
+  try {
+    return decryptSubaccountSecret(enc.twilio_subaccount_auth_token_encrypted);
+  } catch {
+    return null;
+  }
 }
 

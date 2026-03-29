@@ -977,4 +977,95 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_web_attribution_events_org_source_time
     ON web_attribution_events (organization_id, source_id, occurred_at DESC)
   `;
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'default_forward_e164') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN default_forward_e164 TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'twilio_intelligence_service_sid') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN twilio_intelligence_service_sid TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'twilio_subaccount_sid') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN twilio_subaccount_sid TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'twilio_subaccount_auth_token_encrypted') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN twilio_subaccount_auth_token_encrypted TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'twilio_subaccount_api_key_sid') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN twilio_subaccount_api_key_sid TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'twilio_subaccount_api_key_secret_encrypted') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN twilio_subaccount_api_key_secret_encrypted TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'twilio_subaccount_created_at') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN twilio_subaccount_created_at TIMESTAMPTZ;
+      END IF;
+    END $$
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_web_attribution_install_twilio_subaccount
+    ON web_attribution_install (twilio_subaccount_sid)
+    WHERE twilio_subaccount_sid IS NOT NULL
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS web_attribution_phone_numbers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      source_id UUID NOT NULL REFERENCES web_attribution_sources(id) ON DELETE CASCADE,
+      twilio_phone_number_sid TEXT NOT NULL,
+      phone_e164 TEXT NOT NULL,
+      forward_to_e164 TEXT NOT NULL,
+      search_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      released_at TIMESTAMPTZ
+    )
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_web_attribution_phone_e164_active
+    ON web_attribution_phone_numbers (phone_e164)
+    WHERE released_at IS NULL
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_web_attribution_phone_org_source_active
+    ON web_attribution_phone_numbers (organization_id, source_id)
+    WHERE released_at IS NULL
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_web_attribution_phone_org
+    ON web_attribution_phone_numbers (organization_id)
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS twilio_tracking_calls (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      source_id UUID REFERENCES web_attribution_sources(id) ON DELETE SET NULL,
+      phone_number_id UUID REFERENCES web_attribution_phone_numbers(id) ON DELETE SET NULL,
+      call_sid TEXT NOT NULL,
+      recording_sid TEXT,
+      from_e164 TEXT,
+      to_e164 TEXT,
+      started_at TIMESTAMPTZ,
+      duration_seconds INT,
+      transcript_text TEXT,
+      intelligence_transcript_sid TEXT,
+      transcript_status TEXT NOT NULL DEFAULT 'pending',
+      raw_callbacks JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(call_sid)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_twilio_tracking_calls_org_time
+    ON twilio_tracking_calls (organization_id, created_at DESC)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_twilio_tracking_calls_transcript_poll
+    ON twilio_tracking_calls (transcript_status, created_at)
+    WHERE transcript_status IN ('pending', 'queued', 'in-progress')
+  `;
 }
