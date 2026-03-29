@@ -47,15 +47,18 @@ export function SeoSettingsClient() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newKeyword, setNewKeyword] = useState("");
+  const [searchConsoleSiteUrl, setSearchConsoleSiteUrl] = useState("");
+  const [ga4PropertyId, setGa4PropertyId] = useState("");
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const [configRes, locationsRes] = await Promise.all([
+        const [configRes, locationsRes, mktRes] = await Promise.all([
           fetch("/api/settings/seo"),
           fetch("/api/marketing/seo/locations?country=us"),
+          fetch("/api/settings/marketing-analytics"),
         ]);
         if (!configRes.ok) throw new Error("Failed to load config");
         const config = (await configRes.json()) as {
@@ -214,6 +217,19 @@ export function SeoSettingsClient() {
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(data.error ?? "Failed to save");
+        return;
+      }
+      const mktPatch = await fetch("/api/settings/marketing-analytics", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          searchConsoleSiteUrl: searchConsoleSiteUrl.trim() || null,
+          ga4PropertyId: ga4PropertyId.trim() || null,
+        }),
+      });
+      if (!mktPatch.ok) {
+        const md = (await mktPatch.json().catch(() => ({}))) as { error?: string };
+        setError(md.error ?? "SEO saved but marketing analytics settings failed");
         return;
       }
       if (keywords.length > 0 && locations.length > 0 && website.trim()) {
@@ -517,6 +533,36 @@ export function SeoSettingsClient() {
         >
           + Add service area
         </button>
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+          Marketing analytics (optional)
+        </h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+          Search Console site URL for future organic click sync. GA4 property ID for future web analytics.
+          Saved with the same Save button below.
+        </p>
+        <label className="mt-3 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          Search Console property / site URL
+        </label>
+        <input
+          type="text"
+          value={searchConsoleSiteUrl}
+          onChange={(e) => setSearchConsoleSiteUrl(e.target.value)}
+          placeholder="sc-domain:example.com or https://example.com/"
+          className="mt-1 block w-full max-w-lg rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+        />
+        <label className="mt-3 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          GA4 property ID (optional)
+        </label>
+        <input
+          type="text"
+          value={ga4PropertyId}
+          onChange={(e) => setGa4PropertyId(e.target.value)}
+          placeholder="properties/123456789"
+          className="mt-1 block w-full max-w-md rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+        />
       </section>
 
       {error && (

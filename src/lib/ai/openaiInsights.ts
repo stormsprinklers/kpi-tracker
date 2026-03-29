@@ -40,7 +40,11 @@ export async function generateInsights(
 
   const client = new OpenAI({ apiKey });
   const dataStr = JSON.stringify(dataSnapshot, null, 2);
-  const userContent = `Dashboard: ${dashboardType}\n\nMetrics (last 30 days):\n\n${dataStr}`;
+  const marketingNote =
+    dashboardType === "marketing"
+      ? "\n\nMarketing: Use `marketingContext` for channel-level metrics. Do not imply CPL or ROAS for channels with spendApplicable false. Call out dataGaps and high unassigned job share when present."
+      : "";
+  const userContent = `Dashboard: ${dashboardType}\n\nMetrics (last 30 days):\n\n${dataStr}${marketingNote}`;
 
   const model = "o1-mini";
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [

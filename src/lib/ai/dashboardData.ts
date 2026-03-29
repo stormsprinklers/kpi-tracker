@@ -92,42 +92,53 @@ export async function fetchDashboardData(
       };
 
     case "marketing": {
-      const { createHash } = await import("crypto");
-      const { getOrganizationById, getSeoConfig, getSeoServiceAreas, getLatestSeoResults } =
-        await import("../db/queries");
-      const org = await getOrganizationById(organizationId);
-      const seoConfig = await getSeoConfig(organizationId);
-      const serviceAreas = await getSeoServiceAreas(organizationId);
-      const website = org?.website?.trim();
-      const keywords = seoConfig.keywords.filter(Boolean);
-      const locationValues = seoConfig.locations.filter(Boolean);
-      const hasConfig = website && keywords.length > 0 && locationValues.length > 0;
-      if (!hasConfig) {
+      const { buildMarketingAiContext } = await import("../metrics/marketingOverview");
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      const startDate = start.toISOString().slice(0, 10);
+      const endDate = end.toISOString().slice(0, 10);
+      try {
+        const ctx = await buildMarketingAiContext(organizationId, startDate, endDate);
+        const { createHash } = await import("crypto");
+        const { getOrganizationById, getSeoConfig, getSeoServiceAreas, getLatestSeoResults } =
+          await import("../db/queries");
+        const org = await getOrganizationById(organizationId);
+        const seoConfig = await getSeoConfig(organizationId);
+        const serviceAreas = await getSeoServiceAreas(organizationId);
+        const website = org?.website?.trim();
+        const keywords = seoConfig.keywords.filter(Boolean);
+        const locationValues = seoConfig.locations.filter(Boolean);
+        const hasConfig = website && keywords.length > 0 && locationValues.length > 0;
+        let seoSnippet: { organic: unknown[]; local: unknown[]; ai: unknown[] } | null = null;
+        if (hasConfig) {
+          const parts = [
+            (website ?? "").toLowerCase().trim(),
+            [...keywords].sort().join("|"),
+            [...locationValues].sort().join("|"),
+            ...serviceAreas.map((a) => `${a.name}:${[...a.location_values].sort().join(",")}`).sort(),
+          ];
+          const fingerprint = createHash("sha256").update(parts.join("::")).digest("hex");
+          const cached = await getLatestSeoResults(organizationId, fingerprint);
+          if (cached?.payload) {
+            const p = cached.payload as { organic?: unknown[]; local?: unknown[]; ai?: unknown[] };
+            seoSnippet = {
+              organic: (p.organic ?? []).slice(0, 8),
+              local: (p.local ?? []).slice(0, 8),
+              ai: (p.ai ?? []).slice(0, 8),
+            };
+          }
+        }
         return {
-          message: "Marketing: Add website, keywords, and locations in Settings → Marketing & SEO to enable insights.",
+          marketingContext: ctx,
+          seoRankingsSample: seoSnippet,
+        };
+      } catch {
+        return {
+          message:
+            "Marketing: Could not load marketing analytics context. Ensure the database schema is migrated and Housecall Pro is connected where needed.",
         };
       }
-      const parts = [
-        (website ?? "").toLowerCase().trim(),
-        [...keywords].sort().join("|"),
-        [...locationValues].sort().join("|"),
-        ...serviceAreas.map((a) => `${a.name}:${[...a.location_values].sort().join(",")}`).sort(),
-      ];
-      const fingerprint = createHash("sha256").update(parts.join("::")).digest("hex");
-      const cached = await getLatestSeoResults(organizationId, fingerprint);
-      if (cached?.payload) {
-        const p = cached.payload as { organic?: unknown[]; local?: unknown[]; ai?: unknown[] };
-        return {
-          seo: {
-            organic: (p.organic ?? []).slice(0, 10),
-            local: (p.local ?? []).slice(0, 10),
-            ai: (p.ai ?? []).slice(0, 10),
-          },
-        };
-      }
-      return {
-        message: "Marketing: SEO data not yet loaded. Run a refresh in Marketing dashboard to populate.",
-      };
     }
 
     default:

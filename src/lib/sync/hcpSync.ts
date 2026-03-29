@@ -201,6 +201,13 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       `;
     }
 
+    try {
+      const { rebuildJobAttributionsForOrganization } = await import("@/lib/metrics/marketingOverview");
+      await rebuildJobAttributionsForOrganization(organizationId);
+    } catch {
+      /* marketing tables optional on older DBs */
+    }
+
     const duration = Date.now() - start;
     return { status: "ok", companyId, entitiesSynced, duration };
   } catch (err) {

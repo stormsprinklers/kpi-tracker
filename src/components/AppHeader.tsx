@@ -122,7 +122,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
         ...(can("call_insights") ? [{ label: "Calls", href: "/call-insights" }] : []),
         ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
         ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
-        ...(can("marketing") ? [{ label: "Marketing", href: "/insights/marketing" }] : []),
+        ...(can("marketing") ? [{ label: "Attribution", href: "/insights/attribution" }] : []),
       ];
 
   const teamItems: { label: string; href: string }[] = [];

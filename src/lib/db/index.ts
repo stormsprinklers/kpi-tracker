@@ -754,4 +754,227 @@ export async function initSchema(): Promise<void> {
       END IF;
     END $$
   `;
+
+  // Marketing analytics — channels, attribution, spend snapshots, GBP/GSC facts, OAuth per integration
+  await sql`
+    CREATE TABLE IF NOT EXISTS marketing_channels (
+      slug TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('paid', 'owned', 'earned', 'direct')),
+      spend_applicable BOOLEAN NOT NULL DEFAULT false,
+      sort_order INT NOT NULL DEFAULT 0
+    )
+  `;
+  await sql`
+    INSERT INTO marketing_channels (slug, display_name, kind, spend_applicable, sort_order) VALUES
+      ('unassigned', 'Unassigned', 'direct', false, 0),
+      ('google_lsa', 'Google LSA', 'paid', true, 10),
+      ('google_business_profile', 'Google Business Profile', 'owned', false, 20),
+      ('organic_search', 'Organic Search', 'earned', false, 30),
+      ('website', 'Website / Direct', 'direct', false, 40),
+      ('google_ads', 'Google Ads', 'paid', true, 50),
+      ('meta_ads', 'Meta Ads', 'paid', true, 60),
+      ('referrals', 'Referrals', 'earned', false, 70)
+    ON CONFLICT (slug) DO NOTHING
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS marketing_org_settings (
+      organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+      search_console_site_url TEXT,
+      ga4_property_id TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS marketing_source_rules (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      pattern TEXT NOT NULL,
+      channel_slug TEXT NOT NULL REFERENCES marketing_channels(slug),
+      priority INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_marketing_source_rules_org_priority
+    ON marketing_source_rules (organization_id, priority DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS job_attribution (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      job_hcp_id TEXT NOT NULL,
+      channel_slug TEXT NOT NULL REFERENCES marketing_channels(slug),
+      confidence TEXT NOT NULL CHECK (confidence IN ('explicit', 'inferred', 'rule', 'model')),
+      rule_type TEXT NOT NULL,
+      matched_value TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, job_hcp_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_job_attribution_org_channel
+    ON job_attribution (organization_id, channel_slug)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS fact_marketing_spend_snapshot (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      period_start DATE NOT NULL,
+      period_end DATE NOT NULL,
+      channel_slug TEXT NOT NULL REFERENCES marketing_channels(slug),
+      spend_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+      currency_code TEXT NOT NULL DEFAULT 'USD',
+      platform_leads INT,
+      phone_calls INT,
+      source_system TEXT NOT NULL DEFAULT 'lsa_account_report',
+      raw JSONB,
+      synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, period_start, period_end, channel_slug, source_system)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_fact_marketing_spend_snapshot_org_dates
+    ON fact_marketing_spend_snapshot (organization_id, period_end DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS fact_marketing_lead (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      channel_slug TEXT NOT NULL REFERENCES marketing_channels(slug),
+      external_id TEXT NOT NULL,
+      occurred_at TIMESTAMPTZ NOT NULL,
+      lead_type TEXT,
+      platform_status TEXT,
+      raw JSONB,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (organization_id, channel_slug, external_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_fact_marketing_lead_org_time
+    ON fact_marketing_lead (organization_id, occurred_at DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS fact_gbp_metrics_daily (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      metric_date DATE NOT NULL,
+      location_id TEXT NOT NULL,
+      business_impressions_desktop_maps INT,
+      business_impressions_desktop_search INT,
+      business_impressions_mobile_maps INT,
+      business_impressions_mobile_search INT,
+      call_clicks INT,
+      website_clicks INT,
+      direction_requests INT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, metric_date, location_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_fact_gbp_metrics_daily_org_date
+    ON fact_gbp_metrics_daily (organization_id, metric_date DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS fact_search_console_daily (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      metric_date DATE NOT NULL,
+      site_url TEXT NOT NULL DEFAULT '',
+      clicks INT NOT NULL DEFAULT 0,
+      impressions INT NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, metric_date, site_url)
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS mart_marketing_daily (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      metric_date DATE NOT NULL,
+      channel_slug TEXT NOT NULL REFERENCES marketing_channels(slug),
+      spend_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+      platform_leads INT NOT NULL DEFAULT 0,
+      attributed_job_count INT NOT NULL DEFAULT 0,
+      booked_job_count INT NOT NULL DEFAULT 0,
+      paid_job_count INT NOT NULL DEFAULT 0,
+      attributed_revenue NUMERIC(14,2) NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, metric_date, channel_slug)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_mart_marketing_daily_org_date
+    ON mart_marketing_daily (organization_id, metric_date DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS marketing_integration_sync_state (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      integration TEXT NOT NULL,
+      last_success_at TIMESTAMPTZ,
+      last_error TEXT,
+      cursor_json JSONB,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, integration)
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS marketing_oauth_credentials (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      integration TEXT NOT NULL,
+      refresh_token TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, integration)
+    )
+  `;
+
+  // Website attribution (first-party links + snippet event ingestion)
+  await sql`
+    CREATE TABLE IF NOT EXISTS web_attribution_install (
+      organization_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+      publishable_key_hash TEXT NOT NULL,
+      allowed_origins TEXT[] NOT NULL DEFAULT '{}'::text[],
+      last_event_at TIMESTAMPTZ,
+      verified_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS web_attribution_sources (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      slug TEXT NOT NULL,
+      label TEXT NOT NULL,
+      public_token TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      archived_at TIMESTAMPTZ
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_web_attribution_sources_org_active
+    ON web_attribution_sources (organization_id, created_at ASC)
+    WHERE archived_at IS NULL
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS web_attribution_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      source_id UUID REFERENCES web_attribution_sources(id) ON DELETE SET NULL,
+      visitor_id TEXT NOT NULL,
+      event_type TEXT NOT NULL CHECK (event_type IN ('landing', 'page_view', 'tel_click', 'form_submit', 'booking', 'verify_ping')),
+      occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      page_url TEXT,
+      referrer TEXT,
+      user_agent TEXT,
+      ip_hash TEXT,
+      country TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_web_attribution_events_org_time
+    ON web_attribution_events (organization_id, occurred_at DESC)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_web_attribution_events_org_source_time
+    ON web_attribution_events (organization_id, source_id, occurred_at DESC)
+  `;
 }

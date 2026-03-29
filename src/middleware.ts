@@ -72,6 +72,7 @@ export default auth((req) => {
         { prefix: "/call-insights", perm: "call_insights" },
         { prefix: "/time-insights", perm: "time_insights" },
         { prefix: "/insights/profit", perm: "profit" },
+        { prefix: "/insights/attribution", perm: "marketing" },
         { prefix: "/insights/marketing", perm: "marketing" },
       ];
       for (const { prefix, perm } of insightsPermMap) {
