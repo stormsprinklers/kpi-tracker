@@ -13,7 +13,7 @@ export default async function InsightsAttributionPage() {
       <main className="flex flex-1 flex-col gap-6 p-6">
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Attribution</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Track which channels drive site visits and contact attempts through first-party links and on-site events.
+          Follow the setup wizard to connect channels to your site with first-party links and on-site tracking.
         </p>
         <AttributionInsightsClient />
       </main>
