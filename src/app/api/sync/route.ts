@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { runTwilioTranscriptPoll } from "@/lib/cron/twilioTranscriptPoll";
 import { runFullSync } from "@/lib/sync/hcpSync";
 import { getLastSyncAt, getOrganizationsWithTokens, getOrganizationById } from "@/lib/db/queries";
 
@@ -15,6 +16,16 @@ function isCronRequest(request: Request): boolean {
 export async function GET(request: Request) {
   // Cron: sync all orgs with tokens
   if (isCronRequest(request)) {
+    let twilioTranscripts: { processed: number; updated: number } | { error: string };
+    try {
+      twilioTranscripts = await runTwilioTranscriptPoll();
+    } catch (twilioErr) {
+      console.error("[cron /api/sync] Twilio transcript poll", twilioErr);
+      twilioTranscripts = {
+        error: twilioErr instanceof Error ? twilioErr.message : String(twilioErr),
+      };
+    }
+
     try {
       const orgs = await getOrganizationsWithTokens();
       if (orgs.length === 0) {
@@ -22,6 +33,7 @@ export async function GET(request: Request) {
           status: "ok",
           message: "No organizations with HCP configured",
           synced: [],
+          twilioTranscripts,
         });
       }
       const results: { orgId: string; result: Awaited<ReturnType<typeof runFullSync>> }[] = [];
@@ -37,12 +49,14 @@ export async function GET(request: Request) {
           status: r.result.status,
           entitiesSynced: r.result.entitiesSynced,
         })),
+        twilioTranscripts,
       });
     } catch (err) {
       return NextResponse.json(
         {
           error: "Sync failed",
           details: err instanceof Error ? err.message : String(err),
+          twilioTranscripts,
         },
         { status: 500 }
       );

@@ -702,7 +702,9 @@ export function AttributionInsightsClient() {
                 subaccount&apos;s auth token automatically. Also set{" "}
                 <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">TWILIO_WEBHOOK_BASE_URL</code>,{" "}
                 <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">TWILIO_SUBACCOUNT_CREDENTIALS_ENCRYPTION_KEY</code>
-                , and (for cron) <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">CRON_SECRET</code>. Legacy
+                , and <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">CRON_SECRET</code> for the daily{" "}
+                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">/api/sync</code> cron (also polls transcripts).
+                Legacy
                 single-account mode still works if you only set{" "}
                 <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">TWILIO_ACCOUNT_SID</code> + token/API key and skip
                 subaccount setup.
@@ -890,7 +892,9 @@ export function AttributionInsightsClient() {
             <div>
               <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Recent tracking calls</h3>
               <p className="mt-1 text-xs text-zinc-500">
-                Transcripts fill after Conversational Intelligence completes; run the cron job or wait for the next poll.
+                Transcripts fill after Intelligence completes; the daily <code className="font-mono">/api/sync</code> cron
+                polls pending calls, or you can trigger <code className="font-mono">GET /api/cron/twilio-transcripts</code>{" "}
+                manually with the same bearer secret.
               </p>
               <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
                 <table className="w-full min-w-[640px] text-left text-xs">

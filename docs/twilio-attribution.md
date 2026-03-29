@@ -22,7 +22,7 @@ See `.env.example` for all names.
 
 - **`TWILIO_WEBHOOK_BASE_URL`** — Public `https` origin; must match the URL Twilio posts to.
 - **`TWILIO_INTELLIGENCE_SERVICE_SID`** — Default `GA…` service; per-org override in Attribution. For subaccounts, create the Intelligence service in the Twilio Console **while acting as that subaccount** (or as appropriate for your Twilio setup).
-- **`CRON_SECRET`** — Bearer for `GET /api/cron/twilio-transcripts`.
+- **`CRON_SECRET`** — Bearer for the scheduled `GET /api/sync` job (Vercel Cron). That run performs HCP sync **and** polls up to 80 pending Twilio transcripts. Optional: same secret works for manual `GET /api/cron/twilio-transcripts` if you use an external scheduler.
 
 ## Legacy mode
 
