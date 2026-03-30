@@ -350,6 +350,22 @@ export async function saveTwilioSubaccountCredentials(params: {
   `;
 }
 
+/** Temporary helper: refresh only webhook signature token for an existing subaccount. */
+export async function updateTwilioSubaccountAuthToken(params: {
+  organizationId: string;
+  subaccountSid: string;
+  plainAuthToken: string;
+}): Promise<void> {
+  await sql`
+    UPDATE web_attribution_install
+    SET
+      twilio_subaccount_auth_token_encrypted = ${encryptSubaccountSecret(params.plainAuthToken)},
+      updated_at = NOW()
+    WHERE organization_id = ${params.organizationId}::uuid
+      AND twilio_subaccount_sid = ${params.subaccountSid}
+  `;
+}
+
 /** REST + Intelligence for this org’s Twilio subaccount (API key auth). */
 export async function getDecryptedTwilioSubaccountRestCredentials(
   organizationId: string

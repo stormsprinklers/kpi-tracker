@@ -6,6 +6,7 @@ import { getOrganizationById } from "@/lib/db/queries";
 import {
   getWebAttributionInstall,
   saveTwilioSubaccountCredentials,
+  updateTwilioSubaccountAuthToken,
 } from "@/lib/db/webAttributionQueries";
 import {
   getTwilioMasterClient,
@@ -204,4 +205,43 @@ export async function POST(request: Request) {
       e && typeof e === "object" && (e as { status?: number }).status === 401 ? 502 : 400;
     return NextResponse.json({ error: msg }, { status });
   }
+}
+
+/**
+ * PATCH — temporary maintenance endpoint to refresh subaccount webhook Auth Token only.
+ * Body: { manualAuthToken: string }
+ */
+export async function PATCH(request: Request) {
+  const session = await auth();
+  const denied = requireAdmin(session);
+  if (denied) return denied;
+  const orgId = session!.user!.organizationId!;
+  const body = (await request.json().catch(() => ({}))) as { manualAuthToken?: string };
+  const manualAuthToken = typeof body.manualAuthToken === "string" ? body.manualAuthToken.trim() : "";
+  if (!manualAuthToken) {
+    return NextResponse.json({ error: "manualAuthToken is required." }, { status: 400 });
+  }
+
+  await initSchema();
+  const install = await getWebAttributionInstall(orgId);
+  const subSid = install?.twilio_subaccount_sid?.trim();
+  if (!subSid) {
+    return NextResponse.json({ error: "No Twilio subaccount is linked for this organization." }, { status: 400 });
+  }
+
+  const valid = await verifySubaccountAuthToken(subSid, manualAuthToken);
+  if (!valid) {
+    return NextResponse.json(
+      { error: "The Auth Token does not match the linked subaccount. Open that subaccount in Twilio and copy its current Auth Token." },
+      { status: 400 }
+    );
+  }
+
+  await updateTwilioSubaccountAuthToken({
+    organizationId: orgId,
+    subaccountSid: subSid,
+    plainAuthToken: manualAuthToken,
+  });
+
+  return NextResponse.json({ ok: true, twilioSubaccountSid: subSid });
 }
