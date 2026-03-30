@@ -58,6 +58,8 @@ type TwilioCallRow = {
 
 type SearchNumber = { phone_number: string; friendly_name?: string; locality?: string; region?: string };
 
+type UnassignedTwilioNumber = { sid: string; phone_number: string; friendly_name: string | null };
+
 const WIZARD_STEPS = [
   {
     title: "How attribution works",
@@ -124,6 +126,8 @@ export function AttributionInsightsClient() {
   const [searchResults, setSearchResults] = useState<SearchNumber[]>([]);
   const [provisionSourceId, setProvisionSourceId] = useState("");
   const [provisionForwardOverride, setProvisionForwardOverride] = useState("");
+  /** Twilio incoming numbers on the account not yet linked in web_attribution_phone_numbers (admin). */
+  const [unassignedTwilio, setUnassignedTwilio] = useState<UnassignedTwilioNumber[]>([]);
   const [subaccountBusy, setSubaccountBusy] = useState(false);
   /** Optional: Twilio Console subaccount Auth Token when API-only parent cannot auto-issue a webhook token. */
   const [manualSubaccountAuthToken, setManualSubaccountAuthToken] = useState("");
@@ -171,12 +175,13 @@ export function AttributionInsightsClient() {
     }
 
     try {
-      const [installRes, sourceRes, eventsRes, activeRes, callsRes] = await Promise.all([
+      const [installRes, sourceRes, eventsRes, activeRes, callsRes, unassignedRes] = await Promise.all([
         fetch("/api/attribution/install", fetchOpts),
         fetch("/api/attribution/sources", fetchOpts),
         fetch("/api/attribution/events", fetchOpts),
         fetch("/api/attribution/phone-numbers/active", fetchOpts),
         fetch("/api/attribution/twilio-calls?limit=150", fetchOpts),
+        fetch("/api/attribution/phone-numbers/unassigned", fetchOpts),
       ]);
 
       if (!installRes.ok) {
@@ -217,6 +222,12 @@ export function AttributionInsightsClient() {
         setTwilioCalls(c.calls ?? []);
       } else {
         setTwilioCalls([]);
+      }
+      if (unassignedRes.ok) {
+        const u = (await unassignedRes.json()) as { unassigned?: UnassignedTwilioNumber[] };
+        setUnassignedTwilio(u.unassigned ?? []);
+      } else {
+        setUnassignedTwilio([]);
       }
       detailLoadedRef.current.clear();
       setCallDetails({});
@@ -567,6 +578,33 @@ export function AttributionInsightsClient() {
       setSearchResults([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Provisioning failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function assignExistingTwilioNumber(twilioPhoneNumberSid: string) {
+    if (!provisionSourceId) {
+      setError("Select a channel (source) first.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/attribution/phone-numbers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: provisionSourceId,
+          twilioPhoneNumberSid,
+          forwardToE164: provisionForwardOverride.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Assign failed");
+      await loadAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Assign failed");
     } finally {
       setBusy(false);
     }
@@ -1381,6 +1419,46 @@ export function AttributionInsightsClient() {
                   ))}
                 </ul>
               ) : null}
+            </div>
+
+            <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-900/40 dark:bg-violet-950/20">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Assign unused numbers already in Twilio (admin)</h3>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                These lines exist on your company Twilio account but are not linked to a channel in this app (for example
+                purchased in Twilio Console or left over after a partial setup). Choose <strong className="text-zinc-800 dark:text-zinc-200">Attach to source</strong>{" "}
+                and optional forward override above, then assign — we update the Voice webhook to this app and store the
+                mapping.
+              </p>
+              {unassignedTwilio.length === 0 ? (
+                <p className="mt-2 text-xs text-zinc-500">
+                  No unlinked numbers found. If you are not an admin, this list is empty. Otherwise every number on the
+                  account is already linked below.
+                </p>
+              ) : (
+                <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto text-xs">
+                  {unassignedTwilio.map((n) => (
+                    <li
+                      key={n.sid}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border border-violet-200/90 px-2 py-1.5 dark:border-violet-800/60"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-mono text-zinc-800 dark:text-zinc-200">{n.phone_number}</span>
+                        {n.friendly_name ? (
+                          <span className="ml-2 text-zinc-500 dark:text-zinc-400">{n.friendly_name}</span>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => assignExistingTwilioNumber(n.sid)}
+                        className="shrink-0 rounded border border-violet-600 bg-white px-2 py-1 text-violet-900 disabled:opacity-50 dark:border-violet-500 dark:bg-violet-950/40 dark:text-violet-100"
+                      >
+                        Assign to selected source
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div>

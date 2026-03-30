@@ -4,9 +4,12 @@ import { initSchema } from "@/lib/db";
 import { getOrganizationById } from "@/lib/db/queries";
 import { getWebAttributionInstall } from "@/lib/db/webAttributionQueries";
 import {
+  findActivePhoneNumberByE164,
+  findPhoneNumberByTwilioSidForOrg,
   getActivePhoneForSource,
   insertWebAttributionPhoneNumber,
   listActivePhoneNumbersForOrg,
+  reactivateWebAttributionPhoneNumber,
   releaseWebAttributionPhoneNumber,
 } from "@/lib/db/twilioAttributionQueries";
 import { getTwilioClientForOrganization, getTwilioVoiceWebhookUrl } from "@/lib/twilio/client";
@@ -110,19 +113,22 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     sourceId?: string;
     phoneNumber?: string;
+    twilioPhoneNumberSid?: string;
     forwardToE164?: string | null;
     searchSnapshot?: Record<string, unknown>;
   };
   const sourceId = body.sourceId?.trim();
   const phoneNumber = body.phoneNumber?.trim();
-  if (!sourceId || !phoneNumber) {
-    return NextResponse.json({ error: "sourceId and phoneNumber are required." }, { status: 400 });
+  const twilioPhoneNumberSid = body.twilioPhoneNumberSid?.trim();
+
+  if (!sourceId) {
+    return NextResponse.json({ error: "sourceId is required." }, { status: 400 });
   }
 
   const existing = await getActivePhoneForSource({ organizationId: orgId, sourceId });
   if (existing) {
     return NextResponse.json(
-      { error: "This source already has an active tracking number. Release it before provisioning another." },
+      { error: "This source already has an active tracking number. Release it before assigning another." },
       { status: 400 }
     );
   }
@@ -148,10 +154,72 @@ export async function POST(request: Request) {
   }
 
   try {
+    const client = await getTwilioClientForOrganization(orgId);
+
+    /** Link an existing Twilio incoming number (e.g. bought in Console) to this source. */
+    if (twilioPhoneNumberSid) {
+      const prior = await findPhoneNumberByTwilioSidForOrg(orgId, twilioPhoneNumberSid);
+      if (prior && !prior.released_at) {
+        return NextResponse.json(
+          { error: "That Twilio number is already linked to a channel. Release it first to move it." },
+          { status: 409 }
+        );
+      }
+
+      const pn = await client.incomingPhoneNumbers(twilioPhoneNumberSid).fetch();
+      const e164 = pn.phoneNumber?.toString()?.trim() ?? "";
+      if (!e164) {
+        return NextResponse.json({ error: "Could not read phone number from Twilio." }, { status: 400 });
+      }
+      const taken = await findActivePhoneNumberByE164(e164);
+      if (taken && taken.twilio_phone_number_sid !== twilioPhoneNumberSid) {
+        return NextResponse.json(
+          { error: "That number is already linked to another active channel in this app." },
+          { status: 409 }
+        );
+      }
+
+      await client.incomingPhoneNumbers(twilioPhoneNumberSid).update({
+        voiceUrl,
+        voiceMethod: "POST",
+      });
+
+      const snap = { attachedExisting: true, ...(body.searchSnapshot ?? {}) };
+      if (prior?.released_at) {
+        const reactivated = await reactivateWebAttributionPhoneNumber({
+          organizationId: orgId,
+          twilioPhoneNumberSid: pn.sid,
+          sourceId,
+          forwardToE164: forward,
+          searchSnapshot: snap,
+        });
+        if (!reactivated) {
+          return NextResponse.json({ error: "Could not restore released phone record." }, { status: 500 });
+        }
+        return NextResponse.json(reactivated);
+      }
+
+      const row = await insertWebAttributionPhoneNumber({
+        organizationId: orgId,
+        sourceId,
+        twilioPhoneNumberSid: pn.sid,
+        phoneE164: e164,
+        forwardToE164: forward,
+        searchSnapshot: snap,
+      });
+      return NextResponse.json(row);
+    }
+
+    if (!phoneNumber) {
+      return NextResponse.json(
+        { error: "Provide phoneNumber to buy a new number, or twilioPhoneNumberSid to assign an existing one." },
+        { status: 400 }
+      );
+    }
+
     const orgRow = await getOrganizationById(orgId);
     const numberFriendlyName = twilioFriendlyNameFromOrg(orgRow?.name ?? null, orgId);
 
-    const client = await getTwilioClientForOrganization(orgId);
     const created = await client.incomingPhoneNumbers.create({
       phoneNumber,
       voiceUrl,

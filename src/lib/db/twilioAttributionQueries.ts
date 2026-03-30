@@ -102,6 +102,61 @@ export async function releaseWebAttributionPhoneNumber(params: {
   `;
 }
 
+/** Any row for this Twilio PN SID in the org (active or released). */
+export async function findPhoneNumberByTwilioSidForOrg(
+  organizationId: string,
+  twilioPhoneNumberSid: string
+): Promise<WebAttributionPhoneNumberRow | null> {
+  const result = await sql`
+    SELECT id, organization_id, source_id, twilio_phone_number_sid, phone_e164, forward_to_e164,
+           search_snapshot, created_at, released_at
+    FROM web_attribution_phone_numbers
+    WHERE organization_id = ${organizationId}::uuid
+      AND twilio_phone_number_sid = ${twilioPhoneNumberSid}
+    LIMIT 1
+  `;
+  const row = (result.rows ?? [])[0] as WebAttributionPhoneNumberRow | undefined;
+  if (!row) return null;
+  return {
+    ...row,
+    search_snapshot:
+      row.search_snapshot && typeof row.search_snapshot === "object"
+        ? (row.search_snapshot as Record<string, unknown>)
+        : {},
+  };
+}
+
+export async function reactivateWebAttributionPhoneNumber(params: {
+  organizationId: string;
+  twilioPhoneNumberSid: string;
+  sourceId: string;
+  forwardToE164: string;
+  searchSnapshot: Record<string, unknown>;
+}): Promise<WebAttributionPhoneNumberRow | null> {
+  const result = await sql`
+    UPDATE web_attribution_phone_numbers
+    SET
+      released_at = NULL,
+      source_id = ${params.sourceId}::uuid,
+      forward_to_e164 = ${params.forwardToE164},
+      search_snapshot = ${JSON.stringify(params.searchSnapshot)}::jsonb
+    WHERE organization_id = ${params.organizationId}::uuid
+      AND twilio_phone_number_sid = ${params.twilioPhoneNumberSid}
+      AND released_at IS NOT NULL
+    RETURNING id, organization_id, source_id, twilio_phone_number_sid, phone_e164, forward_to_e164,
+              search_snapshot, created_at, released_at
+  `;
+  const row = result.rows[0] as WebAttributionPhoneNumberRow | undefined;
+  if (!row) return null;
+  return {
+    ...row,
+    search_snapshot:
+      row.search_snapshot && typeof row.search_snapshot === "object"
+        ? (row.search_snapshot as Record<string, unknown>)
+        : {},
+  };
+}
+
 export async function getActivePhoneForSource(params: {
   organizationId: string;
   sourceId: string;
