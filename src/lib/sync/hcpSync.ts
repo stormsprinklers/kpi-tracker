@@ -1,5 +1,6 @@
 import { getHcpClient } from "../housecallpro";
 import { sql } from "@/lib/db";
+import { withDeadlockRetry } from "@/lib/db/deadlockRetry";
 import { initSchema } from "../db";
 
 const DELAY_MS = 100;
@@ -80,6 +81,12 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
 
     // KPI-focused sync: only entities required for KPI reporting.
     const jobs = await client.getJobsAllPages();
+    /** Stable lock order reduces deadlocks vs concurrent webhooks upserting the same rows. */
+    jobs.sort((a, b) => {
+      const ia = extractId(a as Record<string, unknown>) ?? "";
+      const ib = extractId(b as Record<string, unknown>) ?? "";
+      return ia.localeCompare(ib);
+    });
     await delay(DELAY_MS);
     for (const j of jobs) {
       const r = j as Record<string, unknown>;
@@ -88,7 +95,8 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       const customerHcpId = extractCustomerHcpId(r);
       const totalAmount = extractAmountInDollars(r, "total_amount", "subtotal", "total", "amount");
       const outstandingBalance = extractAmountInDollars(r, "outstanding_balance", "balance_due", "amount_due");
-      await sql`
+      await withDeadlockRetry(() =>
+        sql`
         INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
         VALUES (${hcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${JSON.stringify(r)}::jsonb, NOW())
         ON CONFLICT (hcp_id, company_id) DO UPDATE SET
@@ -97,7 +105,8 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
           outstanding_balance = EXCLUDED.outstanding_balance,
           raw = EXCLUDED.raw,
           updated_at = NOW()
-      `;
+      `
+      );
       entitiesSynced.jobs++;
     }
 

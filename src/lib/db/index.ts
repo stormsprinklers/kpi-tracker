@@ -1002,6 +1002,12 @@ export async function initSchema(): Promise<void> {
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'twilio_subaccount_created_at') THEN
         ALTER TABLE web_attribution_install ADD COLUMN twilio_subaccount_created_at TIMESTAMPTZ;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'call_tracking_ivr_enabled') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN call_tracking_ivr_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'web_attribution_install' AND column_name = 'call_tracking_ivr_prompt') THEN
+        ALTER TABLE web_attribution_install ADD COLUMN call_tracking_ivr_prompt TEXT;
+      END IF;
     END $$
   `;
 

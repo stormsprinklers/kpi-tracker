@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import { getOrganizationById } from "@/lib/db/queries";
+import type { WebAttributionInstallRow } from "@/lib/db/webAttributionQueries";
 import {
   getWebAttributionInstall,
   upsertWebAttributionInstall,
@@ -16,6 +17,26 @@ import {
 } from "@/lib/webAttribution";
 
 export const dynamic = "force-dynamic";
+
+function installClientPayload(
+  install: WebAttributionInstallRow,
+  website: string,
+  publishableKey: string | null
+) {
+  return {
+    publishableKey,
+    allowedOrigins: install.allowed_origins,
+    verifiedAt: install.verified_at,
+    lastEventAt: install.last_event_at,
+    website,
+    defaultForwardE164: install.default_forward_e164 ?? null,
+    twilioIntelligenceServiceSid: install.twilio_intelligence_service_sid ?? null,
+    twilioSubaccountSid: install.twilio_subaccount_sid ?? null,
+    twilioSubaccountCreatedAt: install.twilio_subaccount_created_at ?? null,
+    callTrackingIvrEnabled: install.call_tracking_ivr_enabled ?? false,
+    callTrackingIvrPrompt: install.call_tracking_ivr_prompt ?? null,
+  };
+}
 
 export async function GET() {
   const session = await auth();
@@ -40,30 +61,12 @@ export async function GET() {
       allowedOrigins: normalizeOriginList(defaultOrigins),
     });
     install = await getWebAttributionInstall(orgId);
-    return NextResponse.json({
-      publishableKey: firstKey,
-      allowedOrigins: install?.allowed_origins ?? [],
-      verifiedAt: install?.verified_at ?? null,
-      lastEventAt: install?.last_event_at ?? null,
-      website: org?.website ?? "",
-      defaultForwardE164: install?.default_forward_e164 ?? null,
-      twilioIntelligenceServiceSid: install?.twilio_intelligence_service_sid ?? null,
-      twilioSubaccountSid: install?.twilio_subaccount_sid ?? null,
-      twilioSubaccountCreatedAt: install?.twilio_subaccount_created_at ?? null,
-    });
+    return NextResponse.json(
+      installClientPayload(install!, org?.website ?? "", firstKey)
+    );
   }
 
-  return NextResponse.json({
-    publishableKey: null,
-    allowedOrigins: install.allowed_origins,
-    verifiedAt: install.verified_at,
-    lastEventAt: install.last_event_at,
-    website: org?.website ?? "",
-    defaultForwardE164: install.default_forward_e164 ?? null,
-    twilioIntelligenceServiceSid: install.twilio_intelligence_service_sid ?? null,
-    twilioSubaccountSid: install.twilio_subaccount_sid ?? null,
-    twilioSubaccountCreatedAt: install.twilio_subaccount_created_at ?? null,
-  });
+  return NextResponse.json(installClientPayload(install, org?.website ?? "", null));
 }
 
 export async function PATCH(request: Request) {
@@ -81,6 +84,8 @@ export async function PATCH(request: Request) {
     rotateKey?: boolean;
     defaultForwardE164?: string | null;
     twilioIntelligenceServiceSid?: string | null;
+    callTrackingIvrEnabled?: boolean;
+    callTrackingIvrPrompt?: string | null;
   };
   const install = await getWebAttributionInstall(orgId);
   if (!install) {
@@ -94,11 +99,18 @@ export async function PATCH(request: Request) {
     });
   }
 
-  if (body.defaultForwardE164 !== undefined || body.twilioIntelligenceServiceSid !== undefined) {
+  if (
+    body.defaultForwardE164 !== undefined ||
+    body.twilioIntelligenceServiceSid !== undefined ||
+    body.callTrackingIvrEnabled !== undefined ||
+    body.callTrackingIvrPrompt !== undefined
+  ) {
     await updateWebAttributionCallTrackingSettings({
       organizationId: orgId,
       defaultForwardE164: body.defaultForwardE164,
       twilioIntelligenceServiceSid: body.twilioIntelligenceServiceSid,
+      callTrackingIvrEnabled: body.callTrackingIvrEnabled,
+      callTrackingIvrPrompt: body.callTrackingIvrPrompt,
     });
   }
 
@@ -110,28 +122,18 @@ export async function PATCH(request: Request) {
       allowedOrigins: Array.isArray(body.allowedOrigins) ? normalizeOriginList(body.allowedOrigins) : install.allowed_origins,
     });
     const updated = await getWebAttributionInstall(orgId);
-    return NextResponse.json({
-      publishableKey: nextKey,
-      allowedOrigins: updated?.allowed_origins ?? [],
-      verifiedAt: updated?.verified_at ?? null,
-      lastEventAt: updated?.last_event_at ?? null,
-      defaultForwardE164: updated?.default_forward_e164 ?? null,
-      twilioIntelligenceServiceSid: updated?.twilio_intelligence_service_sid ?? null,
-      twilioSubaccountSid: updated?.twilio_subaccount_sid ?? null,
-      twilioSubaccountCreatedAt: updated?.twilio_subaccount_created_at ?? null,
-    });
+    const orgRow = await getOrganizationById(orgId);
+    if (!updated) {
+      return NextResponse.json({ error: "Install missing after rotate." }, { status: 500 });
+    }
+    return NextResponse.json(installClientPayload(updated, orgRow?.website ?? "", nextKey));
   }
 
   const updated = await getWebAttributionInstall(orgId);
-  return NextResponse.json({
-    publishableKey: null,
-    allowedOrigins: updated?.allowed_origins ?? [],
-    verifiedAt: updated?.verified_at ?? null,
-    lastEventAt: updated?.last_event_at ?? null,
-    defaultForwardE164: updated?.default_forward_e164 ?? null,
-    twilioIntelligenceServiceSid: updated?.twilio_intelligence_service_sid ?? null,
-    twilioSubaccountSid: updated?.twilio_subaccount_sid ?? null,
-    twilioSubaccountCreatedAt: updated?.twilio_subaccount_created_at ?? null,
-  });
+  const orgRow = await getOrganizationById(orgId);
+  if (!updated) {
+    return NextResponse.json({ error: "Install missing." }, { status: 500 });
+  }
+  return NextResponse.json(installClientPayload(updated, orgRow?.website ?? "", null));
 }
 

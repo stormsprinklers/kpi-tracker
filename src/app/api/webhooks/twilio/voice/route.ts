@@ -1,31 +1,23 @@
 import { NextResponse } from "next/server";
 import twilio from "twilio";
 import { initSchema } from "@/lib/db";
+import { getOrganizationById } from "@/lib/db/queries";
 import { getWebAttributionInstall } from "@/lib/db/webAttributionQueries";
 import {
   findActivePhoneNumberByE164,
   type WebAttributionPhoneNumberRow,
 } from "@/lib/db/twilioAttributionQueries";
+import { calledNumberCandidates } from "@/lib/twilio/calledNumber";
+import { resolveIvrSayText } from "@/lib/twilio/ivrSayText";
 import {
-  getTwilioRecordingWebhookUrl,
+  getTwilioVoiceGatherWebhookUrl,
   getTwilioVoiceWebhookUrl,
   parseTwilioFormBody,
   validateTwilioWebhookRequestForIncomingRequest,
 } from "@/lib/twilio/client";
+import { dialForwardWithRecording } from "@/lib/twilio/voiceDialTwiML";
 
 export const dynamic = "force-dynamic";
-
-/** Twilio may send To/Called in slightly different shapes; DB stores E.164 with leading +. */
-function calledNumberCandidates(params: Record<string, string>): string[] {
-  const raw = (params.To ?? params.Called ?? "").trim();
-  if (!raw) return [];
-  const out = new Set<string>([raw]);
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length >= 10 && digits.length <= 15) {
-    out.add(`+${digits}`);
-  }
-  return [...out];
-}
 
 export async function POST(request: Request) {
   await initSchema();
@@ -44,8 +36,8 @@ export async function POST(request: Request) {
     if (row) break;
   }
   let forward = row?.forward_to_e164?.trim() ?? "";
+  const install = row ? await getWebAttributionInstall(row.organization_id) : null;
   if (row && !forward) {
-    const install = await getWebAttributionInstall(row.organization_id);
     forward = install?.default_forward_e164?.trim() ?? "";
   }
 
@@ -61,14 +53,29 @@ export async function POST(request: Request) {
     });
   }
 
-  const dial = vr.dial({
-    record: "record-from-answer-dual",
-    recordingStatusCallback: getTwilioRecordingWebhookUrl(),
-    recordingStatusCallbackMethod: "POST",
-    recordingStatusCallbackEvent: ["completed"],
-  });
-  dial.number(forward);
+  const ivrOn = Boolean(install?.call_tracking_ivr_enabled);
+  const gatherUrl = getTwilioVoiceGatherWebhookUrl();
+  if (ivrOn && gatherUrl.startsWith("https://")) {
+    const org = row ? await getOrganizationById(row.organization_id) : null;
+    const prompt = resolveIvrSayText(install?.call_tracking_ivr_prompt, org?.name ?? null);
+    const gather = vr.gather({
+      action: gatherUrl,
+      method: "POST",
+      numDigits: 1,
+      timeout: 12,
+    });
+    gather.say({ voice: "Polly.Joanna" }, prompt);
+    return new NextResponse(vr.toString(), {
+      status: 200,
+      headers: { "Content-Type": "text/xml; charset=utf-8" },
+    });
+  }
 
+  if (ivrOn && !gatherUrl.startsWith("https://")) {
+    console.warn("[twilio/voice] IVR enabled but gather URL is not https; connecting caller without IVR.");
+  }
+
+  dialForwardWithRecording(vr, forward);
   return new NextResponse(vr.toString(), {
     status: 200,
     headers: { "Content-Type": "text/xml; charset=utf-8" },

@@ -21,6 +21,8 @@ export interface WebAttributionInstallRow {
   twilio_intelligence_service_sid: string | null;
   twilio_subaccount_sid: string | null;
   twilio_subaccount_created_at: string | null;
+  call_tracking_ivr_enabled: boolean;
+  call_tracking_ivr_prompt: string | null;
 }
 
 export interface WebAttributionSourceRow {
@@ -53,7 +55,8 @@ export async function getWebAttributionInstall(
   const result = await sql`
     SELECT organization_id, publishable_key_hash, allowed_origins, last_event_at, verified_at, created_at, updated_at,
            default_forward_e164, twilio_intelligence_service_sid,
-           twilio_subaccount_sid, twilio_subaccount_created_at
+           twilio_subaccount_sid, twilio_subaccount_created_at,
+           call_tracking_ivr_enabled, call_tracking_ivr_prompt
     FROM web_attribution_install
     WHERE organization_id = ${organizationId}::uuid
     LIMIT 1
@@ -67,6 +70,8 @@ export async function getWebAttributionInstall(
     twilio_intelligence_service_sid: row.twilio_intelligence_service_sid ?? null,
     twilio_subaccount_sid: row.twilio_subaccount_sid ?? null,
     twilio_subaccount_created_at: row.twilio_subaccount_created_at ?? null,
+    call_tracking_ivr_enabled: Boolean(row.call_tracking_ivr_enabled),
+    call_tracking_ivr_prompt: row.call_tracking_ivr_prompt ?? null,
   };
 }
 
@@ -76,7 +81,8 @@ export async function getWebAttributionInstallByKeyHash(
   const result = await sql`
     SELECT organization_id, publishable_key_hash, allowed_origins, last_event_at, verified_at, created_at, updated_at,
            default_forward_e164, twilio_intelligence_service_sid,
-           twilio_subaccount_sid, twilio_subaccount_created_at
+           twilio_subaccount_sid, twilio_subaccount_created_at,
+           call_tracking_ivr_enabled, call_tracking_ivr_prompt
     FROM web_attribution_install
     WHERE publishable_key_hash = ${publishableKeyHash}
     LIMIT 1
@@ -90,6 +96,8 @@ export async function getWebAttributionInstallByKeyHash(
     twilio_intelligence_service_sid: row.twilio_intelligence_service_sid ?? null,
     twilio_subaccount_sid: row.twilio_subaccount_sid ?? null,
     twilio_subaccount_created_at: row.twilio_subaccount_created_at ?? null,
+    call_tracking_ivr_enabled: Boolean(row.call_tracking_ivr_enabled),
+    call_tracking_ivr_prompt: row.call_tracking_ivr_prompt ?? null,
   };
 }
 
@@ -130,6 +138,8 @@ export async function updateWebAttributionCallTrackingSettings(params: {
   organizationId: string;
   defaultForwardE164?: string | null;
   twilioIntelligenceServiceSid?: string | null;
+  callTrackingIvrEnabled?: boolean;
+  callTrackingIvrPrompt?: string | null;
 }): Promise<void> {
   if (params.defaultForwardE164 !== undefined) {
     await sql`
@@ -142,6 +152,21 @@ export async function updateWebAttributionCallTrackingSettings(params: {
     await sql`
       UPDATE web_attribution_install
       SET twilio_intelligence_service_sid = ${params.twilioIntelligenceServiceSid?.trim() || null}, updated_at = NOW()
+      WHERE organization_id = ${params.organizationId}::uuid
+    `;
+  }
+  if (params.callTrackingIvrEnabled !== undefined) {
+    await sql`
+      UPDATE web_attribution_install
+      SET call_tracking_ivr_enabled = ${params.callTrackingIvrEnabled}, updated_at = NOW()
+      WHERE organization_id = ${params.organizationId}::uuid
+    `;
+  }
+  if (params.callTrackingIvrPrompt !== undefined) {
+    const p = params.callTrackingIvrPrompt?.trim() || null;
+    await sql`
+      UPDATE web_attribution_install
+      SET call_tracking_ivr_prompt = ${p}, updated_at = NOW()
       WHERE organization_id = ${params.organizationId}::uuid
     `;
   }

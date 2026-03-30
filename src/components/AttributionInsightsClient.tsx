@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_IVR_PROMPT_TEMPLATE } from "@/lib/twilio/ivrSayText";
 
 type Source = {
   id: string;
@@ -19,6 +20,8 @@ type InstallResponse = {
   twilioIntelligenceServiceSid: string | null;
   twilioSubaccountSid: string | null;
   twilioSubaccountCreatedAt: string | null;
+  callTrackingIvrEnabled?: boolean;
+  callTrackingIvrPrompt?: string | null;
 };
 
 type EventsResponse = {
@@ -119,6 +122,8 @@ export function AttributionInsightsClient() {
   const [twilioCalls, setTwilioCalls] = useState<TwilioCallRow[]>([]);
   const [defaultForwardInput, setDefaultForwardInput] = useState("");
   const [intelligenceSidInput, setIntelligenceSidInput] = useState("");
+  const [callTrackingIvrEnabledInput, setCallTrackingIvrEnabledInput] = useState(false);
+  const [callTrackingIvrPromptInput, setCallTrackingIvrPromptInput] = useState("");
   const [savingCallSettings, setSavingCallSettings] = useState(false);
   const [searchAreaCode, setSearchAreaCode] = useState("");
   const [searchLocality, setSearchLocality] = useState("");
@@ -128,6 +133,8 @@ export function AttributionInsightsClient() {
   const [provisionForwardOverride, setProvisionForwardOverride] = useState("");
   /** Twilio incoming numbers on the account not yet linked in web_attribution_phone_numbers (admin). */
   const [unassignedTwilio, setUnassignedTwilio] = useState<UnassignedTwilioNumber[]>([]);
+  /** From unassigned API: helps tell “wrong Twilio account” vs “all numbers already linked”. */
+  const [unassignedTwilioListedCount, setUnassignedTwilioListedCount] = useState<number | null>(null);
   const [subaccountBusy, setSubaccountBusy] = useState(false);
   /** Optional: Twilio Console subaccount Auth Token when API-only parent cannot auto-issue a webhook token. */
   const [manualSubaccountAuthToken, setManualSubaccountAuthToken] = useState("");
@@ -202,10 +209,14 @@ export function AttributionInsightsClient() {
         ...installJson,
         twilioSubaccountSid: installJson.twilioSubaccountSid ?? null,
         twilioSubaccountCreatedAt: installJson.twilioSubaccountCreatedAt ?? null,
+        callTrackingIvrEnabled: installJson.callTrackingIvrEnabled ?? false,
+        callTrackingIvrPrompt: installJson.callTrackingIvrPrompt ?? null,
       });
       setAllowedOriginsText((installJson.allowedOrigins ?? []).join("\n"));
       setDefaultForwardInput(installJson.defaultForwardE164 ?? "");
       setIntelligenceSidInput(installJson.twilioIntelligenceServiceSid ?? "");
+      setCallTrackingIvrEnabledInput(Boolean(installJson.callTrackingIvrEnabled));
+      setCallTrackingIvrPromptInput(installJson.callTrackingIvrPrompt ?? "");
       if (installJson.publishableKey) setNewPublishableKey(installJson.publishableKey);
       setSources((await sourceRes.json()) as Source[]);
       setEvents((await eventsRes.json()) as EventsResponse);
@@ -224,10 +235,15 @@ export function AttributionInsightsClient() {
         setTwilioCalls([]);
       }
       if (unassignedRes.ok) {
-        const u = (await unassignedRes.json()) as { unassigned?: UnassignedTwilioNumber[] };
+        const u = (await unassignedRes.json()) as {
+          unassigned?: UnassignedTwilioNumber[];
+          twilioListedCount?: number;
+        };
         setUnassignedTwilio(u.unassigned ?? []);
+        setUnassignedTwilioListedCount(typeof u.twilioListedCount === "number" ? u.twilioListedCount : null);
       } else {
         setUnassignedTwilio([]);
+        setUnassignedTwilioListedCount(null);
       }
       detailLoadedRef.current.clear();
       setCallDetails({});
@@ -382,6 +398,8 @@ export function AttributionInsightsClient() {
               twilioIntelligenceServiceSid: data.twilioIntelligenceServiceSid ?? prev.twilioIntelligenceServiceSid,
               twilioSubaccountSid: data.twilioSubaccountSid ?? prev.twilioSubaccountSid,
               twilioSubaccountCreatedAt: data.twilioSubaccountCreatedAt ?? prev.twilioSubaccountCreatedAt,
+              callTrackingIvrEnabled: data.callTrackingIvrEnabled ?? prev.callTrackingIvrEnabled,
+              callTrackingIvrPrompt: data.callTrackingIvrPrompt ?? prev.callTrackingIvrPrompt,
             }
           : prev
       );
@@ -419,6 +437,8 @@ export function AttributionInsightsClient() {
               twilioIntelligenceServiceSid: data.twilioIntelligenceServiceSid ?? prev.twilioIntelligenceServiceSid,
               twilioSubaccountSid: data.twilioSubaccountSid ?? prev.twilioSubaccountSid,
               twilioSubaccountCreatedAt: data.twilioSubaccountCreatedAt ?? prev.twilioSubaccountCreatedAt,
+              callTrackingIvrEnabled: data.callTrackingIvrEnabled ?? prev.callTrackingIvrEnabled,
+              callTrackingIvrPrompt: data.callTrackingIvrPrompt ?? prev.callTrackingIvrPrompt,
             }
           : prev
       );
@@ -477,6 +497,8 @@ export function AttributionInsightsClient() {
         body: JSON.stringify({
           defaultForwardE164: defaultForwardInput.trim() || null,
           twilioIntelligenceServiceSid: intelligenceSidInput.trim() || null,
+          callTrackingIvrEnabled: callTrackingIvrEnabledInput,
+          callTrackingIvrPrompt: callTrackingIvrPromptInput.trim() || null,
         }),
       });
       const data = await res.json();
@@ -489,9 +511,13 @@ export function AttributionInsightsClient() {
               twilioIntelligenceServiceSid: data.twilioIntelligenceServiceSid ?? null,
               twilioSubaccountSid: data.twilioSubaccountSid ?? prev.twilioSubaccountSid,
               twilioSubaccountCreatedAt: data.twilioSubaccountCreatedAt ?? prev.twilioSubaccountCreatedAt,
+              callTrackingIvrEnabled: data.callTrackingIvrEnabled ?? false,
+              callTrackingIvrPrompt: data.callTrackingIvrPrompt ?? null,
             }
           : prev
       );
+      setCallTrackingIvrEnabledInput(Boolean(data.callTrackingIvrEnabled));
+      setCallTrackingIvrPromptInput(data.callTrackingIvrPrompt ?? "");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save call tracking settings");
     } finally {
@@ -1323,6 +1349,40 @@ export function AttributionInsightsClient() {
                 placeholder="GAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                 className="mt-1 w-full max-w-md rounded border border-zinc-300 bg-white px-2 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
               />
+
+              <div className="mt-5 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                <label className="flex cursor-pointer items-start gap-2 text-xs font-medium text-zinc-800 dark:text-zinc-200">
+                  <input
+                    type="checkbox"
+                    checked={callTrackingIvrEnabledInput}
+                    onChange={(e) => setCallTrackingIvrEnabledInput(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Enable IVR before connecting callers (press <strong className="font-semibold">1</strong> to reach your
+                    forward-to number)
+                  </span>
+                </label>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                  When on, callers hear your message first; only digit <strong className="text-zinc-800 dark:text-zinc-200">1</strong>{" "}
+                  continues to the same forwarded call and recording as today. Other keys or silence end the call politely.
+                </p>
+                <label className="mt-3 block text-xs font-medium text-zinc-700 dark:text-zinc-300">IVR message (spoken)</label>
+                <textarea
+                  value={callTrackingIvrPromptInput}
+                  onChange={(e) => setCallTrackingIvrPromptInput(e.target.value)}
+                  disabled={!callTrackingIvrEnabledInput}
+                  rows={3}
+                  placeholder={DEFAULT_IVR_PROMPT_TEMPLATE}
+                  className="mt-1 w-full max-w-lg rounded border border-zinc-300 bg-white px-2 py-2 text-xs text-zinc-800 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                />
+                <p className="mt-1 text-xs text-zinc-500">
+                  Use <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">{"{company}"}</code> or{" "}
+                  <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">{"{company_name}"}</code> for your
+                  organization name. Leave blank to use the default sentence above.
+                </p>
+              </div>
+
               <button
                 type="button"
                 onClick={saveCallTrackingSettings}
@@ -1431,8 +1491,23 @@ export function AttributionInsightsClient() {
               </p>
               {unassignedTwilio.length === 0 ? (
                 <p className="mt-2 text-xs text-zinc-500">
-                  No unlinked numbers found. If you are not an admin, this list is empty. Otherwise every number on the
-                  account is already linked below.
+                  {unassignedTwilioListedCount === 0 ? (
+                    <>
+                      Twilio returned no incoming numbers for this company workspace. Numbers bought on the subaccount
+                      were not visible — usually fixed by server env (master Twilio API key or auth token that can act on
+                      the subaccount) or by saving subaccount API keys in Attribution setup.
+                    </>
+                  ) : unassignedTwilioListedCount != null && unassignedTwilioListedCount > 0 ? (
+                    <>
+                      All {unassignedTwilioListedCount} number{unassignedTwilioListedCount === 1 ? "" : "s"} on this
+                      Twilio account already have an active link below.
+                    </>
+                  ) : (
+                    <>
+                      No unlinked numbers found. If you are not an admin, this list is empty. Otherwise every number on
+                      the account is already linked below.
+                    </>
+                  )}
                 </p>
               ) : (
                 <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto text-xs">

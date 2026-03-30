@@ -54,7 +54,12 @@ export async function GET() {
         phone_number: n.phoneNumber,
         friendly_name: n.friendlyName ?? null,
       }));
-    return NextResponse.json({ unassigned });
+    return NextResponse.json({
+      unassigned,
+      /** Total incoming numbers Twilio returned for this org’s account context (before filtering by app links). */
+      twilioListedCount: list.length,
+      activeLinkedCount: active.length,
+    });
   } catch (e) {
     console.error("[attribution/phone-numbers/unassigned GET]", e);
     return NextResponse.json(

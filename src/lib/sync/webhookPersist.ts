@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { withDeadlockRetry } from "@/lib/db/deadlockRetry";
 
 function extractId(record: Record<string, unknown>): string | null {
   const id = record.id ?? record.uuid;
@@ -85,7 +86,8 @@ export async function persistWebhookEvent(
         const totalAmount = extractAmountInDollars(jobRecord, "total_amount", "subtotal", "total", "amount");
         const outstandingBalance = extractAmountInDollars(jobRecord, "outstanding_balance", "balance_due", "amount_due");
         const jobRaw = JSON.stringify(jobRecord);
-        await sql`
+        await withDeadlockRetry(() =>
+          sql`
           INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
           VALUES (${jHcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${jobRaw}::jsonb, NOW())
           ON CONFLICT (hcp_id, company_id) DO UPDATE SET
@@ -94,7 +96,8 @@ export async function persistWebhookEvent(
             outstanding_balance = EXCLUDED.outstanding_balance,
             raw = EXCLUDED.raw,
             updated_at = NOW()
-        `;
+        `
+        );
         if (jobRecord.customer && typeof jobRecord.customer === "object" && jobRecord.customer !== null) {
           const cust = jobRecord.customer as Record<string, unknown>;
           const custId = extractId(cust);
@@ -118,7 +121,8 @@ export async function persistWebhookEvent(
     const totalAmount = extractAmountInDollars(record, "total_amount", "subtotal", "total", "amount");
     const outstandingBalance = extractAmountInDollars(record, "outstanding_balance", "balance_due", "amount_due");
     const raw = JSON.stringify(record);
-    await sql`
+    await withDeadlockRetry(() =>
+      sql`
       INSERT INTO jobs (hcp_id, company_id, customer_hcp_id, total_amount, outstanding_balance, raw, updated_at)
       VALUES (${hcpId}, ${companyId}, ${customerHcpId}, ${totalAmount}, ${outstandingBalance}, ${raw}::jsonb, NOW())
       ON CONFLICT (hcp_id, company_id) DO UPDATE SET
@@ -127,7 +131,8 @@ export async function persistWebhookEvent(
         outstanding_balance = EXCLUDED.outstanding_balance,
         raw = EXCLUDED.raw,
         updated_at = NOW()
-    `;
+    `
+    );
     if (record.customer && typeof record.customer === "object" && record.customer !== null) {
       const cust = record.customer as Record<string, unknown>;
       const custId = extractId(cust);

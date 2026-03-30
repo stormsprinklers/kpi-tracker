@@ -2,6 +2,7 @@ import twilio from "twilio";
 import {
   getDecryptedTwilioSubaccountRestCredentials,
   getTwilioWebhookAuthTokenForSubaccountSid,
+  getWebAttributionInstall,
 } from "@/lib/db/webAttributionQueries";
 
 export function getTwilioWebhookBase(): string {
@@ -14,6 +15,11 @@ export function getTwilioWebhookBase(): string {
 
 export function getTwilioVoiceWebhookUrl(): string {
   return `${getTwilioWebhookBase()}/api/webhooks/twilio/voice`;
+}
+
+/** Twilio POSTs here after IVR &lt;Gather&gt; (digit or timeout). */
+export function getTwilioVoiceGatherWebhookUrl(): string {
+  return `${getTwilioWebhookBase()}/api/webhooks/twilio/voice/gather`;
 }
 
 export function getTwilioRecordingWebhookUrl(): string {
@@ -124,11 +130,21 @@ export function getTwilioClient(): twilio.Twilio {
   throw new Error("Set TWILIO_AUTH_TOKEN or TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET");
 }
 
-/** Per-organization Twilio client: subaccount API key from DB, else legacy env client. */
+/**
+ * Per-organization Twilio REST client.
+ * 1) Subaccount API key from DB (preferred).
+ * 2) Else if the org has a Twilio subaccount SID, master credentials scoped to that subaccount (numbers live on the subaccount, not the parent).
+ * 3) Else legacy single-account env client.
+ */
 export async function getTwilioClientForOrganization(organizationId: string): Promise<twilio.Twilio> {
   const sub = await getDecryptedTwilioSubaccountRestCredentials(organizationId);
   if (sub) {
     return twilio(sub.apiKeySid, sub.apiKeySecret, { accountSid: sub.accountSid });
+  }
+  const install = await getWebAttributionInstall(organizationId);
+  const subSid = install?.twilio_subaccount_sid?.trim();
+  if (subSid) {
+    return getTwilioMasterClientForSubaccount(subSid);
   }
   return getTwilioClient();
 }
