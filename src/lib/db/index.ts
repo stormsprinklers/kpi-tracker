@@ -1068,4 +1068,21 @@ export async function initSchema(): Promise<void> {
     ON twilio_tracking_calls (transcript_status, created_at)
     WHERE transcript_status IN ('pending', 'queued', 'in-progress')
   `;
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'twilio_tracking_calls' AND column_name = 'recording_media_url'
+      ) THEN
+        ALTER TABLE twilio_tracking_calls ADD COLUMN recording_media_url TEXT;
+      END IF;
+    END $$
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_twilio_tracking_calls_phone_time
+    ON twilio_tracking_calls (organization_id, phone_number_id, created_at DESC)
+    WHERE phone_number_id IS NOT NULL
+  `;
 }

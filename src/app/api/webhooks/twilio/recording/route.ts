@@ -15,7 +15,7 @@ import {
   getIntelligenceServiceSid,
   getTwilioRecordingWebhookUrl,
   parseTwilioFormBody,
-  validateTwilioWebhookRequest,
+  validateTwilioWebhookRequestForIncomingRequest,
 } from "@/lib/twilio/client";
 import { createTranscriptFromRecording } from "@/lib/twilio/intelligence";
 
@@ -26,8 +26,9 @@ export async function POST(request: Request) {
   const text = await request.text();
   const params = parseTwilioFormBody(text);
   const sig = request.headers.get("x-twilio-signature");
-  const url = getTwilioRecordingWebhookUrl();
-  if (!(await validateTwilioWebhookRequest(url, params, sig))) {
+  const configuredUrl = getTwilioRecordingWebhookUrl();
+  if (!(await validateTwilioWebhookRequestForIncomingRequest(request, configuredUrl, params, sig))) {
+    console.warn("[twilio/recording] Invalid or missing Twilio signature (check TWILIO_WEBHOOK_BASE_URL).");
     return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
   }
 
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
 
   const callSid = params.CallSid ?? "";
   const recordingSid = params.RecordingSid ?? null;
+  const recordingMediaUrl = params.RecordingUrl?.trim() || null;
   const durationRaw = params.RecordingDuration;
   const durationSeconds = durationRaw ? parseInt(durationRaw, 10) : null;
 
@@ -80,6 +82,7 @@ export async function POST(request: Request) {
     phoneNumberId: phoneRow.id,
     callSid,
     recordingSid,
+    recordingMediaUrl,
     fromE164,
     toE164,
     durationSeconds: Number.isFinite(durationSeconds as number) ? durationSeconds : null,

@@ -171,6 +171,39 @@ export async function validateTwilioWebhookRequest(
   }
 }
 
+/**
+ * Public URL Twilio used for this request (must match signature). Prefer proxy headers on Vercel.
+ */
+export function twilioWebhookPublicUrl(request: Request): string {
+  const u = new URL(request.url);
+  const pathAndSearch = `${u.pathname}${u.search}`;
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (forwardedHost) {
+    const proto = forwardedProto === "http" || forwardedProto === "https" ? forwardedProto : "https";
+    return `${proto}://${forwardedHost}${pathAndSearch}`;
+  }
+  return `${u.origin}${pathAndSearch}`;
+}
+
+/**
+ * Validate signature using the request URL first, then the configured canonical URL if different.
+ * Env-only URLs often drift from the URL Twilio actually POSTs to (www vs apex, preview host, etc.).
+ */
+export async function validateTwilioWebhookRequestForIncomingRequest(
+  request: Request,
+  configuredCanonicalUrl: string,
+  params: Record<string, string>,
+  signature: string | null
+): Promise<boolean> {
+  const fromRequest = twilioWebhookPublicUrl(request);
+  if (await validateTwilioWebhookRequest(fromRequest, params, signature)) return true;
+  if (configuredCanonicalUrl && configuredCanonicalUrl !== fromRequest) {
+    return validateTwilioWebhookRequest(configuredCanonicalUrl, params, signature);
+  }
+  return false;
+}
+
 /** @deprecated Prefer validateTwilioWebhookRequest (supports per-subaccount tokens). */
 export function validateTwilioSignature(
   fullUrl: string,
@@ -184,6 +217,47 @@ export function validateTwilioSignature(
     return twilio.validateRequest(t, signature, fullUrl, params);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Download recording bytes from Twilio (API key or account token). Used to proxy audio to the browser.
+ */
+export async function fetchTwilioRecordingMp3(
+  organizationId: string,
+  recordingSid: string
+): Promise<Response | null> {
+  const client = await getTwilioClientForOrganization(organizationId);
+  try {
+    const rec = await client.recordings(recordingSid).fetch();
+    const mp3Url = rec.uri.replace(/\.json$/i, ".mp3");
+    const sub = await getDecryptedTwilioSubaccountRestCredentials(organizationId);
+    let user: string;
+    let pass: string;
+    if (sub) {
+      user = sub.apiKeySid;
+      pass = sub.apiKeySecret;
+    } else {
+      const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim();
+      const keySid = process.env.TWILIO_API_KEY_SID?.trim();
+      const keySecret = process.env.TWILIO_API_KEY_SECRET?.trim();
+      const token = process.env.TWILIO_AUTH_TOKEN?.trim();
+      if (keySid && keySecret) {
+        user = keySid;
+        pass = keySecret;
+      } else if (accountSid && token) {
+        user = accountSid;
+        pass = token;
+      } else {
+        return null;
+      }
+    }
+    const authHeader = Buffer.from(`${user}:${pass}`).toString("base64");
+    const mediaRes = await fetch(mp3Url, { headers: { Authorization: `Basic ${authHeader}` } });
+    if (!mediaRes.ok) return null;
+    return mediaRes;
+  } catch {
+    return null;
   }
 }
 

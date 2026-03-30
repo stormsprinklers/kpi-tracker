@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Source = {
   id: string;
@@ -42,6 +42,11 @@ type ActivePhone = {
 type TwilioCallRow = {
   id: string;
   call_sid: string;
+  recording_sid: string | null;
+  recording_media_url: string | null;
+  phone_number_id: string | null;
+  tracking_number_e164: string | null;
+  forward_to_e164: string | null;
   from_e164: string | null;
   to_e164: string | null;
   duration_seconds: number | null;
@@ -125,6 +130,12 @@ export function AttributionInsightsClient() {
   /** First load finished (success or failure). Without this, a failed load left install=null and UI stuck on loading forever. */
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
+  const [expandedCallIds, setExpandedCallIds] = useState<Set<string>>(() => new Set());
+  const [callDetails, setCallDetails] = useState<
+    Record<string, { transcript_text: string | null; error?: string }>
+  >({});
+  const detailLoadedRef = useRef<Set<string>>(new Set());
+
   const setWizardStep = useCallback((next: number | ((prev: number) => number)) => {
     setStep((prev) => {
       const resolved = typeof next === "function" ? next(prev) : next;
@@ -165,7 +176,7 @@ export function AttributionInsightsClient() {
         fetch("/api/attribution/sources", fetchOpts),
         fetch("/api/attribution/events", fetchOpts),
         fetch("/api/attribution/phone-numbers/active", fetchOpts),
-        fetch("/api/attribution/twilio-calls", fetchOpts),
+        fetch("/api/attribution/twilio-calls?limit=150", fetchOpts),
       ]);
 
       if (!installRes.ok) {
@@ -207,6 +218,9 @@ export function AttributionInsightsClient() {
       } else {
         setTwilioCalls([]);
       }
+      detailLoadedRef.current.clear();
+      setCallDetails({});
+      setExpandedCallIds(new Set());
 
       const storedStep = readStoredWizardStep();
       if (storedStep !== null) {
@@ -266,6 +280,61 @@ export function AttributionInsightsClient() {
     }
     return m;
   }, [activePhones]);
+
+  const callsGrouped = useMemo(() => {
+    const byPhone = new Map<string, TwilioCallRow[]>();
+    const unassigned: TwilioCallRow[] = [];
+    const sortCalls = (a: TwilioCallRow, b: TwilioCallRow) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    for (const c of twilioCalls) {
+      if (c.phone_number_id) {
+        const arr = byPhone.get(c.phone_number_id) ?? [];
+        arr.push(c);
+        byPhone.set(c.phone_number_id, arr);
+      } else {
+        unassigned.push(c);
+      }
+    }
+    for (const arr of byPhone.values()) arr.sort(sortCalls);
+    unassigned.sort(sortCalls);
+    return { byPhone, unassigned };
+  }, [twilioCalls]);
+
+  const toggleExpandedCall = useCallback((callId: string) => {
+    setExpandedCallIds((prev) => {
+      const next = new Set(prev);
+      const wasOpen = next.has(callId);
+      if (wasOpen) {
+        next.delete(callId);
+        return next;
+      }
+      next.add(callId);
+      if (!detailLoadedRef.current.has(callId)) {
+        detailLoadedRef.current.add(callId);
+        void (async () => {
+          try {
+            const res = await fetch(`/api/attribution/twilio-calls/${callId}`, { credentials: "include" });
+            const data = res.ok
+              ? ((await res.json()) as { call?: { transcript_text: string | null } })
+              : null;
+            setCallDetails((d) => ({
+              ...d,
+              [callId]: {
+                transcript_text: data?.call?.transcript_text ?? null,
+                error: res.ok ? undefined : "Could not load transcript",
+              },
+            }));
+          } catch {
+            setCallDetails((d) => ({
+              ...d,
+              [callId]: { transcript_text: null, error: "Could not load transcript" },
+            }));
+          }
+        })();
+      }
+      return next;
+    });
+  }, []);
 
   async function copyAttributionText(text: string) {
     setError(null);
@@ -609,12 +678,13 @@ export function AttributionInsightsClient() {
                 <th className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200">Source</th>
                 <th className="py-2 font-medium text-zinc-800 dark:text-zinc-200">Tracking link</th>
                 <th className="py-2 font-medium text-zinc-800 dark:text-zinc-200">Tracking #</th>
+                <th className="py-2 font-medium text-zinc-800 dark:text-zinc-200">Forwards to</th>
               </tr>
             </thead>
             <tbody>
               {sources.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-3 py-4 text-zinc-500">
+                  <td colSpan={4} className="px-3 py-4 text-zinc-500">
                     No sources yet. Open <strong className="text-zinc-700 dark:text-zinc-300">Edit links</strong> to add
                     channels.
                   </td>
@@ -630,6 +700,12 @@ export function AttributionInsightsClient() {
                   const phones = phonesBySourceId.get(source.id) ?? [];
                   const phoneDisplay =
                     phones.length > 0 ? phones.map((p) => p.phone_e164).join(", ") : "—";
+                  const forwardDisplay =
+                    phones.length > 0
+                      ? phones.map((p) => p.forward_to_e164).join(", ")
+                      : install?.defaultForwardE164?.trim()
+                        ? `${install.defaultForwardE164} (default)`
+                        : "—";
                   return (
                     <tr key={source.id} className="border-t border-emerald-100 dark:border-emerald-900/30">
                       <td className="px-3 py-2 align-top font-medium text-zinc-900 dark:text-zinc-50">{source.label}</td>
@@ -646,6 +722,7 @@ export function AttributionInsightsClient() {
                         ) : null}
                       </td>
                       <td className="py-2 align-top font-mono text-zinc-700 dark:text-zinc-300">{phoneDisplay}</td>
+                      <td className="py-2 align-top font-mono text-zinc-700 dark:text-zinc-300">{forwardDisplay}</td>
                     </tr>
                   );
                 })
@@ -653,6 +730,206 @@ export function AttributionInsightsClient() {
             </tbody>
           </table>
         </div>
+        {install.defaultForwardE164?.trim() ? (
+          <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-400">
+            <strong className="font-medium text-zinc-800 dark:text-zinc-200">Default forward</strong> (used when a
+            number has no per-number override):{" "}
+            <span className="font-mono">{install.defaultForwardE164}</span>
+          </p>
+        ) : null}
+      </section>
+
+      <section
+        aria-labelledby="attribution-call-history-heading"
+        className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 md:p-5"
+      >
+        <h2 id="attribution-call-history-heading" className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          Call history by tracking number
+        </h2>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+          Each row is stored when a call completes recording. Audio plays in the browser via a short-lived proxy
+          (you must be logged in). Expand a row to load the full transcript once Intelligence has finished.
+        </p>
+
+        {twilioCalls.length === 0 && activePhones.length === 0 ? (
+          <p className="mt-4 text-xs text-zinc-500">No tracking numbers or calls yet.</p>
+        ) : null}
+
+        {activePhones.map((p) => {
+          const label = sources.find((s) => s.id === p.source_id)?.label ?? "Channel";
+          const callsFor = callsGrouped.byPhone.get(p.id) ?? [];
+          return (
+            <div
+              key={p.id}
+              className="mt-6 border-t border-zinc-100 pt-5 first:mt-4 first:border-t-0 first:pt-0 dark:border-zinc-800"
+            >
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                {label}{" "}
+                <span className="font-normal text-zinc-600 dark:text-zinc-400">·</span>{" "}
+                <span className="font-mono font-normal">{p.phone_e164}</span>
+              </h3>
+              <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+                Forwards to <span className="font-mono text-zinc-800 dark:text-zinc-200">{p.forward_to_e164}</span>
+              </p>
+              {callsFor.length === 0 ? (
+                <p className="mt-2 text-xs text-zinc-500">No calls logged to this number yet.</p>
+              ) : (
+                <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+                  <table className="w-full min-w-[720px] text-left text-xs">
+                    <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                      <tr>
+                        <th className="px-2 py-2">Time</th>
+                        <th className="py-2">From</th>
+                        <th className="py-2">Duration</th>
+                        <th className="py-2">Recording</th>
+                        <th className="py-2">Status</th>
+                        <th className="py-2">Transcript</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {callsFor.map((c) => (
+                        <Fragment key={c.id}>
+                          <tr className="border-t border-zinc-100 dark:border-zinc-800">
+                            <td className="px-2 py-2 text-zinc-600 dark:text-zinc-400">
+                              {new Date(c.created_at).toLocaleString()}
+                            </td>
+                            <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{c.from_e164 ?? "—"}</td>
+                            <td className="py-2">{c.duration_seconds != null ? `${c.duration_seconds}s` : "—"}</td>
+                            <td className="py-2">
+                              {c.recording_sid ? (
+                                <audio
+                                  controls
+                                  preload="none"
+                                  className="h-8 max-w-[220px] align-middle"
+                                  src={`/api/attribution/twilio-recordings/${c.id}`}
+                                />
+                              ) : (
+                                <span className="text-zinc-500">—</span>
+                              )}
+                            </td>
+                            <td className="py-2 text-zinc-600 dark:text-zinc-400">{c.transcript_status}</td>
+                            <td className="py-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleExpandedCall(c.id)}
+                                className="text-violet-700 underline decoration-violet-600/40 hover:decoration-violet-800 dark:text-violet-400"
+                              >
+                                {expandedCallIds.has(c.id) ? "Hide" : "Show"} full transcript
+                              </button>
+                              {c.transcript_preview && !expandedCallIds.has(c.id) ? (
+                                <p className="mt-1 line-clamp-2 text-zinc-500" title={c.transcript_preview}>
+                                  {c.transcript_preview}
+                                </p>
+                              ) : null}
+                            </td>
+                          </tr>
+                          {expandedCallIds.has(c.id) ? (
+                            <tr className="border-t border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/40">
+                              <td colSpan={6} className="px-3 py-3 text-zinc-800 dark:text-zinc-200">
+                                {callDetails[c.id]?.error ? (
+                                  <p className="text-amber-800 dark:text-amber-200">{callDetails[c.id].error}</p>
+                                ) : callDetails[c.id] && "transcript_text" in callDetails[c.id] ? (
+                                  callDetails[c.id].transcript_text ? (
+                                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-sans text-xs leading-relaxed">
+                                      {callDetails[c.id].transcript_text}
+                                    </pre>
+                                  ) : (
+                                    <p className="text-zinc-500">No transcript text yet — Intelligence may still be processing.</p>
+                                  )
+                                ) : (
+                                  <p className="text-zinc-500">Loading transcript…</p>
+                                )}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {callsGrouped.unassigned.length > 0 ? (
+          <div className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+            <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Calls without a matched tracking number</h3>
+            <p className="mt-1 text-xs text-zinc-500">
+              Older or edge-case calls where the dialed number did not match an active tracking line in our database.
+            </p>
+            <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <table className="w-full min-w-[720px] text-left text-xs">
+                <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                  <tr>
+                    <th className="px-2 py-2">Time</th>
+                    <th className="py-2">To</th>
+                    <th className="py-2">From</th>
+                    <th className="py-2">Duration</th>
+                    <th className="py-2">Recording</th>
+                    <th className="py-2">Status</th>
+                    <th className="py-2">Transcript</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {callsGrouped.unassigned.map((c) => (
+                    <Fragment key={c.id}>
+                      <tr className="border-t border-zinc-100 dark:border-zinc-800">
+                        <td className="px-2 py-2 text-zinc-600 dark:text-zinc-400">
+                          {new Date(c.created_at).toLocaleString()}
+                        </td>
+                        <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{c.to_e164 ?? c.tracking_number_e164 ?? "—"}</td>
+                        <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{c.from_e164 ?? "—"}</td>
+                        <td className="py-2">{c.duration_seconds != null ? `${c.duration_seconds}s` : "—"}</td>
+                        <td className="py-2">
+                          {c.recording_sid ? (
+                            <audio
+                              controls
+                              preload="none"
+                              className="h-8 max-w-[220px] align-middle"
+                              src={`/api/attribution/twilio-recordings/${c.id}`}
+                            />
+                          ) : (
+                            <span className="text-zinc-500">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-zinc-600 dark:text-zinc-400">{c.transcript_status}</td>
+                        <td className="py-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandedCall(c.id)}
+                            className="text-violet-700 underline dark:text-violet-400"
+                          >
+                            {expandedCallIds.has(c.id) ? "Hide" : "Show"} full transcript
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedCallIds.has(c.id) ? (
+                        <tr className="border-t border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/40">
+                          <td colSpan={7} className="px-3 py-3 text-zinc-800 dark:text-zinc-200">
+                            {callDetails[c.id]?.error ? (
+                              <p className="text-amber-800 dark:text-amber-200">{callDetails[c.id].error}</p>
+                            ) : callDetails[c.id] && "transcript_text" in callDetails[c.id] ? (
+                              callDetails[c.id].transcript_text ? (
+                                <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-sans text-xs leading-relaxed">
+                                  {callDetails[c.id].transcript_text}
+                                </pre>
+                              ) : (
+                                <p className="text-zinc-500">No transcript text yet.</p>
+                              )
+                            ) : (
+                              <p className="text-zinc-500">Loading transcript…</p>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {/* Step indicator */}
@@ -1140,53 +1417,14 @@ export function AttributionInsightsClient() {
             </div>
 
             <div>
-              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Recent tracking calls</h3>
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Call history, recordings &amp; transcripts</h3>
               <p className="mt-1 text-xs text-zinc-500">
+                Full history is in the <strong className="text-zinc-700 dark:text-zinc-300">Call history by tracking number</strong>{" "}
+                section at the top of this page (per-number tables, audio playback, and expandable transcripts).
                 Transcripts fill after Intelligence completes; the daily <code className="font-mono">/api/sync</code> cron
-                polls pending calls, or you can trigger <code className="font-mono">GET /api/cron/twilio-transcripts</code>{" "}
-                manually with the same bearer secret.
+                polls pending calls, or use <code className="font-mono">GET /api/cron/twilio-transcripts</code> with your
+                bearer secret.
               </p>
-              <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-                <table className="w-full min-w-[640px] text-left text-xs">
-                  <thead className="bg-zinc-50 dark:bg-zinc-800/50">
-                    <tr>
-                      <th className="px-2 py-2">Time</th>
-                      <th className="py-2">From</th>
-                      <th className="py-2">Source</th>
-                      <th className="py-2">Duration</th>
-                      <th className="py-2">Transcript</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {twilioCalls.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-2 py-3 text-zinc-500">
-                          No calls yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      twilioCalls.map((c) => (
-                        <tr key={c.id} className="border-t border-zinc-100 dark:border-zinc-800">
-                          <td className="px-2 py-2 text-zinc-600 dark:text-zinc-400">
-                            {new Date(c.created_at).toLocaleString()}
-                          </td>
-                          <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{c.from_e164 ?? "—"}</td>
-                          <td className="py-2">{c.source_label ?? "—"}</td>
-                          <td className="py-2">{c.duration_seconds != null ? `${c.duration_seconds}s` : "—"}</td>
-                          <td className="max-w-xs py-2 text-zinc-600 dark:text-zinc-400">
-                            <span className="text-zinc-500">{c.transcript_status}</span>
-                            {c.transcript_preview ? (
-                              <span className="mt-1 block truncate" title={c.transcript_preview}>
-                                {c.transcript_preview}
-                              </span>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
             </div>
           </div>
         )}
