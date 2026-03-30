@@ -25,46 +25,55 @@ function twiml(vr: twilio.twiml.VoiceResponse) {
 
 /** After &lt;Gather numDigits="1"&gt;: press 1 → forward + record; timeout or other digit → hang up. */
 export async function POST(request: Request) {
-  await initSchema();
-  const text = await request.text();
-  const params = parseTwilioFormBody(text);
-  const sig = request.headers.get("x-twilio-signature");
-  const configuredUrl = getTwilioVoiceGatherWebhookUrl();
-  if (!(await validateTwilioWebhookRequestForIncomingRequest(request, configuredUrl, params, sig))) {
-    console.warn("[twilio/voice/gather] Invalid Twilio signature.");
-    return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
-  }
+  try {
+    await initSchema();
+    const text = await request.text();
+    const params = parseTwilioFormBody(text);
+    const sig = request.headers.get("x-twilio-signature");
+    const configuredUrl = getTwilioVoiceGatherWebhookUrl();
+    if (!(await validateTwilioWebhookRequestForIncomingRequest(request, configuredUrl, params, sig))) {
+      console.warn("[twilio/voice/gather] Invalid Twilio signature.");
+      const deny = new twilio.twiml.VoiceResponse();
+      deny.say({ voice: "Polly.Joanna" }, "Call could not be verified. Goodbye.");
+      return twiml(deny);
+    }
 
-  const digits = (params.Digits ?? "").trim();
+    const digits = (params.Digits ?? "").trim();
 
-  let row: WebAttributionPhoneNumberRow | null = null;
-  for (const to of calledNumberCandidates(params)) {
-    row = await findActivePhoneNumberByE164(to);
-    if (row) break;
-  }
+    let row: WebAttributionPhoneNumberRow | null = null;
+    for (const to of calledNumberCandidates(params)) {
+      row = await findActivePhoneNumberByE164(to);
+      if (row) break;
+    }
 
-  let forward = row?.forward_to_e164?.trim() ?? "";
-  if (row && !forward) {
-    const install = await getWebAttributionInstall(row.organization_id);
-    forward = install?.default_forward_e164?.trim() ?? "";
-  }
+    let forward = row?.forward_to_e164?.trim() ?? "";
+    if (row && !forward) {
+      const install = await getWebAttributionInstall(row.organization_id);
+      forward = install?.default_forward_e164?.trim() ?? "";
+    }
 
-  const vr = new twilio.twiml.VoiceResponse();
+    const vr = new twilio.twiml.VoiceResponse();
 
-  if (!forward) {
-    vr.say({ voice: "Polly.Joanna" }, "We could not connect your call. Goodbye.");
+    if (!forward) {
+      vr.say({ voice: "Polly.Joanna" }, "We could not connect your call. Goodbye.");
+      return twiml(vr);
+    }
+
+    if (digits === "1") {
+      dialForwardWithRecording(vr, forward);
+      return twiml(vr);
+    }
+
+    if (!digits) {
+      vr.say({ voice: "Polly.Joanna" }, "We did not receive your selection. Goodbye.");
+    } else {
+      vr.say({ voice: "Polly.Joanna" }, "Sorry, that is not a valid option. Goodbye.");
+    }
+    return twiml(vr);
+  } catch (e) {
+    console.error("[twilio/voice/gather] Unhandled error", e);
+    const vr = new twilio.twiml.VoiceResponse();
+    vr.say({ voice: "Polly.Joanna" }, "We are having a technical problem. Goodbye.");
     return twiml(vr);
   }
-
-  if (digits === "1") {
-    dialForwardWithRecording(vr, forward);
-    return twiml(vr);
-  }
-
-  if (!digits) {
-    vr.say({ voice: "Polly.Joanna" }, "We did not receive your selection. Goodbye.");
-  } else {
-    vr.say({ voice: "Polly.Joanna" }, "Sorry, that is not a valid option. Goodbye.");
-  }
-  return twiml(vr);
 }

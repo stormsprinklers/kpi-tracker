@@ -13,16 +13,48 @@ export function getTwilioWebhookBase(): string {
   return raw.replace(/\/$/, "");
 }
 
+/**
+ * Absolute `https://host` for TwiML callbacks (Gather action, recording status).
+ * Relative URLs make Twilio fail the call with a generic application error.
+ */
+export function getTwilioPublicHttpsOrigin(): string | null {
+  const raw = getTwilioWebhookBase().trim();
+  if (!raw) return null;
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const u = new URL(withScheme);
+    if (u.protocol !== "https:") return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+function webhookUrlVariants(fullUrl: string): string[] {
+  const u = fullUrl.trim();
+  if (!u) return [];
+  const variants = new Set<string>([u]);
+  if (u.endsWith("/")) variants.add(u.replace(/\/+$/, ""));
+  else variants.add(`${u}/`);
+  return [...variants];
+}
+
 export function getTwilioVoiceWebhookUrl(): string {
+  const origin = getTwilioPublicHttpsOrigin();
+  if (origin) return `${origin}/api/webhooks/twilio/voice`;
   return `${getTwilioWebhookBase()}/api/webhooks/twilio/voice`;
 }
 
 /** Twilio POSTs here after IVR &lt;Gather&gt; (digit or timeout). */
 export function getTwilioVoiceGatherWebhookUrl(): string {
+  const origin = getTwilioPublicHttpsOrigin();
+  if (origin) return `${origin}/api/webhooks/twilio/voice/gather`;
   return `${getTwilioWebhookBase()}/api/webhooks/twilio/voice/gather`;
 }
 
 export function getTwilioRecordingWebhookUrl(): string {
+  const origin = getTwilioPublicHttpsOrigin();
+  if (origin) return `${origin}/api/webhooks/twilio/recording`;
   return `${getTwilioWebhookBase()}/api/webhooks/twilio/recording`;
 }
 
@@ -213,9 +245,11 @@ export async function validateTwilioWebhookRequestForIncomingRequest(
   signature: string | null
 ): Promise<boolean> {
   const fromRequest = twilioWebhookPublicUrl(request);
-  if (await validateTwilioWebhookRequest(fromRequest, params, signature)) return true;
-  if (configuredCanonicalUrl && configuredCanonicalUrl !== fromRequest) {
-    return validateTwilioWebhookRequest(configuredCanonicalUrl, params, signature);
+  for (const u of webhookUrlVariants(fromRequest)) {
+    if (await validateTwilioWebhookRequest(u, params, signature)) return true;
+  }
+  for (const u of webhookUrlVariants(configuredCanonicalUrl)) {
+    if (await validateTwilioWebhookRequest(u, params, signature)) return true;
   }
   return false;
 }
