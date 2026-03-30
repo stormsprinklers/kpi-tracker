@@ -1,13 +1,14 @@
-import twilio from "twilio";
 import { NextResponse } from "next/server";
 import { encryptSubaccountSecret } from "@/lib/crypto/subaccountSecrets";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
+import { getOrganizationById } from "@/lib/db/queries";
 import {
   getWebAttributionInstall,
   saveTwilioSubaccountCredentials,
 } from "@/lib/db/webAttributionQueries";
-import { getTwilioMasterClient } from "@/lib/twilio/client";
+import { getTwilioMasterClient, getTwilioMasterClientForSubaccount } from "@/lib/twilio/client";
+import { TWILIO_FRIENDLY_NAME_MAX, twilioFriendlyNameFromOrg } from "@/lib/twilio/orgFriendlyName";
 
 export const dynamic = "force-dynamic";
 
@@ -81,22 +82,53 @@ export async function POST() {
   try {
     encryptSubaccountSecret("__probe__");
 
+    const orgRow = await getOrganizationById(orgId);
+    const friendlyName = twilioFriendlyNameFromOrg(orgRow?.name ?? null, orgId);
+
     const master = getTwilioMasterClient();
-    const friendlyName = `HSA Attribution ${orgId.slice(0, 8)}`;
     const sub = await master.api.accounts.create({ friendlyName });
 
-    const subAuthToken = sub.authToken;
+    /**
+     * Twilio often omits `auth_token` on create when the parent uses an API key (SK…) instead of an Auth Token.
+     * Webhook validation still needs a token; we try fetch, then IAM secondary token creation on the subaccount.
+     */
+    let subAuthToken = (sub.authToken ?? "").trim();
+    if (!subAuthToken) {
+      try {
+        const fetched = await master.api.accounts(sub.sid).fetch();
+        subAuthToken = (fetched.authToken ?? "").trim();
+      } catch (fetchErr) {
+        console.warn("[twilio-subaccount] fetch subaccount after create", fetchErr);
+      }
+    }
+
+    const scopedMaster = getTwilioMasterClientForSubaccount(sub.sid);
+    const keyFriendly =
+      friendlyName.length <= 48 ? `${friendlyName} — attribution` : friendlyName.slice(0, TWILIO_FRIENDLY_NAME_MAX);
+    const newKey = await scopedMaster.newKeys.create({
+      friendlyName: keyFriendly.slice(0, TWILIO_FRIENDLY_NAME_MAX),
+    });
+
+    if (!subAuthToken) {
+      try {
+        const secondary = await scopedMaster.accounts.v1.secondaryAuthToken().create();
+        subAuthToken = (secondary.secondaryAuthToken ?? "").trim();
+      } catch (secErr) {
+        console.warn("[twilio-subaccount] secondaryAuthToken create", secErr);
+      }
+    }
+
     if (!subAuthToken) {
       return NextResponse.json(
-        { error: "Twilio did not return a subaccount auth token; check API permissions." },
+        {
+          error:
+            "Twilio created the subaccount but did not expose an Auth Token for webhook signatures (typical with API-key-only parent auth). " +
+            "Open Twilio Console → switch to this subaccount → copy the Auth Token, then contact support to store it, " +
+            "or provision using the parent Account Auth Token (TWILIO_MASTER_AUTH_TOKEN / TWILIO_AUTH_TOKEN) once so create returns auth_token.",
+        },
         { status: 502 }
       );
     }
-
-    const subClient = twilio(sub.sid, subAuthToken);
-    const newKey = await subClient.newKeys.create({
-      friendlyName: `hsa-attribution-${orgId.slice(0, 8)}`,
-    });
     const keySecret = newKey.secret;
     if (!keySecret) {
       return NextResponse.json(

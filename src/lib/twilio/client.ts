@@ -51,6 +51,34 @@ export function getTwilioMasterClient(): twilio.Twilio {
   );
 }
 
+/**
+ * Same master credentials as {@link getTwilioMasterClient}, but REST calls run in the subaccount context.
+ * Use this to create API keys (and IAM helpers) on a new subaccount when Twilio did not return an Auth Token
+ * on `accounts.create` (common when the parent authenticates with an API key).
+ */
+export function getTwilioMasterClientForSubaccount(subaccountSid: string): twilio.Twilio {
+  const parentSid =
+    process.env.TWILIO_MASTER_ACCOUNT_SID?.trim() || process.env.TWILIO_ACCOUNT_SID?.trim();
+  if (!parentSid) {
+    throw new Error("Set TWILIO_MASTER_ACCOUNT_SID or TWILIO_ACCOUNT_SID for subaccount provisioning");
+  }
+  const keySid =
+    process.env.TWILIO_MASTER_API_KEY_SID?.trim() || process.env.TWILIO_API_KEY_SID?.trim();
+  const keySecret =
+    process.env.TWILIO_MASTER_API_KEY_SECRET?.trim() || process.env.TWILIO_API_KEY_SECRET?.trim();
+  if (keySid && keySecret) {
+    return twilio(keySid, keySecret, { accountSid: subaccountSid });
+  }
+  const authToken =
+    process.env.TWILIO_MASTER_AUTH_TOKEN?.trim() || process.env.TWILIO_AUTH_TOKEN?.trim();
+  if (authToken) {
+    return twilio(parentSid, authToken, { accountSid: subaccountSid });
+  }
+  throw new Error(
+    "Set TWILIO_MASTER_API_KEY_SID + TWILIO_MASTER_API_KEY_SECRET (or TWILIO_API_KEY_*) or master auth token"
+  );
+}
+
 /** Single-account / legacy: env-based Twilio REST client (main account). */
 export function getTwilioClient(): twilio.Twilio {
   const accountSid = legacyAccountSid();

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
+import { getOrganizationById } from "@/lib/db/queries";
 import { getWebAttributionInstall } from "@/lib/db/webAttributionQueries";
 import {
   getActivePhoneForSource,
@@ -9,6 +10,7 @@ import {
   releaseWebAttributionPhoneNumber,
 } from "@/lib/db/twilioAttributionQueries";
 import { getTwilioClientForOrganization, getTwilioVoiceWebhookUrl } from "@/lib/twilio/client";
+import { twilioFriendlyNameFromOrg } from "@/lib/twilio/orgFriendlyName";
 
 export const dynamic = "force-dynamic";
 
@@ -146,12 +148,15 @@ export async function POST(request: Request) {
   }
 
   try {
+    const orgRow = await getOrganizationById(orgId);
+    const numberFriendlyName = twilioFriendlyNameFromOrg(orgRow?.name ?? null, orgId);
+
     const client = await getTwilioClientForOrganization(orgId);
     const created = await client.incomingPhoneNumbers.create({
       phoneNumber,
       voiceUrl,
       voiceMethod: "POST",
-      friendlyName: `HSA Attribution ${orgId.slice(0, 8)}`,
+      friendlyName: numberFriendlyName,
     });
 
     const row = await insertWebAttributionPhoneNumber({

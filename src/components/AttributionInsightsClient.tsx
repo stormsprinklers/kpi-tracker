@@ -110,50 +110,96 @@ export function AttributionInsightsClient() {
   const [provisionSourceId, setProvisionSourceId] = useState("");
   const [provisionForwardOverride, setProvisionForwardOverride] = useState("");
   const [subaccountBusy, setSubaccountBusy] = useState(false);
+  /** First load finished (success or failure). Without this, a failed load left install=null and UI stuck on loading forever. */
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+
+  const LOAD_TIMEOUT_MS = 60_000;
 
   async function loadAll() {
     setError(null);
-    const [installRes, sourceRes, eventsRes, activeRes, callsRes] = await Promise.all([
-      fetch("/api/attribution/install", { cache: "no-store" }),
-      fetch("/api/attribution/sources", { cache: "no-store" }),
-      fetch("/api/attribution/events", { cache: "no-store" }),
-      fetch("/api/attribution/phone-numbers/active", { cache: "no-store" }),
-      fetch("/api/attribution/twilio-calls", { cache: "no-store" }),
-    ]);
-    if (!installRes.ok || !sourceRes.ok || !eventsRes.ok) {
-      throw new Error("Failed to load attribution data.");
+    const controller = new AbortController();
+    const timeoutId =
+      typeof window !== "undefined" ? window.setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS) : 0;
+    const fetchOpts: RequestInit = { cache: "no-store", signal: controller.signal };
+
+    async function responseErrorMessage(res: Response, label: string): Promise<string> {
+      try {
+        const j = (await res.clone().json()) as { error?: string };
+        if (j?.error && typeof j.error === "string") return `${label}: ${j.error}`;
+      } catch {
+        /* ignore */
+      }
+      return `${label} failed (HTTP ${res.status})`;
     }
-    const installJson = (await installRes.json()) as InstallResponse & {
-      twilioSubaccountSid?: string | null;
-      twilioSubaccountCreatedAt?: string | null;
-    };
-    setInstall({
-      ...installJson,
-      twilioSubaccountSid: installJson.twilioSubaccountSid ?? null,
-      twilioSubaccountCreatedAt: installJson.twilioSubaccountCreatedAt ?? null,
-    });
-    setAllowedOriginsText((installJson.allowedOrigins ?? []).join("\n"));
-    setDefaultForwardInput(installJson.defaultForwardE164 ?? "");
-    setIntelligenceSidInput(installJson.twilioIntelligenceServiceSid ?? "");
-    if (installJson.publishableKey) setNewPublishableKey(installJson.publishableKey);
-    setSources((await sourceRes.json()) as Source[]);
-    setEvents((await eventsRes.json()) as EventsResponse);
-    if (activeRes.ok) {
-      const a = (await activeRes.json()) as { active: ActivePhone[] };
-      setActivePhones(a.active ?? []);
-    } else {
-      setActivePhones([]);
-    }
-    if (callsRes.ok) {
-      const c = (await callsRes.json()) as { calls: TwilioCallRow[] };
-      setTwilioCalls(c.calls ?? []);
-    } else {
-      setTwilioCalls([]);
+
+    try {
+      const [installRes, sourceRes, eventsRes, activeRes, callsRes] = await Promise.all([
+        fetch("/api/attribution/install", fetchOpts),
+        fetch("/api/attribution/sources", fetchOpts),
+        fetch("/api/attribution/events", fetchOpts),
+        fetch("/api/attribution/phone-numbers/active", fetchOpts),
+        fetch("/api/attribution/twilio-calls", fetchOpts),
+      ]);
+
+      if (!installRes.ok) {
+        throw new Error(await responseErrorMessage(installRes, "Attribution install"));
+      }
+      if (!sourceRes.ok) {
+        throw new Error(await responseErrorMessage(sourceRes, "Sources"));
+      }
+      if (!eventsRes.ok) {
+        throw new Error(await responseErrorMessage(eventsRes, "Events"));
+      }
+
+      const installJson = (await installRes.json()) as InstallResponse & {
+        twilioSubaccountSid?: string | null;
+        twilioSubaccountCreatedAt?: string | null;
+      };
+      setInstall({
+        ...installJson,
+        twilioSubaccountSid: installJson.twilioSubaccountSid ?? null,
+        twilioSubaccountCreatedAt: installJson.twilioSubaccountCreatedAt ?? null,
+      });
+      setAllowedOriginsText((installJson.allowedOrigins ?? []).join("\n"));
+      setDefaultForwardInput(installJson.defaultForwardE164 ?? "");
+      setIntelligenceSidInput(installJson.twilioIntelligenceServiceSid ?? "");
+      if (installJson.publishableKey) setNewPublishableKey(installJson.publishableKey);
+      setSources((await sourceRes.json()) as Source[]);
+      setEvents((await eventsRes.json()) as EventsResponse);
+      if (activeRes.ok) {
+        const a = (await activeRes.json()) as { active: ActivePhone[] };
+        setActivePhones(a.active ?? []);
+      } else {
+        setActivePhones([]);
+      }
+      if (callsRes.ok) {
+        const c = (await callsRes.json()) as { calls: TwilioCallRow[] };
+        setTwilioCalls(c.calls ?? []);
+      } else {
+        setTwilioCalls([]);
+      }
+    } catch (e) {
+      const aborted =
+        e instanceof DOMException
+          ? e.name === "AbortError"
+          : e instanceof Error && (e.name === "AbortError" || e.message.includes("aborted"));
+      const msg = aborted
+        ? "Loading took too long or was cancelled. Check your connection and try again."
+        : e instanceof Error
+          ? e.message
+          : "Failed to load attribution.";
+      setError(msg);
+      throw e;
+    } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      setInitialLoadComplete(true);
     }
   }
 
   useEffect(() => {
-    loadAll().catch((e) => setError(e instanceof Error ? e.message : "Failed to load attribution."));
+    void loadAll().catch(() => {
+      /* error already in state */
+    });
   }, []);
 
   const websiteBase = useMemo(() => normalizeWebsite(install?.website ?? ""), [install?.website]);
@@ -416,8 +462,33 @@ export function AttributionInsightsClient() {
     setStep((s) => Math.max(s - 1, 0));
   }
 
-  if (!install) {
+  if (!initialLoadComplete) {
     return <div className="text-sm text-zinc-600 dark:text-zinc-400">Loading Attribution setup…</div>;
+  }
+
+  if (!install) {
+    return (
+      <div className="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/30">
+        <p className="text-sm font-medium text-amber-900 dark:text-amber-200">Couldn&apos;t load Attribution</p>
+        {error ? (
+          <p className="text-sm text-amber-800 dark:text-amber-300">{error}</p>
+        ) : (
+          <p className="text-sm text-amber-800 dark:text-amber-300">Something went wrong. Try again.</p>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setInitialLoadComplete(false);
+            void loadAll().catch(() => {
+              /* error in state */
+            });
+          }}
+          className="rounded bg-amber-900 px-3 py-2 text-xs font-medium text-white dark:bg-amber-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (

@@ -11,8 +11,8 @@ Recommended flow:
 2. Set `TWILIO_SUBACCOUNT_CREDENTIALS_ENCRYPTION_KEY` — 32-byte secret (e.g. `openssl rand -base64 32`). Used to encrypt each subaccount’s **Auth Token** and **API key secret** at rest in `web_attribution_install`.
 3. An **admin** opens Attribution → Call tracking and clicks **Create Twilio workspace for this company**. The app:
    - Creates a Twilio **subaccount** via `POST /2010-04-01/Accounts.json`
-   - Creates an **API key** on that subaccount
-   - Stores encrypted credentials in Neon
+   - Creates a **standard API key** on that subaccount using the **parent API key** scoped to the subaccount (Twilio often omits `auth_token` on create when the parent uses API key auth; we no longer require it for key creation)
+   - Resolves an **Auth Token** for webhook signatures from the create/fetch response, or by creating a **secondary auth token** on the subaccount via `accounts.twilio.com` IAM, then encrypts and stores token + API key secret in Neon
 
 Ongoing REST (number search, buy, release, Conversational Intelligence) uses the **stored subaccount API key**. Voice and recording webhooks are validated with the **subaccount Auth Token** from the same row (matched by `AccountSid` in the webhook body).
 
