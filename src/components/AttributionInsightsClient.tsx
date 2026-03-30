@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Source = {
   id: string;
@@ -80,6 +80,16 @@ const WIZARD_STEPS = [
   },
 ] as const;
 
+const WIZARD_STEP_STORAGE_KEY = "kpi-attribution-wizard-step-v1";
+
+function readStoredWizardStep(): number | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(WIZARD_STEP_STORAGE_KEY);
+  const n = raw != null ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isInteger(n) || n < 0 || n >= WIZARD_STEPS.length) return null;
+  return n;
+}
+
 function normalizeWebsite(input: string): string {
   if (!input.trim()) return "";
   const value = input.trim();
@@ -114,6 +124,21 @@ export function AttributionInsightsClient() {
   const [manualSubaccountAuthToken, setManualSubaccountAuthToken] = useState("");
   /** First load finished (success or failure). Without this, a failed load left install=null and UI stuck on loading forever. */
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+
+  const setWizardStep = useCallback((next: number | ((prev: number) => number)) => {
+    setStep((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      const clamped = Math.max(0, Math.min(WIZARD_STEPS.length - 1, resolved));
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(WIZARD_STEP_STORAGE_KEY, String(clamped));
+        } catch {
+          /* quota / private mode */
+        }
+      }
+      return clamped;
+    });
+  }, []);
 
   const LOAD_TIMEOUT_MS = 60_000;
 
@@ -168,9 +193,11 @@ export function AttributionInsightsClient() {
       if (installJson.publishableKey) setNewPublishableKey(installJson.publishableKey);
       setSources((await sourceRes.json()) as Source[]);
       setEvents((await eventsRes.json()) as EventsResponse);
+      let activeList: ActivePhone[] = [];
       if (activeRes.ok) {
         const a = (await activeRes.json()) as { active: ActivePhone[] };
-        setActivePhones(a.active ?? []);
+        activeList = a.active ?? [];
+        setActivePhones(activeList);
       } else {
         setActivePhones([]);
       }
@@ -179,6 +206,19 @@ export function AttributionInsightsClient() {
         setTwilioCalls(c.calls ?? []);
       } else {
         setTwilioCalls([]);
+      }
+
+      const storedStep = readStoredWizardStep();
+      if (storedStep !== null) {
+        setStep(storedStep);
+      } else if (activeList.length > 0 || installJson.twilioSubaccountSid) {
+        const last = WIZARD_STEPS.length - 1;
+        setStep(last);
+        try {
+          window.localStorage.setItem(WIZARD_STEP_STORAGE_KEY, String(last));
+        } catch {
+          /* ignore */
+        }
       }
     } catch (e) {
       const aborted =
@@ -216,6 +256,25 @@ export function AttributionInsightsClient() {
 
   const hasOrigins = allowedOriginsText.split("\n").some((s) => s.trim());
   const hasReceivedEvents = !!install?.lastEventAt;
+
+  const phonesBySourceId = useMemo(() => {
+    const m = new Map<string, ActivePhone[]>();
+    for (const p of activePhones) {
+      const list = m.get(p.source_id) ?? [];
+      list.push(p);
+      m.set(p.source_id, list);
+    }
+    return m;
+  }, [activePhones]);
+
+  async function copyAttributionText(text: string) {
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      setError("Could not copy to clipboard.");
+    }
+  }
 
   async function saveOrigins() {
     setSavingOrigins(true);
@@ -462,11 +521,11 @@ export function AttributionInsightsClient() {
   }
 
   function goNext() {
-    setStep((s) => Math.min(s + 1, WIZARD_STEPS.length - 1));
+    setWizardStep((s) => Math.min(s + 1, WIZARD_STEPS.length - 1));
   }
 
   function goBack() {
-    setStep((s) => Math.max(s - 1, 0));
+    setWizardStep((s) => Math.max(s - 1, 0));
   }
 
   if (!initialLoadComplete) {
@@ -506,6 +565,96 @@ export function AttributionInsightsClient() {
         </div>
       ) : null}
 
+      <section
+        aria-labelledby="attribution-channels-heading"
+        className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 md:p-5"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 id="attribution-channels-heading" className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              Your channels — links &amp; tracking numbers
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+              These are your marketing sources (Facebook, Instagram, GBP, LSA, and any custom ones). Use the tracking link
+              in each ad or profile; provision a Twilio number in the Phones step to tie calls to the same source.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setWizardStep(3)}
+              className="rounded border border-emerald-700/30 bg-white px-3 py-1.5 text-xs font-medium text-emerald-900 dark:border-emerald-600/40 dark:bg-emerald-950/50 dark:text-emerald-100"
+            >
+              Edit links (wizard)
+            </button>
+            <button
+              type="button"
+              onClick={() => setWizardStep(4)}
+              className="rounded border border-emerald-700/30 bg-white px-3 py-1.5 text-xs font-medium text-emerald-900 dark:border-emerald-600/40 dark:bg-emerald-950/50 dark:text-emerald-100"
+            >
+              Phones (wizard)
+            </button>
+          </div>
+        </div>
+        {!websiteBase ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+            Set your website under <strong className="font-medium">Settings → SEO</strong> to generate full tracking URLs
+            below.
+          </p>
+        ) : null}
+        <div className="mt-4 overflow-x-auto rounded-lg border border-emerald-200/80 bg-white dark:border-emerald-900/30 dark:bg-zinc-900">
+          <table className="w-full min-w-[560px] text-left text-xs">
+            <thead className="bg-emerald-100/80 dark:bg-emerald-950/40">
+              <tr>
+                <th className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200">Source</th>
+                <th className="py-2 font-medium text-zinc-800 dark:text-zinc-200">Tracking link</th>
+                <th className="py-2 font-medium text-zinc-800 dark:text-zinc-200">Tracking #</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sources.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-3 py-4 text-zinc-500">
+                    No sources yet. Open <strong className="text-zinc-700 dark:text-zinc-300">Edit links</strong> to add
+                    channels.
+                  </td>
+                </tr>
+              ) : (
+                sources.map((source) => {
+                  const link =
+                    websiteBase && source.public_token
+                      ? `${websiteBase}?hsa_c=${encodeURIComponent(source.public_token)}`
+                      : websiteBase
+                        ? `${websiteBase}?hsa_c=…`
+                        : "(Set website in SEO settings)";
+                  const phones = phonesBySourceId.get(source.id) ?? [];
+                  const phoneDisplay =
+                    phones.length > 0 ? phones.map((p) => p.phone_e164).join(", ") : "—";
+                  return (
+                    <tr key={source.id} className="border-t border-emerald-100 dark:border-emerald-900/30">
+                      <td className="px-3 py-2 align-top font-medium text-zinc-900 dark:text-zinc-50">{source.label}</td>
+                      <td className="max-w-xs py-2 align-top">
+                        <p className="break-all font-mono text-zinc-700 dark:text-zinc-300">{link}</p>
+                        {websiteBase && source.public_token ? (
+                          <button
+                            type="button"
+                            onClick={() => void copyAttributionText(link)}
+                            className="mt-1 text-emerald-800 underline decoration-emerald-600/50 hover:decoration-emerald-700 dark:text-emerald-400"
+                          >
+                            Copy link
+                          </button>
+                        ) : null}
+                      </td>
+                      <td className="py-2 align-top font-mono text-zinc-700 dark:text-zinc-300">{phoneDisplay}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* Step indicator */}
       <nav aria-label="Setup progress" className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <ol className="flex flex-wrap items-center gap-2 md:gap-0 md:justify-between">
@@ -513,7 +662,7 @@ export function AttributionInsightsClient() {
             <li key={s.title} className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setStep(i)}
+                onClick={() => setWizardStep(i)}
                 className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors md:px-3 ${
                   i === step
                     ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
@@ -1162,7 +1311,7 @@ export function AttributionInsightsClient() {
             ) : (
               <button
                 type="button"
-                onClick={() => setStep(0)}
+                onClick={() => setWizardStep(0)}
                 className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 dark:border-zinc-600 dark:text-zinc-300"
               >
                 Review from start
