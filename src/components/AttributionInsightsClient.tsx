@@ -110,6 +110,8 @@ export function AttributionInsightsClient() {
   const [provisionSourceId, setProvisionSourceId] = useState("");
   const [provisionForwardOverride, setProvisionForwardOverride] = useState("");
   const [subaccountBusy, setSubaccountBusy] = useState(false);
+  /** Optional: Twilio Console subaccount Auth Token when API-only parent cannot auto-issue a webhook token. */
+  const [manualSubaccountAuthToken, setManualSubaccountAuthToken] = useState("");
   /** First load finished (success or failure). Without this, a failed load left install=null and UI stuck on loading forever. */
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
@@ -365,9 +367,14 @@ export function AttributionInsightsClient() {
       const res = await fetch("/api/attribution/twilio-subaccount", {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          manualAuthToken: manualSubaccountAuthToken.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Failed to create Twilio workspace");
+      setManualSubaccountAuthToken("");
       setInstall((prev) =>
         prev
           ? {
@@ -791,6 +798,13 @@ export function AttributionInsightsClient() {
                 Create a dedicated Twilio subaccount for this organization. Numbers you buy afterward live in that
                 subaccount; Twilio usage rolls up separately for billing. This only needs to be done once per company.
               </p>
+              <p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                If you use a <strong className="text-zinc-800 dark:text-zinc-200">parent API key</strong> only, add{" "}
+                <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">TWILIO_AUTH_TOKEN</code> (or{" "}
+                <code className="rounded bg-zinc-100 px-1 font-mono dark:bg-zinc-800">TWILIO_MASTER_AUTH_TOKEN</code>) for
+                the same parent account in Vercel so we can create a webhook signing token automatically. Alternatively,
+                paste the subaccount Auth Token from Twilio Console after the subaccount exists.
+              </p>
               {install?.twilioSubaccountSid ? (
                 <p className="mt-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
                   Subaccount: {install.twilioSubaccountSid}
@@ -799,14 +813,27 @@ export function AttributionInsightsClient() {
                     : null}
                 </p>
               ) : (
-                <button
-                  type="button"
-                  onClick={createTwilioSubaccount}
-                  disabled={subaccountBusy}
-                  className="mt-3 rounded bg-violet-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-60 dark:bg-violet-600"
-                >
-                  {subaccountBusy ? "Creating workspace…" : "Create Twilio workspace for this company"}
-                </button>
+                <>
+                  <label className="mt-3 block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Subaccount Auth Token (optional)
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={manualSubaccountAuthToken}
+                    onChange={(e) => setManualSubaccountAuthToken(e.target.value)}
+                    placeholder="Only if auto-setup fails — from Twilio Console for this subaccount"
+                    className="mt-1 w-full max-w-md rounded border border-violet-200 bg-white px-2 py-2 font-mono text-xs dark:border-violet-900/50 dark:bg-zinc-950 dark:text-zinc-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={createTwilioSubaccount}
+                    disabled={subaccountBusy}
+                    className="mt-3 rounded bg-violet-700 px-3 py-2 text-xs font-medium text-white disabled:opacity-60 dark:bg-violet-600"
+                  >
+                    {subaccountBusy ? "Creating workspace…" : "Create Twilio workspace for this company"}
+                  </button>
+                </>
               )}
             </div>
 

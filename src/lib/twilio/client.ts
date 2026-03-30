@@ -79,6 +79,33 @@ export function getTwilioMasterClientForSubaccount(subaccountSid: string): twili
   );
 }
 
+/**
+ * Parent **Auth Token** only (not API key), scoped to a subaccount.
+ * Twilio `accounts.twilio.com` IAM calls (e.g. secondary Auth Token) often fail with API-key auth but succeed with Auth Token.
+ * Use when `TWILIO_*_API_KEY_*` is set for the primary client but env also has `TWILIO_AUTH_TOKEN` / `TWILIO_MASTER_AUTH_TOKEN`.
+ */
+export function tryTwilioParentAuthTokenClientForSubaccount(subaccountSid: string): twilio.Twilio | null {
+  const parentSid =
+    process.env.TWILIO_MASTER_ACCOUNT_SID?.trim() || process.env.TWILIO_ACCOUNT_SID?.trim();
+  const authToken =
+    process.env.TWILIO_MASTER_AUTH_TOKEN?.trim() || process.env.TWILIO_AUTH_TOKEN?.trim();
+  if (!parentSid || !authToken) return null;
+  return twilio(parentSid, authToken, { accountSid: subaccountSid });
+}
+
+/** Check that `authToken` belongs to the given subaccount (lightweight Twilio fetch). */
+export async function verifySubaccountAuthToken(subaccountSid: string, authToken: string): Promise<boolean> {
+  const t = authToken.trim();
+  if (!t) return false;
+  try {
+    const client = twilio(subaccountSid, t);
+    await client.api.accounts(subaccountSid).fetch();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Single-account / legacy: env-based Twilio REST client (main account). */
 export function getTwilioClient(): twilio.Twilio {
   const accountSid = legacyAccountSid();

@@ -7,7 +7,12 @@ import {
   getWebAttributionInstall,
   saveTwilioSubaccountCredentials,
 } from "@/lib/db/webAttributionQueries";
-import { getTwilioMasterClient, getTwilioMasterClientForSubaccount } from "@/lib/twilio/client";
+import {
+  getTwilioMasterClient,
+  getTwilioMasterClientForSubaccount,
+  tryTwilioParentAuthTokenClientForSubaccount,
+  verifySubaccountAuthToken,
+} from "@/lib/twilio/client";
 import { TWILIO_FRIENDLY_NAME_MAX, twilioFriendlyNameFromOrg } from "@/lib/twilio/orgFriendlyName";
 
 export const dynamic = "force-dynamic";
@@ -62,11 +67,15 @@ export async function GET() {
  * POST — create a Twilio subaccount + API key; store encrypted credentials on web_attribution_install.
  * Requires master Twilio credentials in env and TWILIO_SUBACCOUNT_CREDENTIALS_ENCRYPTION_KEY.
  */
-export async function POST() {
+export async function POST(request: Request) {
   const session = await auth();
   const denied = requireAdmin(session);
   if (denied) return denied;
   const orgId = session!.user!.organizationId!;
+  const body = await request.json().catch(() => ({})) as { manualAuthToken?: string };
+  const manualAuthToken =
+    typeof body.manualAuthToken === "string" ? body.manualAuthToken.trim() : "";
+
   await initSchema();
   const install = await getWebAttributionInstall(orgId);
   if (!install) {
@@ -109,22 +118,49 @@ export async function POST() {
       friendlyName: keyFriendly.slice(0, TWILIO_FRIENDLY_NAME_MAX),
     });
 
+    /** IAM secondary token: prefer parent Auth Token (Twilio often rejects API-key-only for this endpoint). */
+    if (!subAuthToken) {
+      const tokenOnlyClient = tryTwilioParentAuthTokenClientForSubaccount(sub.sid);
+      if (tokenOnlyClient) {
+        try {
+          const secondary = await tokenOnlyClient.accounts.v1.secondaryAuthToken().create();
+          subAuthToken = (secondary.secondaryAuthToken ?? "").trim();
+        } catch (secErr) {
+          console.warn("[twilio-subaccount] secondaryAuthToken (parent auth token)", secErr);
+        }
+      }
+    }
     if (!subAuthToken) {
       try {
         const secondary = await scopedMaster.accounts.v1.secondaryAuthToken().create();
         subAuthToken = (secondary.secondaryAuthToken ?? "").trim();
       } catch (secErr) {
-        console.warn("[twilio-subaccount] secondaryAuthToken create", secErr);
+        console.warn("[twilio-subaccount] secondaryAuthToken (API key scoped)", secErr);
       }
+    }
+
+    if (!subAuthToken && manualAuthToken) {
+      const valid = await verifySubaccountAuthToken(sub.sid, manualAuthToken);
+      if (!valid) {
+        return NextResponse.json(
+          {
+            error:
+              "The Auth Token you entered is not valid for the new subaccount. In Twilio Console, open the subaccount that was just created (check name above), reveal the Auth Token, and paste it exactly.",
+          },
+          { status: 400 }
+        );
+      }
+      subAuthToken = manualAuthToken;
     }
 
     if (!subAuthToken) {
       return NextResponse.json(
         {
           error:
-            "Twilio created the subaccount but did not expose an Auth Token for webhook signatures (typical with API-key-only parent auth). " +
-            "Open Twilio Console → switch to this subaccount → copy the Auth Token, then contact support to store it, " +
-            "or provision using the parent Account Auth Token (TWILIO_MASTER_AUTH_TOKEN / TWILIO_AUTH_TOKEN) once so create returns auth_token.",
+            "Twilio created the subaccount but we could not obtain an Auth Token for webhook signatures. " +
+            "Fix one of: (1) Add TWILIO_MASTER_AUTH_TOKEN or TWILIO_AUTH_TOKEN in Vercel (parent account Auth Token) alongside your API key so we can create a secondary token. " +
+            "(2) Paste the subaccount Auth Token from Twilio Console (field below the button) and click Create again. " +
+            "If you see duplicate subaccounts in Twilio, close the extras and use the token for the correct AC… sid.",
         },
         { status: 502 }
       );
