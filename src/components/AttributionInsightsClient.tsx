@@ -556,6 +556,31 @@ export function AttributionInsightsClient() {
     }
   }
 
+  async function refreshTwilioSubaccountToken() {
+    const token = manualSubaccountAuthToken.trim();
+    if (!token) {
+      setError("Paste the subaccount Auth Token first.");
+      return;
+    }
+    setSubaccountBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/attribution/twilio-subaccount", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manualAuthToken: token }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Failed to refresh subaccount token");
+      setManualSubaccountAuthToken("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to refresh subaccount token");
+    } finally {
+      setSubaccountBusy(false);
+    }
+  }
+
   async function searchTwilioNumbers() {
     setBusy(true);
     setError(null);
@@ -1296,12 +1321,37 @@ export function AttributionInsightsClient() {
                 paste the subaccount Auth Token from Twilio Console after the subaccount exists.
               </p>
               {install?.twilioSubaccountSid ? (
-                <p className="mt-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
-                  Subaccount: {install.twilioSubaccountSid}
-                  {install.twilioSubaccountCreatedAt
-                    ? ` · since ${new Date(install.twilioSubaccountCreatedAt).toLocaleString()}`
-                    : null}
-                </p>
+                <>
+                  <p className="mt-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                    Subaccount: {install.twilioSubaccountSid}
+                    {install.twilioSubaccountCreatedAt
+                      ? ` · since ${new Date(install.twilioSubaccountCreatedAt).toLocaleString()}`
+                      : null}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                    Temporary maintenance: if Twilio signature validation fails, paste the current Auth Token for this
+                    subaccount and refresh stored webhook credentials.
+                  </p>
+                  <label className="mt-3 block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    Refresh Subaccount Auth Token (temporary)
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={manualSubaccountAuthToken}
+                    onChange={(e) => setManualSubaccountAuthToken(e.target.value)}
+                    placeholder="Paste current token from Twilio Console for this subaccount"
+                    className="mt-1 w-full max-w-md rounded border border-violet-200 bg-white px-2 py-2 font-mono text-xs dark:border-violet-900/50 dark:bg-zinc-950 dark:text-zinc-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={refreshTwilioSubaccountToken}
+                    disabled={subaccountBusy}
+                    className="mt-3 rounded border border-violet-600 bg-white px-3 py-2 text-xs font-medium text-violet-900 disabled:opacity-60 dark:border-violet-500 dark:bg-violet-950/30 dark:text-violet-100"
+                  >
+                    {subaccountBusy ? "Refreshing token…" : "Refresh subaccount token"}
+                  </button>
+                </>
               ) : (
                 <>
                   <label className="mt-3 block text-xs font-medium text-zinc-700 dark:text-zinc-300">
