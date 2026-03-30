@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { initSchema } from "@/lib/db";
 import {
   getWebAttributionInstallByKeyHash,
+  getWebAttributionSourceBySlugOrLabel,
   getWebAttributionSourceByToken,
   insertWebAttributionEvents,
   touchWebAttributionEvent,
@@ -64,6 +65,8 @@ export async function POST(request: Request) {
       eventType?: string;
       visitorId?: string;
       sourceToken?: string | null;
+      utmSource?: string | null;
+      utmMedium?: string | null;
       pageUrl?: string | null;
       referrer?: string | null;
       occurredAt?: string | null;
@@ -113,6 +116,16 @@ export async function POST(request: Request) {
       const source = await getWebAttributionSourceByToken(sourceToken);
       if (source?.organization_id === install.organization_id) sourceId = source.source_id;
     }
+    if (!sourceId) {
+      const utmSource = event.utmSource?.toString().trim();
+      if (utmSource) {
+        const source = await getWebAttributionSourceBySlugOrLabel({
+          organizationId: install.organization_id,
+          value: utmSource,
+        });
+        if (source?.source_id) sourceId = source.source_id;
+      }
+    }
     prepared.push({
       organizationId: install.organization_id,
       sourceId,
@@ -124,7 +137,11 @@ export async function POST(request: Request) {
       userAgent: request.headers.get("user-agent"),
       ipHash: hashIp(ipAddress),
       country: request.headers.get("x-vercel-ip-country"),
-      metadata: event.metadata ?? {},
+      metadata: {
+        ...(event.metadata ?? {}),
+        utm_source: event.utmSource?.toString().trim() || null,
+        utm_medium: event.utmMedium?.toString().trim() || null,
+      },
     });
   }
 

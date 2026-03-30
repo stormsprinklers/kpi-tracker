@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
   getRecentWebAttributionEvents,
+  getWebAttributionSourceSummary30d,
   getWebAttributionEventCounts,
 } from "@/lib/db/webAttributionQueries";
 
@@ -15,10 +16,11 @@ export async function GET() {
   }
   await initSchema();
   const organizationId = session.user.organizationId;
-  const [recentEvents, counts30d] = await Promise.all([
+  const [recentEvents, counts30d, sourceSummary30d] = await Promise.all([
     getRecentWebAttributionEvents({ organizationId, limit: 100 }),
     getWebAttributionEventCounts(organizationId),
+    getWebAttributionSourceSummary30d(organizationId),
   ]);
-  return NextResponse.json({ recentEvents, counts30d });
+  return NextResponse.json({ recentEvents, counts30d, sourceSummary30d });
 }
 

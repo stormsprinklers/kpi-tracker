@@ -245,6 +245,27 @@ export async function getWebAttributionSourceByToken(
   return row ?? null;
 }
 
+export async function getWebAttributionSourceBySlugOrLabel(params: {
+  organizationId: string;
+  value: string;
+}): Promise<{ source_id: string } | null> {
+  const v = params.value.trim().toLowerCase();
+  if (!v) return null;
+  const result = await sql`
+    SELECT id AS source_id
+    FROM web_attribution_sources
+    WHERE organization_id = ${params.organizationId}::uuid
+      AND archived_at IS NULL
+      AND (
+        LOWER(slug) = ${v}
+        OR LOWER(label) = ${v}
+      )
+    LIMIT 1
+  `;
+  const row = (result.rows ?? [])[0] as { source_id: string } | undefined;
+  return row ?? null;
+}
+
 export async function insertWebAttributionEvents(events: WebAttributionEventInsert[]): Promise<void> {
   if (!events.length) return;
   for (const event of events) {
@@ -328,6 +349,59 @@ export async function getWebAttributionEventCounts(
     out[r.event_type] = r.count;
   }
   return out;
+}
+
+export async function getWebAttributionSourceSummary30d(
+  organizationId: string
+): Promise<
+  Array<{
+    source_id: string;
+    source_label: string;
+    calls: number;
+    forms: number;
+    bookings: number;
+  }>
+> {
+  const result = await sql`
+    WITH event_counts AS (
+      SELECT
+        source_id,
+        SUM(CASE WHEN event_type = 'form_submit' THEN 1 ELSE 0 END)::int AS forms,
+        SUM(CASE WHEN event_type = 'booking' THEN 1 ELSE 0 END)::int AS bookings
+      FROM web_attribution_events
+      WHERE organization_id = ${organizationId}::uuid
+        AND occurred_at >= NOW() - INTERVAL '30 days'
+      GROUP BY source_id
+    ),
+    call_counts AS (
+      SELECT
+        source_id,
+        COUNT(*)::int AS calls
+      FROM twilio_tracking_calls
+      WHERE organization_id = ${organizationId}::uuid
+        AND created_at >= NOW() - INTERVAL '30 days'
+      GROUP BY source_id
+    )
+    SELECT
+      s.id AS source_id,
+      s.label AS source_label,
+      COALESCE(c.calls, 0) AS calls,
+      COALESCE(e.forms, 0) AS forms,
+      COALESCE(e.bookings, 0) AS bookings
+    FROM web_attribution_sources s
+    LEFT JOIN event_counts e ON e.source_id = s.id
+    LEFT JOIN call_counts c ON c.source_id = s.id
+    WHERE s.organization_id = ${organizationId}::uuid
+      AND s.archived_at IS NULL
+    ORDER BY LOWER(s.label) ASC
+  `;
+  return (result.rows ?? []) as Array<{
+    source_id: string;
+    source_label: string;
+    calls: number;
+    forms: number;
+    bookings: number;
+  }>;
 }
 
 export async function saveTwilioSubaccountCredentials(params: {

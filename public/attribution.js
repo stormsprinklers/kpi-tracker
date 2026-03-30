@@ -15,8 +15,12 @@
 
   const STORAGE_VISITOR = "hsa_visitor_id";
   const STORAGE_SOURCE = "hsa_source_token";
+  const STORAGE_UTM_SOURCE = "hsa_utm_source";
+  const STORAGE_UTM_MEDIUM = "hsa_utm_medium";
   const COOKIE_SOURCE = "hsa_source_token";
   const COOKIE_VISITOR = "hsa_visitor_id";
+  const COOKIE_UTM_SOURCE = "hsa_utm_source";
+  const COOKIE_UTM_MEDIUM = "hsa_utm_medium";
 
   function randomId() {
     if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
@@ -67,6 +71,25 @@
     return getLocal(STORAGE_SOURCE) || getCookie(COOKIE_SOURCE) || null;
   }
 
+  function persistUtm(utmSource, utmMedium) {
+    if (utmSource) {
+      setLocal(STORAGE_UTM_SOURCE, utmSource);
+      setCookie(COOKIE_UTM_SOURCE, utmSource, 90);
+    }
+    if (utmMedium) {
+      setLocal(STORAGE_UTM_MEDIUM, utmMedium);
+      setCookie(COOKIE_UTM_MEDIUM, utmMedium, 90);
+    }
+  }
+
+  function getUtmSource() {
+    return getLocal(STORAGE_UTM_SOURCE) || getCookie(COOKIE_UTM_SOURCE) || null;
+  }
+
+  function getUtmMedium() {
+    return getLocal(STORAGE_UTM_MEDIUM) || getCookie(COOKIE_UTM_MEDIUM) || null;
+  }
+
   const queue = [];
   let timer = null;
   let inflight = false;
@@ -98,6 +121,8 @@
       eventType,
       visitorId: getVisitorId(),
       sourceToken: getSource(),
+      utmSource: getUtmSource(),
+      utmMedium: getUtmMedium(),
       pageUrl: window.location.href,
       referrer: document.referrer || null,
       occurredAt: new Date().toISOString(),
@@ -114,9 +139,23 @@
 
   const params = new URLSearchParams(window.location.search);
   const sourceFromUrl = params.get("hsa_c");
+  const utmSource = params.get("utm_source");
+  const utmMedium = params.get("utm_medium");
+  if (utmSource || utmMedium) {
+    persistUtm((utmSource || "").trim(), (utmMedium || "").trim());
+  }
   if (sourceFromUrl) {
     persistSource(sourceFromUrl.trim());
-    enqueue("landing", { sourceFromQuery: sourceFromUrl.trim() });
+    enqueue("landing", {
+      sourceFromQuery: sourceFromUrl.trim(),
+      utm_source: (utmSource || "").trim() || null,
+      utm_medium: (utmMedium || "").trim() || null,
+    });
+  } else if (utmSource) {
+    enqueue("landing", {
+      utm_source: utmSource.trim(),
+      utm_medium: (utmMedium || "").trim() || null,
+    });
   } else {
     enqueue("page_view");
   }

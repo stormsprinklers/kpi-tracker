@@ -33,6 +33,13 @@ type EventsResponse = {
     page_url: string | null;
   }>;
   counts30d: Record<string, number>;
+  sourceSummary30d?: Array<{
+    source_id: string;
+    source_label: string;
+    calls: number;
+    forms: number;
+    bookings: number;
+  }>;
 };
 
 type ActivePhone = {
@@ -782,12 +789,9 @@ export function AttributionInsightsClient() {
                 </tr>
               ) : (
                 sources.map((source) => {
-                  const link =
-                    websiteBase && source.public_token
-                      ? `${websiteBase}?hsa_c=${encodeURIComponent(source.public_token)}`
-                      : websiteBase
-                        ? `${websiteBase}?hsa_c=…`
-                        : "(Set website in SEO settings)";
+                  const link = websiteBase
+                    ? `${websiteBase}?utm_source=${encodeURIComponent(source.slug)}&utm_medium=web_attribution`
+                    : "(Set website in SEO settings)";
                   const phones = phonesBySourceId.get(source.id) ?? [];
                   const phoneDisplay =
                     phones.length > 0 ? phones.map((p) => p.phone_e164).join(", ") : "—";
@@ -802,7 +806,7 @@ export function AttributionInsightsClient() {
                       <td className="px-3 py-2 align-top font-medium text-zinc-900 dark:text-zinc-50">{source.label}</td>
                       <td className="max-w-xs py-2 align-top">
                         <p className="break-all font-mono text-zinc-700 dark:text-zinc-300">{link}</p>
-                        {websiteBase && source.public_token ? (
+                        {websiteBase ? (
                           <button
                             type="button"
                             onClick={() => void copyAttributionText(link)}
@@ -1215,7 +1219,9 @@ export function AttributionInsightsClient() {
               <p>
                 Each row below is a <strong className="text-zinc-800 dark:text-zinc-200">channel</strong> (Facebook,
                 Instagram, GBP, LSA, or a custom name you add). The URL is your normal homepage with a query parameter{" "}
-                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">hsa_c=…</code> — we are{" "}
+                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">utm_source=…</code> +{" "}
+                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">utm_medium=web_attribution</code> (legacy{" "}
+                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">hsa_c=…</code> still supported) — we are{" "}
                 <strong className="text-zinc-800 dark:text-zinc-200">not</strong> sending people through a redirect on our
                 servers. When someone clicks that link, your site loads, the snippet reads the parameter, and we attribute
                 the session to that channel.
@@ -1235,7 +1241,7 @@ export function AttributionInsightsClient() {
             <div className="space-y-2">
               {sources.map((source) => {
                 const link = websiteBase
-                  ? `${websiteBase}?hsa_c=${encodeURIComponent(source.public_token)}`
+                  ? `${websiteBase}?utm_source=${encodeURIComponent(source.slug)}&utm_medium=web_attribution`
                   : "(Set website in SEO settings)";
                 return (
                   <div key={source.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
@@ -1701,6 +1707,35 @@ export function AttributionInsightsClient() {
                   ))
                 )}
               </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Last 30 days by source</h3>
+              {events?.sourceSummary30d && events.sourceSummary30d.length > 0 ? (
+                <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+                  <table className="w-full min-w-[520px] text-left text-xs">
+                    <thead className="bg-zinc-50 dark:bg-zinc-800/50">
+                      <tr>
+                        <th className="px-2 py-2">Source</th>
+                        <th className="py-2">Calls</th>
+                        <th className="py-2">Forms</th>
+                        <th className="py-2">Bookings</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {events.sourceSummary30d.map((row) => (
+                        <tr key={row.source_id} className="border-t border-zinc-100 dark:border-zinc-800">
+                          <td className="px-2 py-2 text-zinc-800 dark:text-zinc-200">{row.source_label}</td>
+                          <td className="py-2 text-zinc-700 dark:text-zinc-300">{row.calls}</td>
+                          <td className="py-2 text-zinc-700 dark:text-zinc-300">{row.forms}</td>
+                          <td className="py-2 text-zinc-700 dark:text-zinc-300">{row.bookings}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-zinc-500">No source activity yet.</p>
+              )}
             </div>
             <div>
               <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Recent events</h3>
