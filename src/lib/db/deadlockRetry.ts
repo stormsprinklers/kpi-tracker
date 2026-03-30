@@ -5,11 +5,12 @@ const BASE_DELAY_MS = 40;
 
 function isDeadlockError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const o = err as { code?: string; cause?: unknown; message?: string };
+  const o = err as { code?: string; cause?: unknown; message?: string; sourceError?: unknown };
   if (o.code === DEADLOCK_SQLSTATE) return true;
   const msg = typeof o.message === "string" ? o.message.toLowerCase() : "";
   if (msg.includes("deadlock")) return true;
   if (o.cause) return isDeadlockError(o.cause);
+  if (o.sourceError) return isDeadlockError(o.sourceError);
   return false;
 }
 

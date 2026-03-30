@@ -74,17 +74,29 @@ export async function initSchema(): Promise<void> {
     END $$
   `;
   await sql`
-    UPDATE jobs
-    SET
-      total_amount = COALESCE((raw->>'total_amount')::numeric, (raw->>'subtotal')::numeric) / 100,
-      outstanding_balance = COALESCE((raw->>'outstanding_balance')::numeric, (raw->>'balance_due')::numeric, (raw->>'amount_due')::numeric, 0) / 100
-    WHERE total_amount IS NULL AND (raw ? 'total_amount' OR raw ? 'subtotal')
+    CREATE TABLE IF NOT EXISTS schema_patches (
+      patch_id TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
   `;
+  // One-time legacy backfill (not on every request — those UPDATEs deadlocked with concurrent job upserts).
   await sql`
-    UPDATE jobs
-    SET total_amount = total_amount / 100, outstanding_balance = outstanding_balance / 100
-    WHERE total_amount IS NOT NULL
-      AND (total_amount = (raw->>'total_amount')::numeric OR total_amount = (raw->>'subtotal')::numeric)
+    DO $$
+    BEGIN
+      PERFORM pg_advisory_xact_lock(1482093311);
+      IF NOT EXISTS (SELECT 1 FROM schema_patches WHERE patch_id = 'jobs_legacy_amount_scale_v1') THEN
+        UPDATE jobs
+        SET
+          total_amount = COALESCE((raw->>'total_amount')::numeric, (raw->>'subtotal')::numeric) / 100,
+          outstanding_balance = COALESCE((raw->>'outstanding_balance')::numeric, (raw->>'balance_due')::numeric, (raw->>'amount_due')::numeric, 0) / 100
+        WHERE total_amount IS NULL AND (raw ? 'total_amount' OR raw ? 'subtotal');
+        UPDATE jobs
+        SET total_amount = total_amount / 100, outstanding_balance = outstanding_balance / 100
+        WHERE total_amount IS NOT NULL
+          AND (total_amount = (raw->>'total_amount')::numeric OR total_amount = (raw->>'subtotal')::numeric);
+        INSERT INTO schema_patches (patch_id) VALUES ('jobs_legacy_amount_scale_v1');
+      END IF;
+    END $$
   `;
   await sql`
     CREATE TABLE IF NOT EXISTS invoices (
