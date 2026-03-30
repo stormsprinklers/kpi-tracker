@@ -281,27 +281,9 @@ export async function fetchTwilioRecordingMp3(
   try {
     const rec = await client.recordings(recordingSid).fetch();
     const mp3Url = rec.uri.replace(/\.json$/i, ".mp3");
-    const sub = await getDecryptedTwilioSubaccountRestCredentials(organizationId);
-    let user: string;
-    let pass: string;
-    if (sub) {
-      user = sub.apiKeySid;
-      pass = sub.apiKeySecret;
-    } else {
-      const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim();
-      const keySid = process.env.TWILIO_API_KEY_SID?.trim();
-      const keySecret = process.env.TWILIO_API_KEY_SECRET?.trim();
-      const token = process.env.TWILIO_AUTH_TOKEN?.trim();
-      if (keySid && keySecret) {
-        user = keySid;
-        pass = keySecret;
-      } else if (accountSid && token) {
-        user = accountSid;
-        pass = token;
-      } else {
-        return null;
-      }
-    }
+    const auth = await resolveTwilioMediaBasicAuth(organizationId);
+    if (!auth) return null;
+    const { user, pass } = auth;
     const authHeader = Buffer.from(`${user}:${pass}`).toString("base64");
     const mediaRes = await fetch(mp3Url, { headers: { Authorization: `Basic ${authHeader}` } });
     if (!mediaRes.ok) return null;
@@ -309,6 +291,42 @@ export async function fetchTwilioRecordingMp3(
   } catch {
     return null;
   }
+}
+
+async function resolveTwilioMediaBasicAuth(
+  organizationId: string
+): Promise<{ user: string; pass: string } | null> {
+  const sub = await getDecryptedTwilioSubaccountRestCredentials(organizationId);
+  if (sub) return { user: sub.apiKeySid, pass: sub.apiKeySecret };
+
+  // If subaccount REST keys are unavailable, fall back to subaccount Account SID + webhook token first.
+  const install = await getWebAttributionInstall(organizationId);
+  const subSid = install?.twilio_subaccount_sid?.trim();
+  const subWebhookToken = subSid ? await getTwilioWebhookAuthTokenForSubaccountSid(subSid) : null;
+  if (subSid && subWebhookToken) return { user: subSid, pass: subWebhookToken };
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim();
+  const keySid = process.env.TWILIO_API_KEY_SID?.trim();
+  const keySecret = process.env.TWILIO_API_KEY_SECRET?.trim();
+  const token = process.env.TWILIO_AUTH_TOKEN?.trim();
+  if (keySid && keySecret) return { user: keySid, pass: keySecret };
+  if (accountSid && token) return { user: accountSid, pass: token };
+  return null;
+}
+
+export async function fetchTwilioRecordingMp3FromMediaUrl(
+  organizationId: string,
+  recordingMediaUrl: string
+): Promise<Response | null> {
+  const base = recordingMediaUrl.trim();
+  if (!base) return null;
+  const mp3Url = /\.mp3$/i.test(base) ? base : `${base}.mp3`;
+  const auth = await resolveTwilioMediaBasicAuth(organizationId);
+  if (!auth) return null;
+  const authHeader = Buffer.from(`${auth.user}:${auth.pass}`).toString("base64");
+  const mediaRes = await fetch(mp3Url, { headers: { Authorization: `Basic ${authHeader}` } });
+  if (!mediaRes.ok) return null;
+  return mediaRes;
 }
 
 export function parseTwilioFormBody(text: string): Record<string, string> {

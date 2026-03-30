@@ -57,6 +57,8 @@ type TwilioCallRow = {
   transcript_preview: string | null;
   created_at: string;
   source_label: string | null;
+  customer_hcp_id?: string | null;
+  customer_name?: string | null;
 };
 
 type SearchNumber = { phone_number: string; friendly_name?: string; locality?: string; region?: string };
@@ -868,6 +870,7 @@ export function AttributionInsightsClient() {
                     <thead className="bg-zinc-50 dark:bg-zinc-800/50">
                       <tr>
                         <th className="px-2 py-2">Time</th>
+                        <th className="py-2">Customer</th>
                         <th className="py-2">From</th>
                         <th className="py-2">Duration</th>
                         <th className="py-2">Recording</th>
@@ -882,10 +885,13 @@ export function AttributionInsightsClient() {
                             <td className="px-2 py-2 text-zinc-600 dark:text-zinc-400">
                               {new Date(c.created_at).toLocaleString()}
                             </td>
+                            <td className="py-2 text-zinc-700 dark:text-zinc-300">
+                              {c.customer_name ?? (c.customer_hcp_id ? `Customer ${c.customer_hcp_id}` : "—")}
+                            </td>
                             <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{c.from_e164 ?? "—"}</td>
                             <td className="py-2">{c.duration_seconds != null ? `${c.duration_seconds}s` : "—"}</td>
                             <td className="py-2">
-                              {c.recording_sid ? (
+                              {c.recording_sid || c.recording_media_url ? (
                                 <audio
                                   controls
                                   preload="none"
@@ -914,7 +920,7 @@ export function AttributionInsightsClient() {
                           </tr>
                           {expandedCallIds.has(c.id) ? (
                             <tr className="border-t border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/40">
-                              <td colSpan={6} className="px-3 py-3 text-zinc-800 dark:text-zinc-200">
+                              <td colSpan={7} className="px-3 py-3 text-zinc-800 dark:text-zinc-200">
                                 {callDetails[c.id]?.error ? (
                                   <p className="text-amber-800 dark:text-amber-200">{callDetails[c.id].error}</p>
                                 ) : callDetails[c.id] && "transcript_text" in callDetails[c.id] ? (
@@ -953,6 +959,7 @@ export function AttributionInsightsClient() {
                   <tr>
                     <th className="px-2 py-2">Time</th>
                     <th className="py-2">To</th>
+                    <th className="py-2">Customer</th>
                     <th className="py-2">From</th>
                     <th className="py-2">Duration</th>
                     <th className="py-2">Recording</th>
@@ -968,10 +975,13 @@ export function AttributionInsightsClient() {
                           {new Date(c.created_at).toLocaleString()}
                         </td>
                         <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{c.to_e164 ?? c.tracking_number_e164 ?? "—"}</td>
+                        <td className="py-2 text-zinc-700 dark:text-zinc-300">
+                          {c.customer_name ?? (c.customer_hcp_id ? `Customer ${c.customer_hcp_id}` : "—")}
+                        </td>
                         <td className="py-2 font-mono text-zinc-800 dark:text-zinc-200">{c.from_e164 ?? "—"}</td>
                         <td className="py-2">{c.duration_seconds != null ? `${c.duration_seconds}s` : "—"}</td>
                         <td className="py-2">
-                          {c.recording_sid ? (
+                          {c.recording_sid || c.recording_media_url ? (
                             <audio
                               controls
                               preload="none"
@@ -995,7 +1005,7 @@ export function AttributionInsightsClient() {
                       </tr>
                       {expandedCallIds.has(c.id) ? (
                         <tr className="border-t border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/40">
-                          <td colSpan={7} className="px-3 py-3 text-zinc-800 dark:text-zinc-200">
+                          <td colSpan={8} className="px-3 py-3 text-zinc-800 dark:text-zinc-200">
                             {callDetails[c.id]?.error ? (
                               <p className="text-amber-800 dark:text-amber-200">{callDetails[c.id].error}</p>
                             ) : callDetails[c.id] && "transcript_text" in callDetails[c.id] ? (

@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
-import { getTwilioTrackingCallByIdForOrg } from "@/lib/db/twilioAttributionQueries";
+import {
+  getTwilioTrackingCallByIdForOrg,
+  updateTwilioTrackingCallTranscript,
+} from "@/lib/db/twilioAttributionQueries";
+import { getTwilioClientForOrganization } from "@/lib/twilio/client";
+import { fetchTranscriptFullText, fetchTranscriptStatus } from "@/lib/twilio/intelligence";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +24,38 @@ export async function GET(
     return NextResponse.json({ error: "callId required" }, { status: 400 });
   }
   await initSchema();
-  const call = await getTwilioTrackingCallByIdForOrg(session.user.organizationId, callId);
+  let call = await getTwilioTrackingCallByIdForOrg(session.user.organizationId, callId);
   if (!call) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // On-demand backfill so transcript text appears without waiting for cron poll.
+  if (!call.transcript_text && call.intelligence_transcript_sid) {
+    try {
+      const twilioClient = await getTwilioClientForOrganization(session.user.organizationId);
+      const st = await fetchTranscriptStatus(twilioClient, call.intelligence_transcript_sid);
+      if (st === "completed") {
+        const text = await fetchTranscriptFullText(twilioClient, call.intelligence_transcript_sid);
+        await updateTwilioTrackingCallTranscript({
+          callSid: call.call_sid,
+          intelligenceTranscriptSid: call.intelligence_transcript_sid,
+          transcriptStatus: "completed",
+          transcriptText: text || null,
+        });
+      } else {
+        await updateTwilioTrackingCallTranscript({
+          callSid: call.call_sid,
+          intelligenceTranscriptSid: call.intelligence_transcript_sid,
+          transcriptStatus: st,
+        });
+      }
+      call = await getTwilioTrackingCallByIdForOrg(session.user.organizationId, callId);
+      if (!call) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+    } catch {
+      // Keep current stored payload if Twilio transcript fetch fails.
+    }
   }
   return NextResponse.json({ call });
 }

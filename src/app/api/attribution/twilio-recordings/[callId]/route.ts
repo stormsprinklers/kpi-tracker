@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import { getTwilioTrackingCallByIdForOrg } from "@/lib/db/twilioAttributionQueries";
-import { fetchTwilioRecordingMp3 } from "@/lib/twilio/client";
+import {
+  fetchTwilioRecordingMp3,
+  fetchTwilioRecordingMp3FromMediaUrl,
+} from "@/lib/twilio/client";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +27,15 @@ export async function GET(
   }
   await initSchema();
   const call = await getTwilioTrackingCallByIdForOrg(session.user.organizationId, callId);
-  if (!call?.recording_sid) {
+  if (!call?.recording_sid && !call?.recording_media_url) {
     return NextResponse.json({ error: "No recording for this call" }, { status: 404 });
   }
-  const mediaRes = await fetchTwilioRecordingMp3(session.user.organizationId, call.recording_sid);
+  const mediaRes = call.recording_sid
+    ? await fetchTwilioRecordingMp3(session.user.organizationId, call.recording_sid)
+    : await fetchTwilioRecordingMp3FromMediaUrl(
+        session.user.organizationId,
+        call.recording_media_url as string
+      );
   if (!mediaRes?.body) {
     return NextResponse.json({ error: "Recording unavailable" }, { status: 502 });
   }

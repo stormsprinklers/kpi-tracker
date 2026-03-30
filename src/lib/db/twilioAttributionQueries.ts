@@ -255,6 +255,8 @@ export type TwilioTrackingCallListRow = {
   transcript_preview: string | null;
   created_at: string;
   source_label: string | null;
+  customer_hcp_id: string | null;
+  customer_name: string | null;
 };
 
 export async function listTwilioTrackingCallsForOrg(
@@ -280,10 +282,38 @@ export async function listTwilioTrackingCallsForOrg(
           t.transcript_status,
           LEFT(t.transcript_text, 280) AS transcript_preview,
           t.created_at,
-          s.label AS source_label
+          s.label AS source_label,
+          cm.customer_hcp_id,
+          cm.customer_name
         FROM twilio_tracking_calls t
         LEFT JOIN web_attribution_sources s ON s.id = t.source_id
         LEFT JOIN web_attribution_phone_numbers p ON p.id = t.phone_number_id
+        LEFT JOIN organizations o ON o.id = t.organization_id
+        LEFT JOIN LATERAL (
+          SELECT
+            c.hcp_id AS customer_hcp_id,
+            NULLIF(
+              TRIM(CONCAT(COALESCE(c.raw->>'first_name', ''), ' ', COALESCE(c.raw->>'last_name', ''))),
+              ''
+            ) AS customer_name
+          FROM customers c
+          WHERE c.company_id = o.hcp_company_id
+            AND RIGHT(REGEXP_REPLACE(COALESCE(t.from_e164, ''), '\D', '', 'g'), 10) != ''
+            AND RIGHT(REGEXP_REPLACE(COALESCE(
+                  c.raw->>'mobile_number',
+                  c.raw->>'phone',
+                  c.raw->>'phone_number',
+                  c.raw->>'mobile',
+                  c.raw->>'mobile_phone',
+                  c.raw->>'cell',
+                  c.raw->>'cell_phone',
+                  c.raw->>'telephone',
+                  ''
+                ), '\D', '', 'g'), 10) =
+                RIGHT(REGEXP_REPLACE(COALESCE(t.from_e164, ''), '\D', '', 'g'), 10)
+          ORDER BY c.updated_at DESC
+          LIMIT 1
+        ) cm ON true
         WHERE t.organization_id = ${organizationId}::uuid
           AND t.phone_number_id = ${filterPhone}::uuid
         ORDER BY t.created_at DESC
@@ -304,10 +334,38 @@ export async function listTwilioTrackingCallsForOrg(
           t.transcript_status,
           LEFT(t.transcript_text, 280) AS transcript_preview,
           t.created_at,
-          s.label AS source_label
+          s.label AS source_label,
+          cm.customer_hcp_id,
+          cm.customer_name
         FROM twilio_tracking_calls t
         LEFT JOIN web_attribution_sources s ON s.id = t.source_id
         LEFT JOIN web_attribution_phone_numbers p ON p.id = t.phone_number_id
+        LEFT JOIN organizations o ON o.id = t.organization_id
+        LEFT JOIN LATERAL (
+          SELECT
+            c.hcp_id AS customer_hcp_id,
+            NULLIF(
+              TRIM(CONCAT(COALESCE(c.raw->>'first_name', ''), ' ', COALESCE(c.raw->>'last_name', ''))),
+              ''
+            ) AS customer_name
+          FROM customers c
+          WHERE c.company_id = o.hcp_company_id
+            AND RIGHT(REGEXP_REPLACE(COALESCE(t.from_e164, ''), '\D', '', 'g'), 10) != ''
+            AND RIGHT(REGEXP_REPLACE(COALESCE(
+                  c.raw->>'mobile_number',
+                  c.raw->>'phone',
+                  c.raw->>'phone_number',
+                  c.raw->>'mobile',
+                  c.raw->>'mobile_phone',
+                  c.raw->>'cell',
+                  c.raw->>'cell_phone',
+                  c.raw->>'telephone',
+                  ''
+                ), '\D', '', 'g'), 10) =
+                RIGHT(REGEXP_REPLACE(COALESCE(t.from_e164, ''), '\D', '', 'g'), 10)
+          ORDER BY c.updated_at DESC
+          LIMIT 1
+        ) cm ON true
         WHERE t.organization_id = ${organizationId}::uuid
         ORDER BY t.created_at DESC
         LIMIT ${lim}
@@ -333,6 +391,9 @@ export async function getTwilioTrackingCallByIdForOrg(
   transcript_text: string | null;
   created_at: string;
   source_label: string | null;
+  intelligence_transcript_sid: string | null;
+  customer_hcp_id: string | null;
+  customer_name: string | null;
 } | null> {
   const result = await sql`
     SELECT
@@ -349,10 +410,39 @@ export async function getTwilioTrackingCallByIdForOrg(
       t.transcript_status,
       t.transcript_text,
       t.created_at,
-      s.label AS source_label
+      s.label AS source_label,
+      t.intelligence_transcript_sid,
+      cm.customer_hcp_id,
+      cm.customer_name
     FROM twilio_tracking_calls t
     LEFT JOIN web_attribution_sources s ON s.id = t.source_id
     LEFT JOIN web_attribution_phone_numbers p ON p.id = t.phone_number_id
+    LEFT JOIN organizations o ON o.id = t.organization_id
+    LEFT JOIN LATERAL (
+      SELECT
+        c.hcp_id AS customer_hcp_id,
+        NULLIF(
+          TRIM(CONCAT(COALESCE(c.raw->>'first_name', ''), ' ', COALESCE(c.raw->>'last_name', ''))),
+          ''
+        ) AS customer_name
+      FROM customers c
+      WHERE c.company_id = o.hcp_company_id
+        AND RIGHT(REGEXP_REPLACE(COALESCE(t.from_e164, ''), '\D', '', 'g'), 10) != ''
+        AND RIGHT(REGEXP_REPLACE(COALESCE(
+              c.raw->>'mobile_number',
+              c.raw->>'phone',
+              c.raw->>'phone_number',
+              c.raw->>'mobile',
+              c.raw->>'mobile_phone',
+              c.raw->>'cell',
+              c.raw->>'cell_phone',
+              c.raw->>'telephone',
+              ''
+            ), '\D', '', 'g'), 10) =
+            RIGHT(REGEXP_REPLACE(COALESCE(t.from_e164, ''), '\D', '', 'g'), 10)
+      ORDER BY c.updated_at DESC
+      LIMIT 1
+    ) cm ON true
     WHERE t.organization_id = ${organizationId}::uuid
       AND t.id = ${callId}::uuid
     LIMIT 1
@@ -373,6 +463,9 @@ export async function getTwilioTrackingCallByIdForOrg(
         transcript_text: string | null;
         created_at: string;
         source_label: string | null;
+        intelligence_transcript_sid: string | null;
+        customer_hcp_id: string | null;
+        customer_name: string | null;
       }
     | undefined;
   return row ?? null;
