@@ -15,7 +15,7 @@ interface User {
 const PERMISSION_LABELS: Record<keyof UserPermissions, string> = {
   dashboard: "Dashboard",
   timesheets: "Timesheets",
-  call_insights: "Call Insights",
+  call_insights: "CSR call detail pages",
   time_insights: "Time Insights",
   profit: "Profit",
   marketing: "Marketing",

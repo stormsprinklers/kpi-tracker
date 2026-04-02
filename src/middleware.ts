@@ -51,6 +51,12 @@ export default auth((req) => {
       loginUrl.searchParams.set("callbackUrl", pathname);
       return NextResponse.redirect(loginUrl);
     }
+
+    // Standalone Call insights UI lives under Attribution; keep /call-insights for CSR drill-down links only.
+    if (pathname === "/call-insights" || pathname === "/call-insights/") {
+      return NextResponse.redirect(new URL("/insights/attribution", req.nextUrl));
+    }
+
     const perms = (session.user as { permissions?: Record<string, boolean> }).permissions;
     if (perms) {
       const pathPermMap: { prefix: string; perm: string }[] = [
@@ -68,8 +74,14 @@ export default auth((req) => {
           break;
         }
       }
+      if (pathname.startsWith("/call-insights/")) {
+        const canCalls = perms["marketing"] === true || perms["call_insights"] === true;
+        if (!canCalls) {
+          return NextResponse.redirect(new URL("/", req.nextUrl));
+        }
+      }
+
       const insightsPermMap: { prefix: string; perm: string }[] = [
-        { prefix: "/call-insights", perm: "call_insights" },
         { prefix: "/time-insights", perm: "time_insights" },
         { prefix: "/insights/profit", perm: "profit" },
         { prefix: "/insights/attribution", perm: "marketing" },

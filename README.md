@@ -29,6 +29,18 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Business pulse emails (cron)
+
+Vercel cron calls `/api/cron/pulse-email-daily` and `/api/cron/pulse-email-weekly` with `Authorization: Bearer <CRON_SECRET>`. Environment variables:
+
+- **`CRON_SECRET`** — secret checked by cron routes.
+- **`SENDGRID_API_KEY`** — SendGrid v3; mail uses `noreply@homeservicesanalytics.com` (verify domain SPF/DKIM in SendGrid).
+- **`SENDGRID_SANDBOX_MODE`** — optional; `true` in non-prod for sandbox sends.
+- **`OPENAI_API_KEY`** — pulse AI copy (`gpt-4o-mini`); optional fallback text if unset.
+- **`NEXT_PUBLIC_APP_URL`** — base URL for email links and assets.
+
+Admins configure pulses under **Settings → Notifications**.
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

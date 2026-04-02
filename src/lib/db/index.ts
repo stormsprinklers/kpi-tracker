@@ -241,6 +241,27 @@ export async function initSchema(): Promise<void> {
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='seo_include_ai_mode') THEN
         ALTER TABLE organizations ADD COLUMN seo_include_ai_mode BOOLEAN DEFAULT false;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_email_enabled') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_email_enabled BOOLEAN NOT NULL DEFAULT false;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_daily_enabled') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_daily_enabled BOOLEAN NOT NULL DEFAULT false;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_weekly_enabled') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_weekly_enabled BOOLEAN NOT NULL DEFAULT false;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_recipient_emails') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_recipient_emails TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_timezone') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_timezone TEXT NOT NULL DEFAULT 'America/Denver';
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_last_daily_ymd') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_last_daily_ymd TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_last_weekly_end_ymd') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_last_weekly_end_ymd TEXT;
+      END IF;
     END $$
   `;
 
@@ -363,6 +384,30 @@ export async function initSchema(): Promise<void> {
     DO $$
     BEGIN
       ALTER TABLE users ALTER COLUMN organization_id DROP NOT NULL;
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END $$
+  `;
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='two_factor_enabled') THEN
+        ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN NOT NULL DEFAULT false;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='two_factor_channel') THEN
+        ALTER TABLE users ADD COLUMN two_factor_channel TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='phone_e164') THEN
+        ALTER TABLE users ADD COLUMN phone_e164 TEXT;
+      END IF;
+    END $$
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_two_factor_channel_check;
+      ALTER TABLE users ADD CONSTRAINT users_two_factor_channel_check CHECK (two_factor_channel IS NULL OR two_factor_channel IN ('sms', 'email'));
     EXCEPTION WHEN OTHERS THEN
       NULL;
     END $$

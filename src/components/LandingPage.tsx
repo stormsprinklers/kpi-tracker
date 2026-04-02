@@ -116,7 +116,17 @@ export function LandingPage() {
                 <CtaPrimary night={night}>Book a demo</CtaPrimary>
                 <CtaSecondary night={night}>Join the waitlist</CtaSecondary>
               </div>
-              <p className="mt-6 text-sm opacity-75" style={{ color: text }}>
+              <p className="mt-4 text-sm opacity-90" style={{ color: text }}>
+                Questions?{" "}
+                <a
+                  href="mailto:support@homeservicesanalytics.com"
+                  className="font-medium underline decoration-1 underline-offset-2 hover:opacity-100"
+                  style={{ color: text }}
+                >
+                  support@homeservicesanalytics.com
+                </a>
+              </p>
+              <p className="mt-4 text-sm opacity-75" style={{ color: text }}>
                 Built for home service companies that want clarity, accountability, and smarter growth.
               </p>
             </div>
@@ -461,7 +471,15 @@ export function LandingPage() {
             <a href="#pricing" className="opacity-80 hover:opacity-100" style={{ color: text }}>Pricing</a>
             <a href="#integrations" className="opacity-80 hover:opacity-100" style={{ color: text }}>Integrations</a>
             <a href="#faq" className="opacity-80 hover:opacity-100" style={{ color: text }}>FAQ</a>
-            <a href="mailto:contact@example.com" className="opacity-80 hover:opacity-100" style={{ color: text }}>Contact</a>
+            <a href="mailto:support@homeservicesanalytics.com" className="opacity-80 hover:opacity-100" style={{ color: text }}>
+              Contact
+            </a>
+            <a href="/privacy" className="opacity-80 hover:opacity-100" style={{ color: text }}>
+              Privacy Policy
+            </a>
+            <a href="/terms" className="opacity-80 hover:opacity-100" style={{ color: text }}>
+              Terms of Service
+            </a>
           </nav>
         </div>
       </footer>

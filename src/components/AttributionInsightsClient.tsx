@@ -338,11 +338,7 @@ export function AttributionInsightsClient() {
       <div id="call-tracking" className="scroll-mt-24 space-y-4">
         <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Call tracking &amp; conversions</h2>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          GHL opportunity calls, booking rates by CSR, and waiting window — same reporting period as above.{" "}
-          <Link href="/call-insights" className="text-zinc-700 underline dark:text-zinc-300">
-            Open standalone call insights
-          </Link>{" "}
-          to pick a different date range.
+          GHL opportunity calls, booking rates by CSR, and waiting window — scoped to the reporting period selected above.
         </p>
         <CallInsightsClient
           startDate={apiStart}

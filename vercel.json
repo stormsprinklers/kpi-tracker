@@ -11,6 +11,14 @@
     {
       "path": "/api/cron/google-reviews-sync",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/pulse-email-daily",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/pulse-email-weekly",
+      "schedule": "0 13 * * 1"
     }
   ]
 }

@@ -3,8 +3,33 @@ import Google from "next-auth/providers/google";
 import Apple from "next-auth/providers/apple";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
-import { getUserByEmail, getOrganizationById, getUserPermissions } from "@/lib/db/queries";
+import {
+  getUserByEmail,
+  getUserById,
+  getOrganizationById,
+  getUserPermissions,
+} from "@/lib/db/queries";
 import { initSchema } from "@/lib/db";
+
+function sessionUserFromRow(user: {
+  id: string;
+  email: string;
+  role: string;
+  organization_id: string | null;
+  org_name: string | null;
+  org_logo_url: string | null;
+  hcp_employee_id: string | null;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    organizationId: user.organization_id ?? "",
+    organizationName: user.org_name ?? undefined,
+    organizationLogoUrl: user.org_logo_url ?? null,
+    hcpEmployeeId: user.hcp_employee_id ?? null,
+  };
+}
 
 export default {
   providers: [
@@ -13,23 +38,39 @@ export default {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        twoFactorPendingToken: { label: "2FA pending", type: "text" },
+        twoFactorCode: { label: "2FA code", type: "text" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+        const emailRaw = credentials?.email as string | undefined;
+        const email = emailRaw?.trim();
+        if (!email) return null;
         await initSchema();
-        const user = await getUserByEmail(credentials.email as string);
+
+        const pending = (credentials?.twoFactorPendingToken as string | undefined)?.trim();
+        const code = (credentials?.twoFactorCode as string | undefined)?.trim();
+
+        if (pending && code) {
+          const { verifyTwoFactorPendingToken } = await import("@/lib/auth/twoFactorPendingToken");
+          const payload = await verifyTwoFactorPendingToken(pending);
+          if (!payload || payload.email.trim().toLowerCase() !== email.toLowerCase()) return null;
+          const user = await getUserById(payload.userId);
+          if (!user?.password_hash) return null;
+          const { checkVerifyCode } = await import("@/lib/twilio/verify");
+          const verified = await checkVerifyCode(payload.verifyTo, code);
+          if (!verified.ok) return null;
+          return sessionUserFromRow(user);
+        }
+
+        const password = credentials?.password as string | undefined;
+        if (!password) return null;
+
+        const user = await getUserByEmail(email);
         if (!user?.password_hash) return null;
-        const valid = await compare(credentials.password as string, user.password_hash);
+        const valid = await compare(password, user.password_hash);
         if (!valid) return null;
-        return {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          organizationId: user.organization_id ?? "",
-          organizationName: user.org_name ?? undefined,
-          organizationLogoUrl: user.org_logo_url ?? null,
-          hcpEmployeeId: user.hcp_employee_id ?? null,
-        };
+        if (user.two_factor_enabled) return null;
+        return sessionUserFromRow(user);
       },
     }),
     Google({ allowDangerousEmailAccountLinking: true }),

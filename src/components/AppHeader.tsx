@@ -79,7 +79,9 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
           <a href="#pricing" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Pricing</a>
           <a href="#integrations" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Integrations</a>
           <a href="#faq" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>FAQ</a>
-          <a href="mailto:contact@example.com" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Contact</a>
+          <a href="/privacy" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Privacy</a>
+          <a href="/terms" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Terms</a>
+          <a href="mailto:support@homeservicesanalytics.com" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Contact</a>
           <a href="/login" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Log in</a>
           <a href="#" className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90" style={{ backgroundColor: "#0B1F33" }}>Book a demo</a>
           <a href="#" className="rounded-lg border-2 px-4 py-2 text-sm font-semibold transition hover:bg-[rgba(11,31,51,0.04)]" style={{ borderColor: "#0B1F33", color: "#0B1F33" }}>Join the waitlist</a>
@@ -119,7 +121,6 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   const insightsItems = isEmployee
     ? []
     : [
-        ...(can("call_insights") ? [{ label: "Calls", href: "/insights/attribution#call-tracking" }] : []),
         ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
         ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
         ...(can("marketing") ? [{ label: "Attribution", href: "/insights/attribution" }] : []),

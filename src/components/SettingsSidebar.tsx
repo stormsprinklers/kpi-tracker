@@ -6,6 +6,8 @@ import { useState } from "react";
 
 const TABS = [
   { href: "/settings/crm", label: "CRM" },
+  { href: "/settings/security", label: "Security" },
+  { href: "/settings/notifications", label: "Notifications" },
   { href: "/settings/performance-pay", label: "Performance Pay" },
   { href: "/settings/seo", label: "SEO" },
   { href: "/settings/integrations", label: "Integrations" },

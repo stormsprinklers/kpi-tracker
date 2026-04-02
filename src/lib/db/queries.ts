@@ -324,12 +324,43 @@ export async function getOrganizationsCount(): Promise<number> {
   return (result.rows?.[0] as { count: number })?.count ?? 0;
 }
 
+export type OrganizationRow = {
+  id: string;
+  name: string;
+  hcp_access_token: string | null;
+  hcp_webhook_secret: string | null;
+  hcp_company_id: string | null;
+  logo_url: string | null;
+  trial_ends_at: string | null;
+  website: string | null;
+  seo_business_name: string | null;
+  seo_domain: string | null;
+  seo_include_ai_mode: boolean | null;
+  pulse_email_enabled: boolean;
+  pulse_daily_enabled: boolean;
+  pulse_weekly_enabled: boolean;
+  pulse_recipient_emails: string | null;
+  pulse_timezone: string;
+  pulse_last_daily_ymd: string | null;
+  pulse_last_weekly_end_ymd: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export async function getOrganizationById(id: string) {
   const result = await sql`
-    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, trial_ends_at, website, seo_business_name, seo_domain, seo_include_ai_mode, created_at, updated_at
+    SELECT id, name, hcp_access_token, hcp_webhook_secret, hcp_company_id, logo_url, trial_ends_at, website, seo_business_name, seo_domain, seo_include_ai_mode,
+      COALESCE(pulse_email_enabled, false) AS pulse_email_enabled,
+      COALESCE(pulse_daily_enabled, false) AS pulse_daily_enabled,
+      COALESCE(pulse_weekly_enabled, false) AS pulse_weekly_enabled,
+      pulse_recipient_emails,
+      COALESCE(NULLIF(TRIM(pulse_timezone), ''), 'America/Denver') AS pulse_timezone,
+      pulse_last_daily_ymd,
+      pulse_last_weekly_end_ymd,
+      created_at, updated_at
     FROM organizations WHERE id = ${id}
   `;
-  return result.rows?.[0] as { id: string; name: string; hcp_access_token: string | null; hcp_webhook_secret: string | null; hcp_company_id: string | null; logo_url: string | null; trial_ends_at: string | null; website: string | null; seo_business_name: string | null; seo_domain: string | null; seo_include_ai_mode: boolean | null; created_at: string; updated_at: string } | undefined;
+  return result.rows?.[0] as OrganizationRow | undefined;
 }
 
 export async function upsertOrganizationLogo(organizationId: string, logoUrl: string): Promise<void> {
@@ -423,6 +454,72 @@ export async function updateOrganizationSeoSettings(
       UPDATE organizations SET seo_include_ai_mode = ${params.seo_include_ai_mode}, updated_at = NOW() WHERE id = ${id}
     `;
   }
+}
+
+export async function updateOrganizationPulseSettings(
+  id: string,
+  params: {
+    pulse_email_enabled?: boolean;
+    pulse_daily_enabled?: boolean;
+    pulse_weekly_enabled?: boolean;
+    pulse_recipient_emails?: string | null;
+    pulse_timezone?: string | null;
+  }
+) {
+  if (params.pulse_email_enabled !== undefined) {
+    await sql`
+      UPDATE organizations SET pulse_email_enabled = ${params.pulse_email_enabled}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.pulse_daily_enabled !== undefined) {
+    await sql`
+      UPDATE organizations SET pulse_daily_enabled = ${params.pulse_daily_enabled}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.pulse_weekly_enabled !== undefined) {
+    await sql`
+      UPDATE organizations SET pulse_weekly_enabled = ${params.pulse_weekly_enabled}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.pulse_recipient_emails !== undefined) {
+    await sql`
+      UPDATE organizations SET pulse_recipient_emails = ${params.pulse_recipient_emails}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.pulse_timezone !== undefined) {
+    const tz = params.pulse_timezone?.trim() || "America/Denver";
+    await sql`
+      UPDATE organizations SET pulse_timezone = ${tz}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+}
+
+export async function markPulseDailySent(organizationId: string, ymd: string): Promise<void> {
+  await sql`
+    UPDATE organizations SET pulse_last_daily_ymd = ${ymd}, updated_at = NOW() WHERE id = ${organizationId}::uuid
+  `;
+}
+
+export async function markPulseWeeklySent(organizationId: string, endYmd: string): Promise<void> {
+  await sql`
+    UPDATE organizations SET pulse_last_weekly_end_ymd = ${endYmd}, updated_at = NOW() WHERE id = ${organizationId}::uuid
+  `;
+}
+
+export async function getOrganizationIdsForPulseDaily(): Promise<string[]> {
+  const result = await sql`
+    SELECT id::text AS id FROM organizations
+    WHERE COALESCE(pulse_email_enabled, false) = true AND COALESCE(pulse_daily_enabled, false) = true
+  `;
+  return (result.rows ?? []).map((r) => (r as { id: string }).id);
+}
+
+export async function getOrganizationIdsForPulseWeekly(): Promise<string[]> {
+  const result = await sql`
+    SELECT id::text AS id FROM organizations
+    WHERE COALESCE(pulse_email_enabled, false) = true AND COALESCE(pulse_weekly_enabled, false) = true
+  `;
+  return (result.rows ?? []).map((r) => (r as { id: string }).id);
 }
 
 export async function getSeoConfig(organizationId: string) {
@@ -649,24 +746,70 @@ export async function setLocationsCache(cacheKey: string, payload: unknown[]): P
   `;
 }
 
+export type UserAuthRow = {
+  id: string;
+  email: string;
+  password_hash: string | null;
+  organization_id: string | null;
+  role: string;
+  hcp_employee_id: string | null;
+  org_name: string | null;
+  hcp_company_id: string | null;
+  org_logo_url: string | null;
+  two_factor_enabled: boolean;
+  two_factor_channel: string | null;
+  phone_e164: string | null;
+};
+
 export async function getUserByEmail(email: string) {
   const result = await sql`
-    SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id, o.logo_url as org_logo_url
+    SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id, o.logo_url as org_logo_url,
+      COALESCE(u.two_factor_enabled, false) AS two_factor_enabled,
+      u.two_factor_channel,
+      u.phone_e164
     FROM users u
     LEFT JOIN organizations o ON o.id = u.organization_id
     WHERE LOWER(u.email) = LOWER(${email})
   `;
-  return result.rows?.[0] as {
-    id: string;
-    email: string;
-    password_hash: string | null;
-    organization_id: string | null;
-    role: string;
-    hcp_employee_id: string | null;
-    org_name: string | null;
-    hcp_company_id: string | null;
-    org_logo_url: string | null;
-  } | undefined;
+  return result.rows?.[0] as UserAuthRow | undefined;
+}
+
+export async function getUserById(id: string) {
+  const result = await sql`
+    SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id, o.logo_url as org_logo_url,
+      COALESCE(u.two_factor_enabled, false) AS two_factor_enabled,
+      u.two_factor_channel,
+      u.phone_e164
+    FROM users u
+    LEFT JOIN organizations o ON o.id = u.organization_id
+    WHERE u.id = ${id}::uuid
+  `;
+  return result.rows?.[0] as UserAuthRow | undefined;
+}
+
+export async function updateUserTwoFactorSettings(
+  userId: string,
+  params: {
+    two_factor_enabled?: boolean;
+    two_factor_channel?: "sms" | "email" | null;
+    phone_e164?: string | null;
+  }
+) {
+  if (params.two_factor_enabled !== undefined) {
+    await sql`
+      UPDATE users SET two_factor_enabled = ${params.two_factor_enabled} WHERE id = ${userId}::uuid
+    `;
+  }
+  if (params.two_factor_channel !== undefined) {
+    await sql`
+      UPDATE users SET two_factor_channel = ${params.two_factor_channel} WHERE id = ${userId}::uuid
+    `;
+  }
+  if (params.phone_e164 !== undefined) {
+    await sql`
+      UPDATE users SET phone_e164 = ${params.phone_e164} WHERE id = ${userId}::uuid
+    `;
+  }
 }
 
 export async function createUser(params: {
