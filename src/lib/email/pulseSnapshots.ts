@@ -4,6 +4,11 @@ import { getTechnicianRevenue } from "@/lib/metrics/technicianRevenue";
 import { getCsrKpiList } from "@/lib/metrics/csrKpis";
 import { getTimeInsights } from "@/lib/metrics/timeInsights";
 import { getOrganizationById } from "@/lib/db/queries";
+import {
+  countFiveStarGoogleReviewsForOrgInRange,
+  sumGbpMetricsForOrgInRange,
+  sumSearchConsoleForOrgInRange,
+} from "@/lib/db/marketingQueries";
 
 function summarizeCalls(callInsights: Awaited<ReturnType<typeof getCallInsights>>) {
   let opportunity = 0;
@@ -31,6 +36,12 @@ export type PulseDailySnapshot = {
   dataGaps: string[];
   keyMetrics: Awaited<ReturnType<typeof getKeyMetrics>>;
   callSummary: ReturnType<typeof summarizeCalls>;
+  fiveStarReviews: number;
+  websiteTraffic: {
+    searchClicks: number;
+    searchImpressions: number;
+    gbpWebsiteClicks: number;
+  };
 };
 
 export async function buildPulseDailySnapshot(organizationId: string, dateYmd: string): Promise<PulseDailySnapshot> {
@@ -40,9 +51,12 @@ export async function buildPulseDailySnapshot(organizationId: string, dateYmd: s
     dataGaps.push("Housecall Pro is not connected; job and revenue metrics may be empty.");
   }
 
-  const [keyMetrics, callInsights] = await Promise.all([
+  const [keyMetrics, callInsights, scTotals, gbpTotals, fiveStarReviews] = await Promise.all([
     getKeyMetrics(organizationId, { startDate: dateYmd, endDate: dateYmd }),
     getCallInsights(organizationId, { startDate: dateYmd, endDate: dateYmd }),
+    sumSearchConsoleForOrgInRange(organizationId, dateYmd, dateYmd),
+    sumGbpMetricsForOrgInRange(organizationId, dateYmd, dateYmd),
+    countFiveStarGoogleReviewsForOrgInRange(organizationId, dateYmd, dateYmd),
   ]);
 
   return {
@@ -51,6 +65,12 @@ export async function buildPulseDailySnapshot(organizationId: string, dateYmd: s
     dataGaps,
     keyMetrics,
     callSummary: summarizeCalls(callInsights),
+    fiveStarReviews,
+    websiteTraffic: {
+      searchClicks: scTotals.clicks,
+      searchImpressions: scTotals.impressions,
+      gbpWebsiteClicks: gbpTotals.website_clicks,
+    },
   };
 }
 
@@ -68,6 +88,12 @@ export type PulseWeeklySnapshot = {
     avgLaborTimeMinutes: number | null;
     laborPercentOfRevenue: number | null;
   } | null;
+  fiveStarReviews: number;
+  websiteTraffic: {
+    searchClicks: number;
+    searchImpressions: number;
+    gbpWebsiteClicks: number;
+  };
   marketingSnippet: unknown;
 };
 
@@ -82,7 +108,7 @@ export async function buildPulseWeeklySnapshot(
     dataGaps.push("Housecall Pro is not connected; job and revenue metrics may be empty.");
   }
 
-  const [keyMetrics, callInsights, techResult, csrKpis, timeInsights] = await Promise.all([
+  const [keyMetrics, callInsights, techResult, csrKpis, timeInsights, scTotals, gbpTotals, fiveStarReviews] = await Promise.all([
     getKeyMetrics(organizationId, { startDate, endDate }),
     getCallInsights(organizationId, { startDate, endDate }),
     getTechnicianRevenue(organizationId, {
@@ -92,6 +118,9 @@ export async function buildPulseWeeklySnapshot(
     }),
     getCsrKpiList(organizationId, { startDate, endDate }),
     getTimeInsights(organizationId, { startDate, endDate }),
+    sumSearchConsoleForOrgInRange(organizationId, startDate, endDate),
+    sumGbpMetricsForOrgInRange(organizationId, startDate, endDate),
+    countFiveStarGoogleReviewsForOrgInRange(organizationId, startDate, endDate),
   ]);
 
   let marketingSnippet: unknown = null;
@@ -123,6 +152,12 @@ export async function buildPulseWeeklySnapshot(
       avgDriveTimeMinutes: timeInsights.averageDriveTimeMinutes,
       avgLaborTimeMinutes: timeInsights.averageLaborTimeMinutes,
       laborPercentOfRevenue: timeInsights.laborPercentOfRevenue,
+    },
+    fiveStarReviews,
+    websiteTraffic: {
+      searchClicks: scTotals.clicks,
+      searchImpressions: scTotals.impressions,
+      gbpWebsiteClicks: gbpTotals.website_clicks,
     },
     marketingSnippet,
   };

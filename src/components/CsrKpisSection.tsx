@@ -121,9 +121,6 @@ export function CsrKpisSection({ dateRange }: { dateRange: DashboardDateRange })
         <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
           CSR KPIs
         </h2>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          Office staff metrics: booking rate, call duration, lead response time. Data from GoHighLevel call webhooks.
-        </p>
       </div>
       {loading && (
         <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>

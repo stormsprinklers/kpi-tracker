@@ -180,9 +180,6 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
           <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
             Technician KPIs
           </h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Revenue per hour, total revenue, conversion rate, and 5-star reviews. Only technicians with jobs in the current year.
-          </p>
         </div>
         {isAdmin && (
           <div className="flex rounded border border-zinc-300 dark:border-zinc-600">
@@ -387,9 +384,6 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
           <p className="text-sm font-medium text-red-700 dark:text-red-300">
             Unassigned revenue detected: {unassignedJobs.length} paid job
             {unassignedJobs.length === 1 ? "" : "s"} totaling {formatCurrency(unassignedRevenueTotal)} in this date range.
-          </p>
-          <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-            This revenue may not be fully reflected in employee-level payout rows until assignment mapping is corrected.
           </p>
         </div>
       )}

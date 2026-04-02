@@ -165,6 +165,7 @@ export function buildPulseEmailPlainText(input: PulseEmailTemplateInput): string
 export function metricsRowsFromDaily(snapshot: import("@/lib/email/pulseSnapshots").PulseDailySnapshot): { label: string; value: string }[] {
   const km = snapshot.keyMetrics;
   const c = snapshot.callSummary;
+  const w = snapshot.websiteTraffic;
   return [
     { label: "Revenue", value: formatMoney(km.revenue) },
     { label: "Jobs (paid)", value: String(km.jobCount) },
@@ -172,6 +173,10 @@ export function metricsRowsFromDaily(snapshot: import("@/lib/email/pulseSnapshot
     { label: "Estimate conversion", value: formatPct(km.conversionRate) },
     { label: "Opportunity calls", value: String(c.opportunityCalls) },
     { label: "Booking rate (won / won+lost)", value: formatPct(c.bookingRatePercent) },
+    { label: "5-star reviews", value: String(snapshot.fiveStarReviews) },
+    { label: "Search clicks", value: String(w.searchClicks) },
+    { label: "Search impressions", value: String(w.searchImpressions) },
+    { label: "GBP website clicks", value: String(w.gbpWebsiteClicks) },
   ];
 }
 
@@ -179,6 +184,7 @@ export function metricsRowsFromWeekly(snapshot: import("@/lib/email/pulseSnapsho
   const km = snapshot.keyMetrics;
   const c = snapshot.callSummary;
   const t = snapshot.timeSummary;
+  const w = snapshot.websiteTraffic;
   return [
     { label: "Revenue (period)", value: formatMoney(km.revenue) },
     { label: "Jobs (paid)", value: String(km.jobCount) },
@@ -194,5 +200,9 @@ export function metricsRowsFromWeekly(snapshot: import("@/lib/email/pulseSnapsho
           : "—",
     },
     { label: "Labor % of revenue", value: t?.laborPercentOfRevenue != null ? formatPct(t.laborPercentOfRevenue) : "—" },
+    { label: "5-star reviews", value: String(snapshot.fiveStarReviews) },
+    { label: "Search clicks", value: String(w.searchClicks) },
+    { label: "Search impressions", value: String(w.searchImpressions) },
+    { label: "GBP website clicks", value: String(w.gbpWebsiteClicks) },
   ];
 }

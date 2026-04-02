@@ -27,9 +27,6 @@ export function DashboardHomeClient({ connected }: { connected: boolean }) {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Time period</h2>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              Key metrics, technician KPIs, and CSR KPIs use this range.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -65,9 +62,7 @@ export function DashboardHomeClient({ connected }: { connected: boolean }) {
             )}
           </div>
         </div>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Showing: <span className="font-medium text-zinc-700 dark:text-zinc-300">{dateRange.rangeLabel}</span>
-        </p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
       </div>
 
       <KeyMetricsSection connected={connected} dateRange={dateRange} />

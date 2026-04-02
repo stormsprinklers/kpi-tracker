@@ -493,3 +493,24 @@ export async function countGoogleBusinessReviewsForOrg(organizationId: string): 
   const row = (result.rows ?? [])[0] as { c: number } | undefined;
   return row?.c ?? 0;
 }
+
+export async function countFiveStarGoogleReviewsForOrgInRange(
+  organizationId: string,
+  rangeStart: string,
+  rangeEnd: string
+): Promise<number> {
+  const result = await sql`
+    SELECT COUNT(*)::int AS c
+    FROM google_business_reviews
+    WHERE organization_id = ${organizationId}::uuid
+      AND (
+        star_rating = 5
+        OR UPPER(TRIM(COALESCE(raw->>'starRating', ''))) = 'FIVE'
+      )
+      AND COALESCE(create_time, update_time) IS NOT NULL
+      AND (COALESCE(create_time, update_time))::date >= ${rangeStart}::date
+      AND (COALESCE(create_time, update_time))::date <= ${rangeEnd}::date
+  `;
+  const row = (result.rows ?? [])[0] as { c: number } | undefined;
+  return row?.c ?? 0;
+}
