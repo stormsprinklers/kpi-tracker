@@ -1,4 +1,15 @@
 import type { WebAttributionSessionEventRow } from "@/lib/db/webAttributionQueries";
+import { isLikelyBookingCompletionUrl } from "@/lib/webAttribution/bookingCompletionHeuristics";
+import { displayLabelFromUtmSource } from "@/lib/webAttribution/utmSourceResolution";
+
+function resolvedSourceLabelForEvent(row: WebAttributionSessionEventRow): string | null {
+  const joined = (row.source_label ?? "").trim();
+  if (joined) return joined;
+  const meta = row.metadata as Record<string, unknown> | undefined;
+  const utm = typeof meta?.utm_source === "string" ? meta.utm_source.trim() : "";
+  if (!utm) return null;
+  return displayLabelFromUtmSource(utm) ?? utm;
+}
 
 export type RecentWebAttributionSessionEvent = {
   id: string;
@@ -41,8 +52,9 @@ export function buildRecentWebAttributionSessions(
     );
     const first = events[0];
     const last = events[events.length - 1];
-    const entrySource =
-      events.find((e) => (e.source_label ?? "").trim().length > 0)?.source_label ?? null;
+    const entrySourceEvent =
+      events.find((e) => (resolvedSourceLabelForEvent(e) ?? "").trim().length > 0) ?? null;
+    const entrySourceLabel = entrySourceEvent ? resolvedSourceLabelForEvent(entrySourceEvent) : null;
 
     const entryPage =
       events.find((e) => (e.page_url ?? "").trim().length > 0)?.page_url ?? null;
@@ -51,18 +63,20 @@ export function buildRecentWebAttributionSessions(
       visitor_id: first.visitor_id,
       started_at: first.occurred_at,
       last_activity_at: last.occurred_at,
-      entry_source_label: entrySource,
+      entry_source_label: entrySourceLabel,
       entry_page_url: entryPage,
       has_call: events.some((e) => e.event_type === "tel_click"),
       has_form: events.some((e) => e.event_type === "form_submit"),
-      has_booking: events.some((e) => e.event_type === "booking"),
+      has_booking:
+        events.some((e) => e.event_type === "booking") ||
+        events.some((e) => isLikelyBookingCompletionUrl(e.page_url)),
       event_count: events.length,
       events: events.map((e) => ({
         id: e.id,
         event_type: e.event_type,
         occurred_at: e.occurred_at,
         page_url: e.page_url,
-        source_label: e.source_label,
+        source_label: resolvedSourceLabelForEvent(e),
         referrer: e.referrer,
         metadata: e.metadata,
       })),

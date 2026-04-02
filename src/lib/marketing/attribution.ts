@@ -1,5 +1,12 @@
 import type { MarketingChannelSlug } from "./types";
 
+/** Maps legacy DB / rule targets: Website/Direct → Organic Search; Referrals → Unassigned (hidden for now). */
+export function normalizeMarketingChannelSlug(slug: string): MarketingChannelSlug {
+  if (slug === "website") return "organic_search";
+  if (slug === "referrals") return "unassigned";
+  return slug as MarketingChannelSlug;
+}
+
 export type AttributionConfidence = "explicit" | "inferred" | "rule" | "model";
 
 export interface JobAttributionResult {
@@ -147,22 +154,9 @@ function matchDefaultHeuristics(
       matchedValue: "meta_keywords",
     };
   }
-  if (
-    haystack.includes("refer") ||
-    haystack.includes("friend") ||
-    haystack.includes("neighbor") ||
-    haystack.includes("word of mouth")
-  ) {
-    return {
-      channelSlug: "referrals",
-      confidence: "inferred",
-      ruleType: "text_referral",
-      matchedValue: "referral_keywords",
-    };
-  }
   if (haystack.includes("website") || haystack.includes("web form") || haystack.includes("online booking")) {
     return {
-      channelSlug: "website",
+      channelSlug: "organic_search",
       confidence: "inferred",
       ruleType: "text_website",
       matchedValue: "website_keywords",
@@ -188,7 +182,7 @@ export function attributeJobFromRaw(
       const re = new RegExp(p, "i");
       if (re.test(haystack) || re.test(`${utmSource ?? ""} ${utmMedium ?? ""}`)) {
         return {
-          channelSlug: r.channel_slug as MarketingChannelSlug,
+          channelSlug: normalizeMarketingChannelSlug(r.channel_slug),
           confidence: "rule",
           ruleType: "custom_pattern",
           matchedValue: r.pattern,
@@ -197,7 +191,7 @@ export function attributeJobFromRaw(
     } catch {
       if (haystack.includes(p)) {
         return {
-          channelSlug: r.channel_slug as MarketingChannelSlug,
+          channelSlug: normalizeMarketingChannelSlug(r.channel_slug),
           confidence: "rule",
           ruleType: "custom_substring",
           matchedValue: r.pattern,
@@ -207,7 +201,9 @@ export function attributeJobFromRaw(
   }
 
   const def = matchDefaultHeuristics(haystack, utmSource, utmMedium);
-  if (def) return def;
+  if (def) {
+    return { ...def, channelSlug: normalizeMarketingChannelSlug(def.channelSlug) };
+  }
 
   return {
     channelSlug: "unassigned",

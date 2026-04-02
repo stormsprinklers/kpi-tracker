@@ -459,7 +459,21 @@ export async function getWebAttributionRangeTotals(params: {
       )::int AS page_loads,
       COUNT(*) FILTER (WHERE event_type = 'tel_click')::int AS tel_clicks,
       COUNT(*) FILTER (WHERE event_type = 'form_submit')::int AS form_submits,
-      COUNT(*) FILTER (WHERE event_type = 'booking')::int AS web_bookings
+      COUNT(*) FILTER (
+        WHERE event_type = 'booking'
+        OR (
+          event_type IN ('landing', 'page_view')
+          AND page_url IS NOT NULL
+          AND (
+            LOWER(page_url) LIKE '%/schedule/success%'
+            OR LOWER(page_url) LIKE '%/booking/success%'
+            OR LOWER(page_url) LIKE '%/appointment/confirmed%'
+            OR LOWER(page_url) LIKE '%thank-you%'
+            OR LOWER(page_url) LIKE '%thank_you%'
+            OR LOWER(page_url) LIKE '%/thankyou%'
+          )
+        )
+      )::int AS web_bookings
     FROM web_attribution_events
     WHERE organization_id = ${params.organizationId}::uuid
       AND occurred_at::date >= ${start}::date
@@ -506,7 +520,21 @@ export async function getWebSourceMetricsInRange(params: {
       COUNT(DISTINCT e.visitor_id)::int AS unique_visitors,
       COUNT(*) FILTER (WHERE e.event_type = 'tel_click')::int AS tel_clicks,
       COUNT(*) FILTER (WHERE e.event_type = 'form_submit')::int AS form_submits,
-      COUNT(*) FILTER (WHERE e.event_type = 'booking')::int AS web_bookings
+      COUNT(*) FILTER (
+        WHERE e.event_type = 'booking'
+        OR (
+          e.event_type IN ('landing', 'page_view')
+          AND e.page_url IS NOT NULL
+          AND (
+            LOWER(e.page_url) LIKE '%/schedule/success%'
+            OR LOWER(e.page_url) LIKE '%/booking/success%'
+            OR LOWER(e.page_url) LIKE '%/appointment/confirmed%'
+            OR LOWER(e.page_url) LIKE '%thank-you%'
+            OR LOWER(e.page_url) LIKE '%thank_you%'
+            OR LOWER(e.page_url) LIKE '%/thankyou%'
+          )
+        )
+      )::int AS web_bookings
     FROM web_attribution_sources s
     LEFT JOIN web_attribution_events e
       ON e.source_id = s.id
@@ -622,7 +650,23 @@ export async function getWebAttributionSourceSummary30d(
       SELECT
         source_id,
         SUM(CASE WHEN event_type = 'form_submit' THEN 1 ELSE 0 END)::int AS forms,
-        SUM(CASE WHEN event_type = 'booking' THEN 1 ELSE 0 END)::int AS bookings
+        SUM(
+          CASE
+            WHEN event_type = 'booking' THEN 1
+            WHEN event_type IN ('landing', 'page_view')
+              AND page_url IS NOT NULL
+              AND (
+                LOWER(page_url) LIKE '%/schedule/success%'
+                OR LOWER(page_url) LIKE '%/booking/success%'
+                OR LOWER(page_url) LIKE '%/appointment/confirmed%'
+                OR LOWER(page_url) LIKE '%thank-you%'
+                OR LOWER(page_url) LIKE '%thank_you%'
+                OR LOWER(page_url) LIKE '%/thankyou%'
+              )
+            THEN 1
+            ELSE 0
+          END
+        )::int AS bookings
       FROM web_attribution_events
       WHERE organization_id = ${organizationId}::uuid
         AND occurred_at >= NOW() - INTERVAL '30 days'

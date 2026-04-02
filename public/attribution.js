@@ -90,6 +90,29 @@
     return getLocal(STORAGE_UTM_MEDIUM) || getCookie(COOKIE_UTM_MEDIUM) || null;
   }
 
+  /** Prefer stored session UTMs; fall back to current page query (first load with UTMs before storage writes). */
+  function getUtmSourceForEvent() {
+    const stored = getUtmSource();
+    if (stored) return stored;
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return (p.get("utm_source") || "").trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getUtmMediumForEvent() {
+    const stored = getUtmMedium();
+    if (stored) return stored;
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return (p.get("utm_medium") || "").trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
   const queue = [];
   let timer = null;
   let inflight = false;
@@ -121,8 +144,8 @@
       eventType,
       visitorId: getVisitorId(),
       sourceToken: getSource(),
-      utmSource: getUtmSource(),
-      utmMedium: getUtmMedium(),
+      utmSource: getUtmSourceForEvent(),
+      utmMedium: getUtmMediumForEvent(),
       pageUrl: window.location.href,
       referrer: document.referrer || null,
       occurredAt: new Date().toISOString(),
@@ -176,5 +199,12 @@
   });
 
   window.addEventListener("beforeunload", flush);
+
+  window.hcpAttribution = {
+    trackBooking: function (meta) {
+      enqueue("booking", meta && typeof meta === "object" && meta !== null ? meta : {});
+    },
+    flush: flush,
+  };
 })();
 

@@ -371,7 +371,14 @@ export async function buildMarketingOverviewResponse(
   const gbpPerfState = await getMarketingSyncState(organizationId, "gbp_performance");
   const gscState = await getMarketingSyncState(organizationId, "search_console");
 
-  const tableSlugs = channelsMeta.filter((c) => c.slug !== "unassigned").map((c) => c.slug);
+  const tableSlugs = channelsMeta
+    .filter(
+      (c) =>
+        c.slug !== "unassigned" &&
+        c.slug !== "website" &&
+        c.slug !== "referrals"
+    )
+    .map((c) => c.slug);
 
   const lsaTok = await getMarketingOAuthRefreshToken(organizationId, "lsa");
 

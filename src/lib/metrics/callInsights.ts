@@ -74,16 +74,16 @@ export async function getCallInsights(
   const result = await sql`
     SELECT
       hcp_employee_id,
-      csr_first_name_raw,
       COUNT(*) FILTER (WHERE booking_value IN ('won','lost'))::int AS opportunity_calls,
       COUNT(*) FILTER (WHERE booking_value = 'won')::int AS won,
       COUNT(*) FILTER (WHERE booking_value = 'lost')::int AS lost,
-      AVG(duration_seconds) FILTER (WHERE duration_seconds IS NOT NULL) AS avg_duration
+      AVG(duration_seconds) FILTER (WHERE duration_seconds IS NOT NULL) AS avg_duration,
+      MAX(NULLIF(TRIM(csr_first_name_raw), '')) AS csr_name_hint
     FROM call_records
     WHERE organization_id = ${organizationId}::uuid
       AND call_date >= ${start}
       AND call_date <= ${end}
-    GROUP BY hcp_employee_id, csr_first_name_raw
+    GROUP BY hcp_employee_id
   `;
 
   const revenueResult = await sql`
@@ -128,11 +128,11 @@ export async function getCallInsights(
   for (const row of result.rows ?? []) {
     const r = row as {
       hcp_employee_id: string | null;
-      csr_first_name_raw: string | null;
       opportunity_calls: number;
       won: number;
       lost: number;
       avg_duration: string | null;
+      csr_name_hint: string | null;
     };
     const oppCalls = Number(r.opportunity_calls) || 0;
     const won = Number(r.won) || 0;
@@ -168,8 +168,8 @@ export async function getCallInsights(
     }
 
     let employeeName = nameMap.get(r.hcp_employee_id) ?? null;
-    if (!employeeName && r.csr_first_name_raw) {
-      employeeName = `${r.csr_first_name_raw} (unmatched)`;
+    if (!employeeName && r.csr_name_hint) {
+      employeeName = `${r.csr_name_hint} (unmatched)`;
     }
     if (!employeeName) {
       employeeName = "Unknown";

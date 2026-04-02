@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { initSchema } from "@/lib/db";
 import {
   getWebAttributionInstallByKeyHash,
-  getWebAttributionSourceBySlugOrLabel,
   getWebAttributionSourceByToken,
   getWebAttributionSourceIdBySlug,
   insertWebAttributionEvents,
@@ -10,6 +9,10 @@ import {
   type WebAttributionEventType,
 } from "@/lib/db/webAttributionQueries";
 import { ORGANIC_DIRECT_SLUG, ensureWebAttributionDefaultSources } from "@/lib/webAttribution/defaultSources";
+import {
+  extractUtmSourceFromPageUrl,
+  resolveWebAttributionSourceIdForUtm,
+} from "@/lib/webAttribution/utmSourceResolution";
 import { hashIp, hashPublishableKey, normalizeOrigin } from "@/lib/webAttribution";
 
 export const dynamic = "force-dynamic";
@@ -120,17 +123,16 @@ export async function POST(request: Request) {
     if (!visitorId) continue;
     let sourceId: string | null = null;
     const sourceToken = event.sourceToken?.toString().trim();
-    const utmSourceRaw = event.utmSource?.toString().trim() ?? "";
+    let utmSourceRaw = event.utmSource?.toString().trim() ?? "";
+    if (!utmSourceRaw && event.pageUrl) {
+      utmSourceRaw = extractUtmSourceFromPageUrl(event.pageUrl?.toString()) ?? "";
+    }
     if (sourceToken) {
       const source = await getWebAttributionSourceByToken(sourceToken);
       if (source?.organization_id === install.organization_id) sourceId = source.source_id;
     }
     if (!sourceId && utmSourceRaw) {
-      const source = await getWebAttributionSourceBySlugOrLabel({
-        organizationId: install.organization_id,
-        value: utmSourceRaw,
-      });
-      if (source?.source_id) sourceId = source.source_id;
+      sourceId = await resolveWebAttributionSourceIdForUtm(install.organization_id, utmSourceRaw);
     }
     if (!sourceId && !sourceToken && !utmSourceRaw && organicDirectSourceId) {
       sourceId = organicDirectSourceId;

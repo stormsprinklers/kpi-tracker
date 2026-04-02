@@ -10,6 +10,7 @@ import {
   type DashboardDatePreset,
   getDashboardDateRange,
 } from "@/lib/dashboardDateRange";
+import { isLikelyBookingCompletionUrl } from "@/lib/webAttribution/bookingCompletionHeuristics";
 import { CallInsightsClient } from "./CallInsightsClient";
 import { MarketingLeadSourceTable } from "./MarketingLeadSourceTable";
 import { MetricTooltip } from "./MetricTooltip";
@@ -94,8 +95,11 @@ function formatSessionPath(url: string | null): string {
   }
 }
 
-function attributionEventTypeLabel(t: string): string {
-  switch (t) {
+function attributionEventTypeLabel(eventType: string, pageUrl: string | null): string {
+  if (eventType === "page_view" && isLikelyBookingCompletionUrl(pageUrl)) {
+    return "Booking complete";
+  }
+  switch (eventType) {
     case "landing":
       return "Landing";
     case "page_view":
@@ -109,7 +113,7 @@ function attributionEventTypeLabel(t: string): string {
     case "verify_ping":
       return "Verify ping";
     default:
-      return t;
+      return eventType;
   }
 }
 
@@ -421,7 +425,9 @@ export function AttributionInsightsClient() {
             <dd className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
               {loading ? "…" : (data?.websiteTraffic.totalSiteVisits ?? "—")}
             </dd>
-            <dd className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Page loads (includes repeats).</dd>
+            <dd className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              Distinct visitors with the snippet in this period — same as Site sessions above.
+            </dd>
           </div>
           <div>
             <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Top landing pages</dt>
@@ -558,7 +564,7 @@ export function AttributionInsightsClient() {
                                 {new Date(ev.occurred_at).toLocaleString()}
                               </div>
                               <div className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                                {attributionEventTypeLabel(ev.event_type)}
+                                {attributionEventTypeLabel(ev.event_type, ev.page_url)}
                               </div>
                               {ev.source_label ? (
                                 <div className="text-xs text-zinc-600 dark:text-zinc-400">Source: {ev.source_label}</div>

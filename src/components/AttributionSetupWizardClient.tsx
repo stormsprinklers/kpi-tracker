@@ -302,6 +302,24 @@ export function AttributionSetupWizardClient() {
     return `<script defer src="${appUrl}/attribution.js" data-key="${key}"></script>`;
   }, [newPublishableKey]);
 
+  const bookingSnippet = useMemo(
+    () => `<!-- Optional: after the main script — track booking buttons -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  document.body.addEventListener("click", function (e) {
+    var el = e.target && e.target.closest && e.target.closest("[data-hcp-booking]");
+    if (!el || !window.hcpAttribution || typeof window.hcpAttribution.trackBooking !== "function") return;
+    window.hcpAttribution.trackBooking({ via: "data-hcp-booking" });
+  });
+});
+</script>
+
+<!-- Mark buttons or links: <button type="button" data-hcp-booking>Book online</button> -->
+<!-- Or on your scheduler success page (one line after load): -->
+<!-- <script>window.hcpAttribution && window.hcpAttribution.trackBooking({ page: "schedule_success" });</script> -->`,
+    []
+  );
+
   const hasOrigins = allowedOriginsText.split("\n").some((s) => s.trim());
   const hasReceivedEvents = !!install?.lastEventAt;
 
@@ -1195,6 +1213,21 @@ export function AttributionSetupWizardClient() {
               value={snippet}
               readOnly
             />
+            <div className="space-y-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+              <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Booking buttons &amp; success pages</h3>
+              <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                We infer some completed bookings from URLs like <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">/schedule/success</code>.
+                For explicit tracking, add the helper below after the main script. Use{" "}
+                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">data-hcp-booking</code> on &quot;Book now&quot;
+                controls, or call <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">hcpAttribution.trackBooking()</code>{" "}
+                on your confirmation page.
+              </p>
+              <textarea
+                className="h-40 w-full rounded border border-zinc-300 bg-zinc-50 p-3 font-mono text-xs text-zinc-800 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200"
+                value={bookingSnippet}
+                readOnly
+              />
+            </div>
             {newPublishableKey ? (
               <p className="text-sm text-amber-800 dark:text-amber-200">
                 <strong>Important:</strong> Copy and store this key somewhere safe. After you leave this page or rotate again,

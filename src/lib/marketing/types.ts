@@ -3,10 +3,8 @@ export type MarketingChannelSlug =
   | "google_lsa"
   | "google_business_profile"
   | "organic_search"
-  | "website"
   | "google_ads"
-  | "meta_ads"
-  | "referrals";
+  | "meta_ads";
 
 export interface MarketingChannelRow {
   slug: string;

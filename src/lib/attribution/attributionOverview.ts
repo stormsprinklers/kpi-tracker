@@ -128,7 +128,8 @@ export async function buildAttributionOverviewResponse(
     webSourceBreakdown,
     websiteTraffic: {
       avgTimeOnSiteSeconds: null,
-      totalSiteVisits: webTotals.pageLoads,
+      /** Same definition as `kpis.siteSessions`: distinct visitors with events in range (not raw page-view count). */
+      totalSiteVisits: webTotals.uniqueVisitors,
       topLandingPages: topPages,
     },
     recentSessions,
