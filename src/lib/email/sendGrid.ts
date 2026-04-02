@@ -27,12 +27,14 @@ export async function sendTransactionalEmail(params: SendTransactionalEmailParam
 
   const sandbox = process.env.SENDGRID_SANDBOX_MODE === "true";
 
-  const content: Array<{ type: string; value: string }> = [
-    { type: "text/html", value: params.html },
-  ];
+  // SendGrid requires that if `text/plain` is present, it must come first,
+  // followed by `text/html`, followed by any other content.
+  // https://docs.sendgrid.com/api-reference/mail-send/mail-send#body-content
+  const content: Array<{ type: string; value: string }> = [];
   if (params.text?.trim()) {
     content.push({ type: "text/plain", value: params.text.trim() });
   }
+  content.push({ type: "text/html", value: params.html });
 
   const body = {
     personalizations: recipients.map((email) => ({ to: [{ email }] })),
