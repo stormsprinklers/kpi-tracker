@@ -73,8 +73,7 @@ function getJobDateYmd(job: Record<string, unknown>): string | null {
   const sched = job.schedule as Record<string, unknown> | undefined;
   const completed = wt?.completed_at ?? wt?.completed;
   const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const created = job.created_at ?? job.createdAt;
-  const dateStr = (completed ?? scheduled ?? created) as string | undefined;
+  const dateStr = (completed ?? scheduled) as string | undefined;
   if (!dateStr) return null;
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return null;
@@ -267,7 +266,7 @@ const METRIC_DEFINITIONS: Record<string, string> = {
   totalPlatformLeads:
     "Leads reported by paid ad platforms (e.g. LSA charged leads), prorated to match the selected date range.",
   totalJobsInPeriod:
-    "Housecall Pro jobs whose primary date (completed, scheduled, or created) falls in the selected range.",
+    "Housecall Pro jobs whose primary work date (completed, else scheduled) falls in the selected range.",
   totalPaidRevenueInPeriod:
     "Sum of paid job amounts (from synced HCP job totals) for jobs dated in the range, all sources.",
   attributedPaidRevenue:

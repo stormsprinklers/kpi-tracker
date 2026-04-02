@@ -84,8 +84,7 @@ function getJobDate(job: Record<string, unknown>): Date | null {
   const sched = job.schedule as Record<string, unknown> | undefined;
   const completed = wt?.completed_at ?? wt?.completed;
   const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const created = job.created_at ?? job.createdAt;
-  const dateStr = (completed ?? scheduled ?? created) as string | undefined;
+  const dateStr = (completed ?? scheduled) as string | undefined;
   if (!dateStr) return null;
   const d = new Date(dateStr);
   return Number.isNaN(d.getTime()) ? null : d;
@@ -94,7 +93,7 @@ function getJobDate(job: Record<string, unknown>): Date | null {
 function jobInDateRange(job: Record<string, unknown>, startDate: string | null, endDate: string | null): boolean {
   if (!startDate || !endDate) return true;
   const jobDate = getJobDate(job);
-  if (!jobDate) return true;
+  if (!jobDate) return false;
   const jobDay = jobDate.toISOString().slice(0, 10);
   return jobDay >= startDate && jobDay <= endDate;
 }

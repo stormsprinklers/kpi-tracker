@@ -199,14 +199,13 @@ function mergeNamesFromJob(nameMap: Map<string, string>, job: Record<string, unk
   }
 }
 
-/** Extract job date for filtering. Uses completed_at, scheduled_start, or created_at. */
+/** Extract job date for filtering. Uses completed_at, then scheduled_start. */
 function getJobDate(job: Record<string, unknown>): Date | null {
   const wt = job.work_timestamps as Record<string, unknown> | undefined;
   const sched = job.schedule as Record<string, unknown> | undefined;
   const completed = wt?.completed_at ?? wt?.completed;
   const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const created = job.created_at ?? job.createdAt;
-  const dateStr = (completed ?? scheduled ?? created) as string | undefined;
+  const dateStr = (completed ?? scheduled) as string | undefined;
   if (!dateStr) return null;
   const d = new Date(dateStr);
   return Number.isNaN(d.getTime()) ? null : d;
@@ -231,7 +230,7 @@ function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): b
 function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDate?: string): boolean {
   if (!startDate && !endDate) return true;
   const jobDate = getJobDate(job);
-  if (!jobDate) return true; // include if no date
+  if (!jobDate) return false;
   const jobDay = jobDate.toISOString().slice(0, 10);
   if (startDate && jobDay < startDate) return false;
   if (endDate && jobDay > endDate) return false;
