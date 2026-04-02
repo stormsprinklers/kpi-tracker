@@ -1,5 +1,6 @@
 import type { OrganizationRow } from "@/lib/db/queries";
 import { getUsersByOrganizationId } from "@/lib/db/queries";
+import type { PulseEmailVariant } from "@/lib/email/pulseEmailTemplate";
 
 function parseRecipientList(raw: string | null | undefined): string[] | null {
   if (raw == null || !String(raw).trim()) return null;
@@ -23,9 +24,22 @@ function parseRecipientList(raw: string | null | undefined): string[] | null {
  */
 export async function resolvePulseRecipientEmails(
   organizationId: string,
-  org: OrganizationRow
+  org: OrganizationRow,
+  variant: PulseEmailVariant
 ): Promise<string[]> {
-  const parsed = parseRecipientList(org.pulse_recipient_emails);
+  // Backward compat:
+  // - If split fields are entirely unconfigured, use legacy `pulse_recipient_emails`.
+  // - Once split fields are in use, treat empty list as "no override" (admins only),
+  //   not as "use legacy".
+  const splitConfigured = org.pulse_daily_recipient_emails != null || org.pulse_weekly_recipient_emails != null;
+
+  const rawOverride = splitConfigured
+    ? variant === "daily"
+      ? org.pulse_daily_recipient_emails
+      : org.pulse_weekly_recipient_emails
+    : org.pulse_recipient_emails;
+
+  const parsed = parseRecipientList(rawOverride);
   if (parsed && parsed.length > 0) {
     return [...new Set(parsed.map((e) => e.trim().toLowerCase()).filter(Boolean))];
   }

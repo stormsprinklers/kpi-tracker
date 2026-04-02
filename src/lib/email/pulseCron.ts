@@ -42,7 +42,7 @@ export async function sendDailyPulseForOrganization(
     return { organizationId, status: "skipped", detail: `Already sent for ${ymd}` };
   }
 
-  const recipients = await resolvePulseRecipientEmails(organizationId, org);
+  const recipients = await resolvePulseRecipientEmails(organizationId, org, "daily");
   if (recipients.length === 0) {
     return { organizationId, status: "skipped", detail: "No recipients" };
   }
@@ -93,7 +93,7 @@ export async function sendWeeklyPulseForOrganization(
     return { organizationId, status: "skipped", detail: `Already sent for week ending ${endYmd}` };
   }
 
-  const recipients = await resolvePulseRecipientEmails(organizationId, org);
+  const recipients = await resolvePulseRecipientEmails(organizationId, org, "weekly");
   if (recipients.length === 0) {
     return { organizationId, status: "skipped", detail: "No recipients" };
   }
@@ -123,6 +123,108 @@ export async function sendWeeklyPulseForOrganization(
       return { organizationId, status: "error", detail: send.error };
     }
     await markPulseWeeklySent(organizationId, endYmd);
+    return { organizationId, status: "sent" };
+  } catch (e) {
+    return {
+      organizationId,
+      status: "error",
+      detail: e instanceof Error ? e.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Admin "send test email" helper.
+ * - Uses the same date boundaries/templates as the real cron.
+ * - Does not check `pulse_last_*` and does not mark as sent.
+ */
+export async function sendDailyPulseTestForOrganization(
+  organizationId: string,
+  now: Date = new Date()
+): Promise<PulseCronItemResult> {
+  const org = await getOrganizationById(organizationId);
+  if (!org) return { organizationId, status: "error", detail: "Organization not found" };
+
+  const tz = org.pulse_timezone || "America/Denver";
+  const ymd = yesterdayYmdInOrgZone(now, tz);
+
+  const recipients = await resolvePulseRecipientEmails(organizationId, org, "daily");
+  if (recipients.length === 0) {
+    return { organizationId, status: "skipped", detail: "No recipients" };
+  }
+
+  try {
+    const snapshot = await buildPulseDailySnapshot(organizationId, ymd);
+    const ai = await generateDailyPulseAi(snapshot);
+    const periodLabel = `${formatYmdLong(ymd)} (org calendar day)`;
+    const base = appBaseUrl();
+    const input = {
+      variant: "daily" as const,
+      orgName: org.name,
+      periodLabel,
+      appBaseUrl: base,
+      metricsRows: metricsRowsFromDaily(snapshot),
+      dataGaps: snapshot.dataGaps,
+      dailyAi: ai,
+    };
+    const html = buildPulseEmailHtml(input);
+    const text = buildPulseEmailPlainText(input);
+    const subject = `${org.name} — Daily pulse (TEST) (${formatYmdLong(ymd)})`;
+
+    const send = await sendTransactionalEmail({ to: recipients, subject, html, text });
+    if (!send.ok) return { organizationId, status: "error", detail: send.error };
+    return { organizationId, status: "sent" };
+  } catch (e) {
+    return {
+      organizationId,
+      status: "error",
+      detail: e instanceof Error ? e.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Admin "send test email" helper.
+ * - Uses the same date boundaries/templates as the real cron.
+ * - Does not check `pulse_last_*` and does not mark as sent.
+ */
+export async function sendWeeklyPulseTestForOrganization(
+  organizationId: string,
+  now: Date = new Date()
+): Promise<PulseCronItemResult> {
+  const org = await getOrganizationById(organizationId);
+  if (!org) return { organizationId, status: "error", detail: "Organization not found" };
+
+  const tz = org.pulse_timezone || "America/Denver";
+  const endYmd = yesterdayYmdInOrgZone(now, tz);
+
+  const recipients = await resolvePulseRecipientEmails(organizationId, org, "weekly");
+  if (recipients.length === 0) {
+    return { organizationId, status: "skipped", detail: "No recipients" };
+  }
+
+  const { startDate, endDate } = rolling7DaysEnding(endYmd);
+
+  try {
+    const snapshot = await buildPulseWeeklySnapshot(organizationId, startDate, endDate);
+    const ai = await generateWeeklyPulseAi(snapshot);
+    const periodLabel = `${formatYmdLong(startDate)} – ${formatYmdLong(endDate)} (rolling 7 days, org time zone calendar)`;
+    const base = appBaseUrl();
+    const input = {
+      variant: "weekly" as const,
+      orgName: org.name,
+      periodLabel,
+      appBaseUrl: base,
+      metricsRows: metricsRowsFromWeekly(snapshot),
+      dataGaps: snapshot.dataGaps,
+      weeklyAi: ai,
+    };
+    const html = buildPulseEmailHtml(input);
+    const text = buildPulseEmailPlainText(input);
+    const subject = `${org.name} — Weekly pulse (TEST) (${formatYmdLong(startDate)} – ${formatYmdLong(endDate)})`;
+
+    const send = await sendTransactionalEmail({ to: recipients, subject, html, text });
+    if (!send.ok) return { organizationId, status: "error", detail: send.error };
     return { organizationId, status: "sent" };
   } catch (e) {
     return {

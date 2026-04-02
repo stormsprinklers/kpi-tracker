@@ -253,6 +253,15 @@ export async function initSchema(): Promise<void> {
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_recipient_emails') THEN
         ALTER TABLE organizations ADD COLUMN pulse_recipient_emails TEXT;
       END IF;
+      -- New: split recipient override lists by schedule.
+      -- Backward compat: existing pulse_recipient_emails will be used as a fallback
+      -- until admins configure these two new fields.
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_daily_recipient_emails') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_daily_recipient_emails TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_weekly_recipient_emails') THEN
+        ALTER TABLE organizations ADD COLUMN pulse_weekly_recipient_emails TEXT;
+      END IF;
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='organizations' AND column_name='pulse_timezone') THEN
         ALTER TABLE organizations ADD COLUMN pulse_timezone TEXT NOT NULL DEFAULT 'America/Denver';
       END IF;

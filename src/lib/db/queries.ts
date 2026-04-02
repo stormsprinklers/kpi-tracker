@@ -340,6 +340,8 @@ export type OrganizationRow = {
   pulse_daily_enabled: boolean;
   pulse_weekly_enabled: boolean;
   pulse_recipient_emails: string | null;
+  pulse_daily_recipient_emails: string | null;
+  pulse_weekly_recipient_emails: string | null;
   pulse_timezone: string;
   pulse_last_daily_ymd: string | null;
   pulse_last_weekly_end_ymd: string | null;
@@ -354,6 +356,8 @@ export async function getOrganizationById(id: string) {
       COALESCE(pulse_daily_enabled, false) AS pulse_daily_enabled,
       COALESCE(pulse_weekly_enabled, false) AS pulse_weekly_enabled,
       pulse_recipient_emails,
+      pulse_daily_recipient_emails,
+      pulse_weekly_recipient_emails,
       COALESCE(NULLIF(TRIM(pulse_timezone), ''), 'America/Denver') AS pulse_timezone,
       pulse_last_daily_ymd,
       pulse_last_weekly_end_ymd,
@@ -462,7 +466,9 @@ export async function updateOrganizationPulseSettings(
     pulse_email_enabled?: boolean;
     pulse_daily_enabled?: boolean;
     pulse_weekly_enabled?: boolean;
-    pulse_recipient_emails?: string | null;
+    pulse_recipient_emails?: string | null; // legacy override list (pre-split)
+    pulse_daily_recipient_emails?: string | null;
+    pulse_weekly_recipient_emails?: string | null;
     pulse_timezone?: string | null;
   }
 ) {
@@ -484,6 +490,16 @@ export async function updateOrganizationPulseSettings(
   if (params.pulse_recipient_emails !== undefined) {
     await sql`
       UPDATE organizations SET pulse_recipient_emails = ${params.pulse_recipient_emails}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.pulse_daily_recipient_emails !== undefined) {
+    await sql`
+      UPDATE organizations SET pulse_daily_recipient_emails = ${params.pulse_daily_recipient_emails}, updated_at = NOW() WHERE id = ${id}
+    `;
+  }
+  if (params.pulse_weekly_recipient_emails !== undefined) {
+    await sql`
+      UPDATE organizations SET pulse_weekly_recipient_emails = ${params.pulse_weekly_recipient_emails}, updated_at = NOW() WHERE id = ${id}
     `;
   }
   if (params.pulse_timezone !== undefined) {
