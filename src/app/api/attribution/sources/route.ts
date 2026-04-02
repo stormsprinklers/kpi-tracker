@@ -6,16 +6,10 @@ import {
   createWebAttributionSource,
   listWebAttributionSources,
 } from "@/lib/db/webAttributionQueries";
+import { ensureWebAttributionDefaultSources } from "@/lib/webAttribution/defaultSources";
 import { createSourceToken } from "@/lib/webAttribution";
 
 export const dynamic = "force-dynamic";
-
-const DEFAULT_SOURCES: Array<{ slug: string; label: string }> = [
-  { slug: "facebook", label: "Facebook" },
-  { slug: "instagram", label: "Instagram" },
-  { slug: "gbp", label: "GBP" },
-  { slug: "lsa", label: "LSA" },
-];
 
 function normalizeLabel(input: string): string {
   return input.trim().slice(0, 60);
@@ -30,20 +24,6 @@ function normalizeSlug(input: string): string {
     .slice(0, 40);
 }
 
-async function ensureDefaults(organizationId: string): Promise<void> {
-  const current = await listWebAttributionSources(organizationId);
-  const currentSlugs = new Set(current.map((s) => s.slug));
-  for (const source of DEFAULT_SOURCES) {
-    if (currentSlugs.has(source.slug)) continue;
-    await createWebAttributionSource({
-      organizationId,
-      slug: source.slug,
-      label: source.label,
-      publicToken: createSourceToken(),
-    });
-  }
-}
-
 export async function GET() {
   const session = await auth();
   if (!session?.user?.organizationId) {
@@ -51,7 +31,7 @@ export async function GET() {
   }
   await initSchema();
   const orgId = session.user.organizationId;
-  await ensureDefaults(orgId);
+  await ensureWebAttributionDefaultSources(orgId);
   const rows = await listWebAttributionSources(orgId);
   return NextResponse.json(rows);
 }

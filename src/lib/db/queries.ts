@@ -1,3 +1,4 @@
+import { getTechnicianIdsFromJob } from "@/lib/jobs/hcpJobTechnicians";
 import { sql } from "./index";
 
 export interface SyncFilters {
@@ -1440,7 +1441,10 @@ export interface GoogleBusinessReview {
   comment: string | null;
   create_time: string | null;
   update_time: string | null;
+  /** Legacy single column; kept in sync with first assignment for older readers. */
   assigned_hcp_employee_id: string | null;
+  /** All technicians credited for this review (junction table). */
+  assigned_hcp_employee_ids: string[];
 }
 
 export async function upsertGoogleBusinessReview(params: {
@@ -1495,18 +1499,89 @@ export async function getGoogleBusinessReviewsByOrg(
 ): Promise<GoogleBusinessReview[]> {
   const result = await sql`
     SELECT
-      review_id,
-      reviewer_name,
-      star_rating,
-      comment,
-      create_time::text,
-      update_time::text,
-      assigned_hcp_employee_id
-    FROM google_business_reviews
-    WHERE organization_id = ${organizationId}::uuid
-    ORDER BY COALESCE(update_time, create_time) DESC NULLS LAST
+      gbr.review_id,
+      gbr.reviewer_name,
+      gbr.star_rating,
+      gbr.comment,
+      gbr.create_time::text,
+      gbr.update_time::text,
+      gbr.assigned_hcp_employee_id,
+      COALESCE(
+        (SELECT array_agg(a.hcp_employee_id ORDER BY a.hcp_employee_id)
+         FROM google_business_review_assignments a
+         WHERE a.google_business_review_id = gbr.id),
+        ARRAY[]::text[]
+      ) AS assigned_hcp_employee_ids
+    FROM google_business_reviews gbr
+    WHERE gbr.organization_id = ${organizationId}::uuid
+    ORDER BY COALESCE(gbr.update_time, gbr.create_time) DESC NULLS LAST
   `;
-  return (result.rows ?? []) as GoogleBusinessReview[];
+  return (result.rows ?? []).map((row) => {
+    const r = row as GoogleBusinessReview & { assigned_hcp_employee_ids?: string[] | null };
+    let ids = Array.isArray(r.assigned_hcp_employee_ids) ? r.assigned_hcp_employee_ids : [];
+    if (ids.length === 0 && r.assigned_hcp_employee_id?.trim()) {
+      ids = [r.assigned_hcp_employee_id.trim()];
+    }
+    return {
+      ...r,
+      assigned_hcp_employee_ids: ids,
+    };
+  }) as GoogleBusinessReview[];
+}
+
+/** Orgs with Google OAuth + Business Profile location (eligible for review sync cron). */
+export async function getOrganizationIdsWithGoogleReviewSync(): Promise<string[]> {
+  const result = await sql`
+    SELECT organization_id::text AS organization_id
+    FROM google_business_profiles
+    WHERE google_refresh_token IS NOT NULL
+      AND TRIM(google_refresh_token) != ''
+      AND account_id IS NOT NULL
+      AND TRIM(account_id) != ''
+      AND location_id IS NOT NULL
+      AND TRIM(location_id) != ''
+  `;
+  return (result.rows ?? []).map((r) => (r as { organization_id: string }).organization_id);
+}
+
+export async function getJobsWithCustomersForCompany(
+  companyId: string
+): Promise<
+  {
+    job_hcp_id: string;
+    job_raw: Record<string, unknown>;
+    job_updated_at: string;
+    customer_raw: Record<string, unknown> | null;
+  }[]
+> {
+  const result = await sql`
+    SELECT j.hcp_id AS job_hcp_id, j.raw AS job_raw, j.updated_at::text AS job_updated_at, c.raw AS customer_raw
+    FROM jobs j
+    LEFT JOIN customers c ON c.hcp_id = j.customer_hcp_id AND c.company_id = j.company_id
+    WHERE j.company_id = ${companyId}
+      AND j.updated_at >= NOW() - INTERVAL '14 days'
+  `;
+  const out: {
+    job_hcp_id: string;
+    job_raw: Record<string, unknown>;
+    job_updated_at: string;
+    customer_raw: Record<string, unknown> | null;
+  }[] = [];
+  for (const row of result.rows ?? []) {
+    const r = row as {
+      job_hcp_id: string;
+      job_raw: unknown;
+      job_updated_at: string;
+      customer_raw: unknown;
+    };
+    out.push({
+      job_hcp_id: String(r.job_hcp_id ?? ""),
+      job_raw: (r.job_raw ?? {}) as Record<string, unknown>,
+      job_updated_at: r.job_updated_at ?? "",
+      customer_raw: r.customer_raw ? (r.customer_raw as Record<string, unknown>) : null,
+    });
+  }
+  return out;
 }
 
 export async function assignGoogleBusinessReview(params: {
@@ -1514,13 +1589,54 @@ export async function assignGoogleBusinessReview(params: {
   review_id: string;
   assigned_hcp_employee_id: string | null;
 }): Promise<void> {
+  const ids =
+    params.assigned_hcp_employee_id && params.assigned_hcp_employee_id.trim()
+      ? [params.assigned_hcp_employee_id.trim()]
+      : [];
+  await replaceGoogleBusinessReviewAssignmentRows({
+    organization_id: params.organization_id,
+    review_id: params.review_id,
+    hcp_employee_ids: ids,
+    source: "manual",
+  });
+}
+
+export async function replaceGoogleBusinessReviewAssignmentRows(params: {
+  organization_id: string;
+  review_id: string;
+  hcp_employee_ids: string[];
+  source: "manual" | "auto_customer" | "auto_mention";
+}): Promise<void> {
+  const unique = Array.from(
+    new Set(params.hcp_employee_ids.map((id) => id.trim()).filter(Boolean))
+  );
+  const primary = unique.length > 0 ? unique[0] : null;
+  await sql`
+    DELETE FROM google_business_review_assignments a
+    USING google_business_reviews gbr
+    WHERE gbr.id = a.google_business_review_id
+      AND gbr.organization_id = ${params.organization_id}::uuid
+      AND gbr.review_id = ${params.review_id}
+  `;
   await sql`
     UPDATE google_business_reviews
-    SET assigned_hcp_employee_id = ${params.assigned_hcp_employee_id},
+    SET assigned_hcp_employee_id = ${primary},
         updated_at = NOW()
     WHERE organization_id = ${params.organization_id}::uuid
       AND review_id = ${params.review_id}
   `;
+  if (unique.length === 0) return;
+  for (const hcp_employee_id of unique) {
+    await sql`
+      INSERT INTO google_business_review_assignments (google_business_review_id, hcp_employee_id, source)
+      SELECT gbr.id, ${hcp_employee_id}, ${params.source}
+      FROM google_business_reviews gbr
+      WHERE gbr.organization_id = ${params.organization_id}::uuid
+        AND gbr.review_id = ${params.review_id}
+      ON CONFLICT (google_business_review_id, hcp_employee_id) DO UPDATE SET
+        source = EXCLUDED.source
+    `;
+  }
 }
 
 export async function getAssignedGoogleReviewCounts(
@@ -1531,17 +1647,17 @@ export async function getAssignedGoogleReviewCounts(
   const ids = Array.from(new Set(hcpEmployeeIds.filter(Boolean)));
   if (ids.length === 0) return {};
   const result = await sql`
-    SELECT assigned_hcp_employee_id, COUNT(*)::int AS count
-    FROM google_business_reviews
-    WHERE organization_id = ${organizationId}::uuid
-      AND assigned_hcp_employee_id IS NOT NULL
-    GROUP BY assigned_hcp_employee_id
+    SELECT gbra.hcp_employee_id, COUNT(DISTINCT gbr.id)::int AS count
+    FROM google_business_review_assignments gbra
+    INNER JOIN google_business_reviews gbr ON gbr.id = gbra.google_business_review_id
+    WHERE gbr.organization_id = ${organizationId}::uuid
+    GROUP BY gbra.hcp_employee_id
   `;
   const map: Record<string, number> = {};
   for (const row of result.rows ?? []) {
-    const r = row as { assigned_hcp_employee_id: string; count: number };
-    if (ids.includes(r.assigned_hcp_employee_id)) {
-      map[r.assigned_hcp_employee_id] = r.count;
+    const r = row as { hcp_employee_id: string; count: number };
+    if (ids.includes(r.hcp_employee_id)) {
+      map[r.hcp_employee_id] = r.count;
     }
   }
   return map;
@@ -1560,19 +1676,19 @@ export async function getAssignedGoogleReviewCountsForPeriod(
   if (ids.size === 0) return {};
   /** Posted date of the review: create_time first (stable). update_time changes on edits/sync and broke period filters. */
   const result = await sql`
-    SELECT assigned_hcp_employee_id, COUNT(*)::int AS count
-    FROM google_business_reviews
-    WHERE organization_id = ${organizationId}::uuid
-      AND assigned_hcp_employee_id IS NOT NULL
-      AND COALESCE(create_time, update_time) IS NOT NULL
-      AND (COALESCE(create_time, update_time))::date >= ${startDate}::date
-      AND (COALESCE(create_time, update_time))::date <= ${endDate}::date
-    GROUP BY assigned_hcp_employee_id
+    SELECT gbra.hcp_employee_id, COUNT(DISTINCT gbr.id)::int AS count
+    FROM google_business_review_assignments gbra
+    INNER JOIN google_business_reviews gbr ON gbr.id = gbra.google_business_review_id
+    WHERE gbr.organization_id = ${organizationId}::uuid
+      AND COALESCE(gbr.create_time, gbr.update_time) IS NOT NULL
+      AND (COALESCE(gbr.create_time, gbr.update_time))::date >= ${startDate}::date
+      AND (COALESCE(gbr.create_time, gbr.update_time))::date <= ${endDate}::date
+    GROUP BY gbra.hcp_employee_id
   `;
   const map: Record<string, number> = {};
   for (const row of result.rows ?? []) {
-    const r = row as { assigned_hcp_employee_id: string; count: number };
-    const empId = String(r.assigned_hcp_employee_id ?? "").trim();
+    const r = row as { hcp_employee_id: string; count: number };
+    const empId = String(r.hcp_employee_id ?? "").trim();
     if (empId && ids.has(empId)) {
       map[empId] = r.count;
     }
@@ -1593,23 +1709,23 @@ export async function getAssignedFiveStarGoogleReviewCountsForPeriod(
   );
   if (ids.size === 0) return {};
   const result = await sql`
-    SELECT assigned_hcp_employee_id, COUNT(*)::int AS count
-    FROM google_business_reviews
-    WHERE organization_id = ${organizationId}::uuid
-      AND assigned_hcp_employee_id IS NOT NULL
+    SELECT gbra.hcp_employee_id, COUNT(DISTINCT gbr.id)::int AS count
+    FROM google_business_review_assignments gbra
+    INNER JOIN google_business_reviews gbr ON gbr.id = gbra.google_business_review_id
+    WHERE gbr.organization_id = ${organizationId}::uuid
       AND (
-        star_rating = 5
-        OR UPPER(TRIM(COALESCE(raw->>'starRating', ''))) = 'FIVE'
+        gbr.star_rating = 5
+        OR UPPER(TRIM(COALESCE(gbr.raw->>'starRating', ''))) = 'FIVE'
       )
-      AND COALESCE(create_time, update_time) IS NOT NULL
-      AND (COALESCE(create_time, update_time))::date >= ${startDate}::date
-      AND (COALESCE(create_time, update_time))::date <= ${endDate}::date
-    GROUP BY assigned_hcp_employee_id
+      AND COALESCE(gbr.create_time, gbr.update_time) IS NOT NULL
+      AND (COALESCE(gbr.create_time, gbr.update_time))::date >= ${startDate}::date
+      AND (COALESCE(gbr.create_time, gbr.update_time))::date <= ${endDate}::date
+    GROUP BY gbra.hcp_employee_id
   `;
   const map: Record<string, number> = {};
   for (const row of result.rows ?? []) {
-    const r = row as { assigned_hcp_employee_id: string; count: number };
-    const empId = String(r.assigned_hcp_employee_id ?? "").trim();
+    const r = row as { hcp_employee_id: string; count: number };
+    const empId = String(r.hcp_employee_id ?? "").trim();
     if (empId && ids.has(empId)) {
       map[empId] = r.count;
     }
@@ -1627,28 +1743,6 @@ const COMPLETED_JOB_STATUSES = [
   "invoiced",
   "finished",
 ];
-
-function getTechnicianIdsFromJob(job: Record<string, unknown>): string[] {
-  const assigned = job.assigned_employees ?? job.assigned_pro ?? job.assigned_employee;
-  const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
-  const ids: string[] = [];
-  for (const a of items) {
-    if (typeof a === "string") {
-      ids.push(a);
-      continue;
-    }
-    if (a && typeof a === "object" && "id" in a) {
-      ids.push(String((a as { id: unknown }).id));
-    }
-  }
-  if (ids.length > 0) return ids;
-  const fallback = job.pro_id ?? job.pro ?? job.employee_id ?? job.assigned_pro_id;
-  if (typeof fallback === "string") return [fallback];
-  if (fallback && typeof fallback === "object" && "id" in fallback) {
-    return [String((fallback as { id: unknown }).id)];
-  }
-  return [];
-}
 
 function isJobCompleted(raw: Record<string, unknown>): boolean {
   const status = (raw.status ?? raw.job_status ?? raw.work_status ?? raw.state ?? "")

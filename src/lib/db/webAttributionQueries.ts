@@ -266,6 +266,24 @@ export async function getWebAttributionSourceBySlugOrLabel(params: {
   return row ?? null;
 }
 
+export async function getWebAttributionSourceIdBySlug(
+  organizationId: string,
+  slug: string
+): Promise<string | null> {
+  const s = slug.trim().toLowerCase();
+  if (!s) return null;
+  const result = await sql`
+    SELECT id::text AS id
+    FROM web_attribution_sources
+    WHERE organization_id = ${organizationId}::uuid
+      AND archived_at IS NULL
+      AND LOWER(TRIM(slug)) = ${s}
+    LIMIT 1
+  `;
+  const row = (result.rows ?? [])[0] as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
 export async function insertWebAttributionEvents(events: WebAttributionEventInsert[]): Promise<void> {
   if (!events.length) return;
   for (const event of events) {
@@ -331,6 +349,243 @@ export async function getRecentWebAttributionEvents(params: {
     referrer: string | null;
     metadata: Record<string, unknown>;
   }>;
+}
+
+export interface WebAttributionSessionEventRow {
+  id: string;
+  visitor_id: string;
+  source_label: string | null;
+  event_type: string;
+  occurred_at: string;
+  page_url: string | null;
+  referrer: string | null;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Events for the most recently active visitors. Caller groups by `visitor_id` into sessions.
+ * Uses calendar-date filter on `occurred_at` when startDate/endDate set; otherwise last 30 days.
+ */
+export async function getRecentWebAttributionSessionEvents(params: {
+  organizationId: string;
+  /** Max distinct visitors (sessions) to include */
+  maxVisitors?: number;
+  startDate?: string;
+  endDate?: string;
+}): Promise<WebAttributionSessionEventRow[]> {
+  const maxV = Math.max(1, Math.min(80, params.maxVisitors ?? 40));
+  const start = params.startDate?.slice(0, 10);
+  const end = params.endDate?.slice(0, 10);
+  const useRange = Boolean(start && end && start <= end);
+
+  const result = useRange
+    ? await sql`
+        WITH top_visitors AS (
+          SELECT visitor_id
+          FROM web_attribution_events
+          WHERE organization_id = ${params.organizationId}::uuid
+            AND occurred_at::date >= ${start}::date
+            AND occurred_at::date <= ${end}::date
+          GROUP BY visitor_id
+          ORDER BY MAX(occurred_at) DESC
+          LIMIT ${maxV}
+        )
+        SELECT
+          e.id,
+          e.visitor_id,
+          s.label AS source_label,
+          e.event_type,
+          e.occurred_at,
+          e.page_url,
+          e.referrer,
+          e.metadata
+        FROM web_attribution_events e
+        LEFT JOIN web_attribution_sources s ON s.id = e.source_id
+        WHERE e.organization_id = ${params.organizationId}::uuid
+          AND e.occurred_at::date >= ${start}::date
+          AND e.occurred_at::date <= ${end}::date
+          AND e.visitor_id IN (SELECT visitor_id FROM top_visitors)
+        ORDER BY e.visitor_id ASC, e.occurred_at ASC
+      `
+    : await sql`
+        WITH top_visitors AS (
+          SELECT visitor_id
+          FROM web_attribution_events
+          WHERE organization_id = ${params.organizationId}::uuid
+            AND occurred_at >= NOW() - INTERVAL '30 days'
+          GROUP BY visitor_id
+          ORDER BY MAX(occurred_at) DESC
+          LIMIT ${maxV}
+        )
+        SELECT
+          e.id,
+          e.visitor_id,
+          s.label AS source_label,
+          e.event_type,
+          e.occurred_at,
+          e.page_url,
+          e.referrer,
+          e.metadata
+        FROM web_attribution_events e
+        LEFT JOIN web_attribution_sources s ON s.id = e.source_id
+        WHERE e.organization_id = ${params.organizationId}::uuid
+          AND e.occurred_at >= NOW() - INTERVAL '30 days'
+          AND e.visitor_id IN (SELECT visitor_id FROM top_visitors)
+        ORDER BY e.visitor_id ASC, e.occurred_at ASC
+      `;
+  return (result.rows ?? []) as WebAttributionSessionEventRow[];
+}
+
+export interface WebAttributionRangeTotals {
+  uniqueVisitors: number;
+  pageLoads: number;
+  telClicks: number;
+  formSubmits: number;
+  webBookings: number;
+}
+
+export async function getWebAttributionRangeTotals(params: {
+  organizationId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<WebAttributionRangeTotals> {
+  const start = params.startDate.slice(0, 10);
+  const end = params.endDate.slice(0, 10);
+  const result = await sql`
+    SELECT
+      COUNT(DISTINCT visitor_id)::int AS unique_visitors,
+      COUNT(*) FILTER (
+        WHERE event_type IN ('landing', 'page_view')
+      )::int AS page_loads,
+      COUNT(*) FILTER (WHERE event_type = 'tel_click')::int AS tel_clicks,
+      COUNT(*) FILTER (WHERE event_type = 'form_submit')::int AS form_submits,
+      COUNT(*) FILTER (WHERE event_type = 'booking')::int AS web_bookings
+    FROM web_attribution_events
+    WHERE organization_id = ${params.organizationId}::uuid
+      AND occurred_at::date >= ${start}::date
+      AND occurred_at::date <= ${end}::date
+  `;
+  const row = (result.rows ?? [])[0] as
+    | {
+        unique_visitors: number;
+        page_loads: number;
+        tel_clicks: number;
+        form_submits: number;
+        web_bookings: number;
+      }
+    | undefined;
+  return {
+    uniqueVisitors: row?.unique_visitors ?? 0,
+    pageLoads: row?.page_loads ?? 0,
+    telClicks: row?.tel_clicks ?? 0,
+    formSubmits: row?.form_submits ?? 0,
+    webBookings: row?.web_bookings ?? 0,
+  };
+}
+
+export interface WebSourceRangeMetricsRow {
+  source_id: string;
+  source_label: string;
+  unique_visitors: number;
+  tel_clicks: number;
+  form_submits: number;
+  web_bookings: number;
+}
+
+export async function getWebSourceMetricsInRange(params: {
+  organizationId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<WebSourceRangeMetricsRow[]> {
+  const start = params.startDate.slice(0, 10);
+  const end = params.endDate.slice(0, 10);
+  const result = await sql`
+    SELECT
+      s.id::text AS source_id,
+      s.label AS source_label,
+      COUNT(DISTINCT e.visitor_id)::int AS unique_visitors,
+      COUNT(*) FILTER (WHERE e.event_type = 'tel_click')::int AS tel_clicks,
+      COUNT(*) FILTER (WHERE e.event_type = 'form_submit')::int AS form_submits,
+      COUNT(*) FILTER (WHERE e.event_type = 'booking')::int AS web_bookings
+    FROM web_attribution_sources s
+    LEFT JOIN web_attribution_events e
+      ON e.source_id = s.id
+      AND e.organization_id = s.organization_id
+      AND e.occurred_at::date >= ${start}::date
+      AND e.occurred_at::date <= ${end}::date
+    WHERE s.organization_id = ${params.organizationId}::uuid
+      AND s.archived_at IS NULL
+    GROUP BY s.id, s.label
+    ORDER BY LOWER(s.label) ASC
+  `;
+  return (result.rows ?? []) as WebSourceRangeMetricsRow[];
+}
+
+export async function countTwilioTrackingCallsInRange(params: {
+  organizationId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<number> {
+  const start = params.startDate.slice(0, 10);
+  const end = params.endDate.slice(0, 10);
+  const result = await sql`
+    SELECT COUNT(*)::int AS c
+    FROM twilio_tracking_calls
+    WHERE organization_id = ${params.organizationId}::uuid
+      AND created_at::date >= ${start}::date
+      AND created_at::date <= ${end}::date
+  `;
+  const row = (result.rows ?? [])[0] as { c: number } | undefined;
+  return row?.c ?? 0;
+}
+
+export async function countTwilioCallsBySourceInRange(params: {
+  organizationId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<Record<string, number>> {
+  const start = params.startDate.slice(0, 10);
+  const end = params.endDate.slice(0, 10);
+  const result = await sql`
+    SELECT source_id::text AS source_id, COUNT(*)::int AS c
+    FROM twilio_tracking_calls
+    WHERE organization_id = ${params.organizationId}::uuid
+      AND source_id IS NOT NULL
+      AND created_at::date >= ${start}::date
+      AND created_at::date <= ${end}::date
+    GROUP BY source_id
+  `;
+  const out: Record<string, number> = {};
+  for (const row of result.rows ?? []) {
+    const r = row as { source_id: string; c: number };
+    out[r.source_id] = r.c;
+  }
+  return out;
+}
+
+export async function getTopLandingPagesInRange(params: {
+  organizationId: string;
+  startDate: string;
+  endDate: string;
+  limit?: number;
+}): Promise<Array<{ page_url: string; views: number }>> {
+  const start = params.startDate.slice(0, 10);
+  const end = params.endDate.slice(0, 10);
+  const lim = Math.max(1, Math.min(10, params.limit ?? 3));
+  const result = await sql`
+    SELECT page_url, COUNT(*)::int AS views
+    FROM web_attribution_events
+    WHERE organization_id = ${params.organizationId}::uuid
+      AND occurred_at::date >= ${start}::date
+      AND occurred_at::date <= ${end}::date
+      AND event_type IN ('landing', 'page_view')
+      AND page_url IS NOT NULL
+      AND TRIM(page_url) != ''
+    GROUP BY page_url
+    ORDER BY views DESC
+    LIMIT ${lim}
+  `;
+  return (result.rows ?? []) as Array<{ page_url: string; views: number }>;
 }
 
 export async function getWebAttributionEventCounts(

@@ -744,6 +744,41 @@ export async function initSchema(): Promise<void> {
   `;
 
   await sql`
+    CREATE TABLE IF NOT EXISTS google_business_review_assignments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      google_business_review_id UUID NOT NULL REFERENCES google_business_reviews(id) ON DELETE CASCADE,
+      hcp_employee_id TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('manual', 'auto_customer', 'auto_mention')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (google_business_review_id, hcp_employee_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_gbr_assignments_review
+    ON google_business_review_assignments (google_business_review_id)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_gbr_assignments_employee
+    ON google_business_review_assignments (hcp_employee_id)
+  `;
+
+  await sql`
+    DO $$
+    BEGIN
+      PERFORM pg_advisory_xact_lock(1482093312);
+      IF NOT EXISTS (SELECT 1 FROM schema_patches WHERE patch_id = 'google_review_assignments_backfill_v1') THEN
+        INSERT INTO google_business_review_assignments (google_business_review_id, hcp_employee_id, source)
+        SELECT gbr.id, TRIM(gbr.assigned_hcp_employee_id), 'manual'
+        FROM google_business_reviews gbr
+        WHERE gbr.assigned_hcp_employee_id IS NOT NULL
+          AND TRIM(gbr.assigned_hcp_employee_id) != ''
+        ON CONFLICT (google_business_review_id, hcp_employee_id) DO NOTHING;
+        INSERT INTO schema_patches (patch_id) VALUES ('google_review_assignments_backfill_v1');
+      END IF;
+    END $$
+  `;
+
+  await sql`
     DO $$
     BEGIN
       IF NOT EXISTS (

@@ -85,7 +85,20 @@ function formatDuration(seconds: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-export function CallInsightsClient() {
+export type CallInsightsClientProps = {
+  /** When both are set, hides local date controls and uses these bounds for the API. */
+  startDate?: string;
+  endDate?: string;
+  /** Optional note when using controlled dates (e.g. synced to attribution period). */
+  syncedRangeDescription?: string;
+};
+
+export function CallInsightsClient({
+  startDate,
+  endDate,
+  syncedRangeDescription,
+}: CallInsightsClientProps = {}) {
+  const controlled = Boolean(startDate && endDate);
   const [datePreset, setDatePreset] = useState<DatePreset>("14d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -96,7 +109,9 @@ export function CallInsightsClient() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const range = getDateRange(datePreset, customStartDate, customEndDate);
+    const range = controlled
+      ? { startDate: startDate!, endDate: endDate! }
+      : getDateRange(datePreset, customStartDate, customEndDate);
     const params = new URLSearchParams();
     if (range.startDate) params.set("startDate", range.startDate);
     if (range.endDate) params.set("endDate", range.endDate);
@@ -111,7 +126,7 @@ export function CallInsightsClient() {
     } finally {
       setLoading(false);
     }
-  }, [datePreset, customStartDate, customEndDate]);
+  }, [controlled, startDate, endDate, datePreset, customStartDate, customEndDate]);
 
   useEffect(() => {
     fetchData();
@@ -127,7 +142,10 @@ export function CallInsightsClient() {
           />
         </h3>
         <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-          Avg. days between call date and appointment date (calls with linked jobs). Uses the date range selected below.
+          Avg. days between call date and appointment date (calls with linked jobs).{" "}
+          {controlled
+            ? syncedRangeDescription ?? "Uses the same reporting period as the attribution page above."
+            : "Uses the date range selected below."}
         </p>
         <div className="rounded-lg bg-zinc-50/50 py-4 dark:bg-zinc-900/50">
           <p className="text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
@@ -153,36 +171,42 @@ export function CallInsightsClient() {
               Opportunity calls (won + lost) and booking rate. Data from GoHighLevel call webhooks.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={datePreset}
-              onChange={(e) => setDatePreset(e.target.value as DatePreset)}
-              className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-            >
-              {(Object.keys(PRESET_LABELS) as DatePreset[]).map((key) => (
-                <option key={key} value={key}>
-                  {PRESET_LABELS[key]}
-                </option>
-              ))}
-            </select>
-            {datePreset === "custom" && (
-              <>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-                />
-                <span className="text-sm text-zinc-500">to</span>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-                />
-              </>
-            )}
-          </div>
+          {!controlled ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={datePreset}
+                onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+                className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+              >
+                {(Object.keys(PRESET_LABELS) as DatePreset[]).map((key) => (
+                  <option key={key} value={key}>
+                    {PRESET_LABELS[key]}
+                  </option>
+                ))}
+              </select>
+              {datePreset === "custom" && (
+                <>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                  />
+                  <span className="text-sm text-zinc-500">to</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                  />
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              {syncedRangeDescription ?? `${startDate} → ${endDate}`}
+            </p>
+          )}
         </div>
 
         {loading && (

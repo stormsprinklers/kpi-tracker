@@ -15,6 +15,7 @@ interface ReviewRow {
   create_time: string | null;
   update_time: string | null;
   assigned_hcp_employee_id: string | null;
+  assigned_hcp_employee_ids?: string[];
 }
 
 interface Profile {
@@ -93,7 +94,14 @@ export function TeamReviewsSection() {
       setLocationNameOverride(p?.location_name?.trim() ?? "");
       setSelectedByReview(
         Object.fromEntries(
-          (data.reviews ?? []).map((r) => [r.review_id, r.assigned_hcp_employee_id ?? ""])
+          (data.reviews ?? []).map((r) => {
+            const ids = r.assigned_hcp_employee_ids?.length
+              ? r.assigned_hcp_employee_ids
+              : r.assigned_hcp_employee_id
+                ? [r.assigned_hcp_employee_id]
+                : [];
+            return [r.review_id, ids.length === 1 ? ids[0] : ""];
+          })
         )
       );
     } catch (e) {
@@ -246,9 +254,14 @@ export function TeamReviewsSection() {
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         synced?: number;
+        autoAssigned?: number;
       };
       if (!res.ok) throw new Error(data.error ?? "Sync failed");
-      setSuccess(`Synced ${data.synced ?? 0} reviews.`);
+      const auto =
+        typeof data.autoAssigned === "number" && data.autoAssigned > 0
+          ? ` Auto-assigned ${data.autoAssigned} review(s).`
+          : "";
+      setSuccess(`Synced ${data.synced ?? 0} reviews.${auto}`);
       await fetchData();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed");
@@ -272,7 +285,11 @@ export function TeamReviewsSection() {
       setReviews((prev) =>
         prev.map((r) =>
           r.review_id === reviewId
-            ? { ...r, assigned_hcp_employee_id: hcpEmployeeId }
+            ? {
+                ...r,
+                assigned_hcp_employee_id: hcpEmployeeId,
+                assigned_hcp_employee_ids: hcpEmployeeId ? [hcpEmployeeId] : [],
+              }
             : r
         )
       );
@@ -432,7 +449,9 @@ export function TeamReviewsSection() {
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Stars</th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Date</th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Comment</th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Assigned Employee</th>
+                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">
+                    Assigned technician(s)
+                  </th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Action</th>
                 </tr>
               </thead>
@@ -454,23 +473,45 @@ export function TeamReviewsSection() {
                       </span>
                     </td>
                     <td className="py-2">
-                      <select
-                        value={selectedByReview[r.review_id] ?? ""}
-                        onChange={(e) =>
-                          setSelectedByReview((prev) => ({
-                            ...prev,
-                            [r.review_id]: e.target.value,
-                          }))
-                        }
-                        className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                      >
-                        <option value="">Unassigned</option>
-                        {candidates.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                      {(() => {
+                        const ids =
+                          r.assigned_hcp_employee_ids?.length
+                            ? r.assigned_hcp_employee_ids
+                            : r.assigned_hcp_employee_id
+                              ? [r.assigned_hcp_employee_id]
+                              : [];
+                        const assignedLabels = ids
+                          .map((id) => candidateMap.get(id) ?? id)
+                          .filter(Boolean);
+                        return (
+                          <div className="flex flex-col gap-1">
+                            {assignedLabels.length > 1 && (
+                              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                                {assignedLabels.join(", ")}
+                              </span>
+                            )}
+                            <select
+                              value={selectedByReview[r.review_id] ?? ""}
+                              onChange={(e) =>
+                                setSelectedByReview((prev) => ({
+                                  ...prev,
+                                  [r.review_id]: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                            >
+                              <option value="">
+                                {ids.length > 1 ? "Multiple — choose one to replace all" : "Unassigned"}
+                              </option>
+                              {candidates.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="py-2">
                       <button
@@ -490,7 +531,9 @@ export function TeamReviewsSection() {
         )}
         {reviews.length > 0 && (
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Assigned counts feed the Technician KPI review metric.
+            Unassigned reviews are auto-matched from recent jobs (reviewer vs customer name, then names
+            mentioned in the text) on each sync and hourly. Manual selection replaces all auto assignments
+            for that review. Assigned counts feed the Technician KPI review metric.
           </p>
         )}
       </section>

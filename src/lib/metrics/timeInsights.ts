@@ -9,6 +9,10 @@ import {
   type TimeEntry,
 } from "../db/queries";
 import { calculateExpectedPay } from "../performancePay";
+import {
+  getTechnicianIdsFromJob,
+  isOfficeStaffRole,
+} from "../jobs/hcpJobTechnicians";
 
 export interface TimeInsightsFilters {
   startDate?: string; // ISO date YYYY-MM-DD
@@ -40,8 +44,6 @@ export interface TimeInsightsResult {
    */
   laborPercentOfRevenue: number | null;
 }
-
-const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
 
 /** Statuses that indicate finished / billable work (HCP varies by field and spelling). */
 const DONE_OR_PAID_STATUSES = new Set([
@@ -94,11 +96,6 @@ function shouldIncludeJobInTimeInsights(paidAmount: number, job: Record<string, 
   return DONE_OR_PAID_STATUSES.has(s);
 }
 
-function isOfficeStaff(role: unknown): boolean {
-  const r = (role ?? "").toString().toLowerCase().replace(/\s+/g, " ");
-  return OFFICE_STAFF_ROLES.some((o) => r === o || (r.includes("office") && r.includes("staff")));
-}
-
 /** HCP ids treated as CSR/office for timesheet RPH: explicit CSR selections, else office-staff role on employees/pros. */
 async function getCsrHcpIdsForExclusion(
   organizationId: string,
@@ -115,7 +112,7 @@ async function getCsrHcpIdsForExclusion(
     for (const row of empResult.rows ?? []) {
       const r = row as { hcp_id: string; raw: Record<string, unknown> };
       const raw = r.raw ?? {};
-      if (isOfficeStaff(raw.role ?? raw.employee_type ?? raw.type)) excluded.add(r.hcp_id);
+      if (isOfficeStaffRole(raw.role ?? raw.employee_type ?? raw.type)) excluded.add(r.hcp_id);
     }
   } catch {
     /* skip */
@@ -127,7 +124,7 @@ async function getCsrHcpIdsForExclusion(
     for (const row of prosResult.rows ?? []) {
       const r = row as { hcp_id: string; raw: Record<string, unknown> };
       const raw = r.raw ?? {};
-      if (isOfficeStaff(raw.role ?? raw.employee_type ?? raw.type)) excluded.add(r.hcp_id);
+      if (isOfficeStaffRole(raw.role ?? raw.employee_type ?? raw.type)) excluded.add(r.hcp_id);
     }
   } catch {
     /* skip */
@@ -152,28 +149,6 @@ function hoursFromTimeEntry(e: TimeEntry): number {
   const ms = end.getTime() - start.getTime();
   if (ms <= 0) return 0;
   return Math.round((ms / (1000 * 60 * 60)) * 100) / 100;
-}
-
-function getTechnicianIds(job: Record<string, unknown>): string[] {
-  const assigned = job.assigned_employees ?? job.assigned_pro ?? job.assigned_employee;
-  const items = Array.isArray(assigned) ? assigned : assigned && typeof assigned === "object" ? [assigned] : [];
-  const ids: string[] = [];
-  for (const a of items) {
-    if (typeof a === "string") {
-      ids.push(a);
-      continue;
-    }
-    if (a && typeof a === "object" && "id" in a) {
-      const r = a as Record<string, unknown>;
-      if (isOfficeStaff(r.role ?? r.employee_type ?? r.type)) continue;
-      ids.push(String(r.id));
-    }
-  }
-  if (ids.length > 0) return ids;
-  const fallback = job.pro_id ?? job.pro ?? job.employee_id ?? job.assigned_pro_id;
-  if (typeof fallback === "string") return [fallback];
-  if (fallback && typeof fallback === "object" && "id" in fallback) return [String((fallback as { id: unknown }).id)];
-  return [];
 }
 
 function getEmployeeName(emp: Record<string, unknown>): string {
@@ -423,7 +398,7 @@ export async function getTimeInsights(
   // 1. Average jobs per day per technician
   const jobsByTechAndDate = new Map<string, Map<string, number>>();
   for (const { job } of included) {
-    const techIds = getTechnicianIds(job);
+    const techIds = getTechnicianIdsFromJob(job);
     const jobDate = getJobDate(job);
     const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
     if (!jobDay) continue;

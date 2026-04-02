@@ -119,7 +119,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   const insightsItems = isEmployee
     ? []
     : [
-        ...(can("call_insights") ? [{ label: "Calls", href: "/call-insights" }] : []),
+        ...(can("call_insights") ? [{ label: "Calls", href: "/insights/attribution#call-tracking" }] : []),
         ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
         ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
         ...(can("marketing") ? [{ label: "Attribution", href: "/insights/attribution" }] : []),

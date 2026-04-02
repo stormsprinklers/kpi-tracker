@@ -11,7 +11,7 @@ function isCronRequest(request: Request): boolean {
 export const dynamic = "force-dynamic";
 
 /**
- * On-demand transcript poll (same logic as daily `/api/sync` cron).
+ * On-demand transcript poll (same logic as scheduled `/api/sync` cron runs).
  * Use with `Authorization: Bearer CRON_SECRET` if you add an external scheduler.
  */
 export async function GET(request: Request) {

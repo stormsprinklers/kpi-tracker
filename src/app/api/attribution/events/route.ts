@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
-  getRecentWebAttributionEvents,
+  getRecentWebAttributionSessionEvents,
   getWebAttributionSourceSummary30d,
   getWebAttributionEventCounts,
 } from "@/lib/db/webAttributionQueries";
+import { buildRecentWebAttributionSessions } from "@/lib/webAttribution/buildSessionPayloads";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +17,12 @@ export async function GET() {
   }
   await initSchema();
   const organizationId = session.user.organizationId;
-  const [recentEvents, counts30d, sourceSummary30d] = await Promise.all([
-    getRecentWebAttributionEvents({ organizationId, limit: 100 }),
+  const [sessionRows, counts30d, sourceSummary30d] = await Promise.all([
+    getRecentWebAttributionSessionEvents({ organizationId, maxVisitors: 40 }),
     getWebAttributionEventCounts(organizationId),
     getWebAttributionSourceSummary30d(organizationId),
   ]);
-  return NextResponse.json({ recentEvents, counts30d, sourceSummary30d });
+  const recentSessions = buildRecentWebAttributionSessions(sessionRows);
+  return NextResponse.json({ recentSessions, counts30d, sourceSummary30d });
 }
 

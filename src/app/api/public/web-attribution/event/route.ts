@@ -4,10 +4,12 @@ import {
   getWebAttributionInstallByKeyHash,
   getWebAttributionSourceBySlugOrLabel,
   getWebAttributionSourceByToken,
+  getWebAttributionSourceIdBySlug,
   insertWebAttributionEvents,
   touchWebAttributionEvent,
   type WebAttributionEventType,
 } from "@/lib/db/webAttributionQueries";
+import { ORGANIC_DIRECT_SLUG, ensureWebAttributionDefaultSources } from "@/lib/webAttribution/defaultSources";
 import { hashIp, hashPublishableKey, normalizeOrigin } from "@/lib/webAttribution";
 
 export const dynamic = "force-dynamic";
@@ -99,6 +101,12 @@ export async function POST(request: Request) {
     return res;
   }
 
+  await ensureWebAttributionDefaultSources(install.organization_id);
+  const organicDirectSourceId = await getWebAttributionSourceIdBySlug(
+    install.organization_id,
+    ORGANIC_DIRECT_SLUG
+  );
+
   const incoming = Array.isArray(body.events) ? body.events.slice(0, 50) : [];
   if (!incoming.length) {
     return NextResponse.json({ error: "events must be a non-empty array" }, { status: 400 });
@@ -112,19 +120,20 @@ export async function POST(request: Request) {
     if (!visitorId) continue;
     let sourceId: string | null = null;
     const sourceToken = event.sourceToken?.toString().trim();
+    const utmSourceRaw = event.utmSource?.toString().trim() ?? "";
     if (sourceToken) {
       const source = await getWebAttributionSourceByToken(sourceToken);
       if (source?.organization_id === install.organization_id) sourceId = source.source_id;
     }
-    if (!sourceId) {
-      const utmSource = event.utmSource?.toString().trim();
-      if (utmSource) {
-        const source = await getWebAttributionSourceBySlugOrLabel({
-          organizationId: install.organization_id,
-          value: utmSource,
-        });
-        if (source?.source_id) sourceId = source.source_id;
-      }
+    if (!sourceId && utmSourceRaw) {
+      const source = await getWebAttributionSourceBySlugOrLabel({
+        organizationId: install.organization_id,
+        value: utmSourceRaw,
+      });
+      if (source?.source_id) sourceId = source.source_id;
+    }
+    if (!sourceId && !sourceToken && !utmSourceRaw && organicDirectSourceId) {
+      sourceId = organicDirectSourceId;
     }
     prepared.push({
       organizationId: install.organization_id,
@@ -139,7 +148,7 @@ export async function POST(request: Request) {
       country: request.headers.get("x-vercel-ip-country"),
       metadata: {
         ...(event.metadata ?? {}),
-        utm_source: event.utmSource?.toString().trim() || null,
+        utm_source: utmSourceRaw || null,
         utm_medium: event.utmMedium?.toString().trim() || null,
       },
     });
