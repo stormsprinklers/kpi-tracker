@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/pulse-email-daily",
-      "schedule": "0 12 * * *"
+      "schedule": "30 2 * * *"
     },
     {
       "path": "/api/cron/pulse-email-weekly",
