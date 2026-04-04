@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 
 interface SetupData {
-  org: { setup_completed: boolean; pay_period_start_weekday: number };
+  org: {
+    setup_completed: boolean;
+    pay_period_start_weekday: number;
+    pay_period_timezone?: string;
+  };
   roles: { id: string; name: string; source: string }[];
   assignments: { hcp_employee_id: string; role_id: string | null; overridden: boolean }[];
   configs: { scope_type: string; scope_id: string; structure_type: string; config_json: Record<string, unknown>; bonuses_json: Record<string, unknown>[] }[];

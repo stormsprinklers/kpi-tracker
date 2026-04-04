@@ -7,6 +7,7 @@ import {
   type DashboardDatePreset,
   getDashboardDateRange,
 } from "@/lib/dashboardDateRange";
+import { usePayPeriodCalendar } from "@/hooks/usePayPeriodCalendar";
 import { KeyMetricsSection } from "./KeyMetricsSection";
 import { TechnicianRevenueSection } from "./TechnicianRevenueSection";
 import { CsrKpisSection } from "./CsrKpisSection";
@@ -15,10 +16,11 @@ export function DashboardHomeClient({ connected }: { connected: boolean }) {
   const [preset, setPreset] = useState<DashboardDatePreset>("thisPayPeriod");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const payPeriodCalendar = usePayPeriodCalendar();
 
   const dateRange = useMemo(
-    () => getDashboardDateRange(preset, customStart, customEnd),
-    [preset, customStart, customEnd]
+    () => getDashboardDateRange(preset, customStart, customEnd, payPeriodCalendar),
+    [preset, customStart, customEnd, payPeriodCalendar]
   );
 
   return (

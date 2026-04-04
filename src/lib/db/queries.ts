@@ -2026,6 +2026,8 @@ export interface PerformancePayOrg {
   organization_id: string;
   setup_completed: boolean;
   pay_period_start_weekday: number;
+  /** IANA time zone for pay period calendar boundaries (e.g. America/Denver). */
+  pay_period_timezone: string;
   /** Flat bonus in dollars per assigned 5★ Google review in the pay period (org-wide). */
   bonus_per_five_star_review: number | null;
   updated_at: string;
@@ -2058,6 +2060,7 @@ export interface PerformancePayConfig {
 export async function getPerformancePayOrg(organizationId: string): Promise<PerformancePayOrg | null> {
   const result = await sql`
     SELECT organization_id, setup_completed, pay_period_start_weekday,
+      COALESCE(NULLIF(TRIM(pay_period_timezone), ''), 'UTC') AS pay_period_timezone,
       bonus_per_five_star_review::float8 AS bonus_per_five_star_review,
       updated_at
     FROM performance_pay_org
@@ -2077,14 +2080,36 @@ export async function getPerformancePayOrg(organizationId: string): Promise<Perf
 
 export async function upsertPerformancePayOrg(
   organizationId: string,
-  params: { setup_completed?: boolean; pay_period_start_weekday?: number }
+  params: {
+    setup_completed?: boolean;
+    pay_period_start_weekday?: number;
+    pay_period_timezone?: string;
+  }
 ): Promise<void> {
+  const tzInsert =
+    params.pay_period_timezone !== undefined && String(params.pay_period_timezone).trim() !== ""
+      ? String(params.pay_period_timezone).trim()
+      : "UTC";
+  const tzUpdate =
+    params.pay_period_timezone !== undefined
+      ? String(params.pay_period_timezone).trim() || "UTC"
+      : null;
+
   await sql`
-    INSERT INTO performance_pay_org (organization_id, setup_completed, pay_period_start_weekday, updated_at)
-    VALUES (${organizationId}::uuid, ${params.setup_completed ?? false}, ${params.pay_period_start_weekday ?? 1}, NOW())
+    INSERT INTO performance_pay_org (
+      organization_id, setup_completed, pay_period_start_weekday, pay_period_timezone, updated_at
+    )
+    VALUES (
+      ${organizationId}::uuid,
+      ${params.setup_completed ?? false},
+      ${params.pay_period_start_weekday ?? 1},
+      ${tzInsert},
+      NOW()
+    )
     ON CONFLICT (organization_id) DO UPDATE SET
       setup_completed = COALESCE(${params.setup_completed ?? null}::boolean, performance_pay_org.setup_completed),
       pay_period_start_weekday = COALESCE(${params.pay_period_start_weekday ?? null}::int, performance_pay_org.pay_period_start_weekday),
+      pay_period_timezone = COALESCE(${tzUpdate}::text, performance_pay_org.pay_period_timezone),
       updated_at = NOW()
   `;
 }

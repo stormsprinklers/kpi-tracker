@@ -7,6 +7,7 @@ import {
   deletePerformancePayConfig,
   upsertPerformancePayAssignment,
 } from "@/lib/db/queries";
+import { isValidIanaTimeZone } from "@/lib/payPeriod";
 
 /** POST /api/performance-pay/config - Create/update config for role or employee (admin only). */
 export async function POST(request: Request) {
@@ -27,11 +28,20 @@ export async function POST(request: Request) {
     bonuses_json?: Record<string, unknown>[];
     setup_completed?: boolean;
     pay_period_start_weekday?: number;
+    pay_period_timezone?: string;
   };
 
   const scopeType = body.scope_type;
   const scopeId = body.scope_id?.trim();
   const structureType = body.structure_type?.trim();
+
+  if (body.pay_period_timezone != null) {
+    const tz = String(body.pay_period_timezone).trim();
+    if (!tz || !isValidIanaTimeZone(tz)) {
+      return NextResponse.json({ error: "Invalid pay_period_timezone" }, { status: 400 });
+    }
+    body.pay_period_timezone = tz;
+  }
 
   if (!scopeType || !scopeId || !structureType) {
     return NextResponse.json(
@@ -61,10 +71,15 @@ export async function POST(request: Request) {
     bonuses_json: bonusesJson,
   });
 
-  if (body.setup_completed === true || body.pay_period_start_weekday != null) {
+  if (
+    body.setup_completed === true ||
+    body.pay_period_start_weekday != null ||
+    body.pay_period_timezone != null
+  ) {
     await upsertPerformancePayOrg(session.user.organizationId, {
       setup_completed: body.setup_completed,
       pay_period_start_weekday: body.pay_period_start_weekday,
+      pay_period_timezone: body.pay_period_timezone,
     });
   } else {
     await upsertPerformancePayOrg(session.user.organizationId, {

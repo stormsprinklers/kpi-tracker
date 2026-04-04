@@ -8,53 +8,39 @@ import {
 import { getJobRelevantDate, getTechnicianIdsFromJob } from "@/lib/jobs/hcpJobTechnicians";
 
 const RECENT_JOB_MS = 72 * 60 * 60 * 1000;
-const MIN_NAME_LEN = 2;
 
-function normToken(s: string): string {
+/** Lowercase, strip accents, collapse internal whitespace (for exact string comparisons). */
+function normPersonName(s: string): string {
   return s
     .trim()
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function parseReviewerParts(displayName: string | null | undefined): {
-  first: string;
-  last: string;
-} {
-  if (!displayName?.trim()) return { first: "", last: "" };
-  const parts = displayName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return { first: "", last: "" };
-  if (parts.length === 1) return { first: normToken(parts[0]), last: normToken(parts[0]) };
-  return {
-    first: normToken(parts[0]),
-    last: normToken(parts[parts.length - 1]),
-  };
+function customerFullNameNorm(raw: Record<string, unknown> | null): string | null {
+  if (!raw) return null;
+  const first = String(raw.first_name ?? raw.firstName ?? "").trim();
+  const last = String(raw.last_name ?? raw.lastName ?? "").trim();
+  if (!first || !last) return null;
+  return normPersonName(`${first} ${last}`);
 }
 
-function customerNameParts(raw: Record<string, unknown> | null): { first: string; last: string } {
-  if (!raw) return { first: "", last: "" };
-  const first = normToken(String(raw.first_name ?? raw.firstName ?? ""));
-  const last = normToken(String(raw.last_name ?? raw.lastName ?? ""));
-  return { first, last };
+function reviewerDisplayNorm(displayName: string | null | undefined): string | null {
+  if (!displayName?.trim()) return null;
+  return normPersonName(displayName);
 }
 
-function reviewerMatchesCustomer(
-  rFirst: string,
-  rLast: string,
-  cFirst: string,
-  cLast: string
-): boolean {
-  const tokens = [rFirst, rLast].filter((t) => t.length >= MIN_NAME_LEN);
-  if (tokens.length === 0) return false;
-  const cTokens = [cFirst, cLast].filter((t) => t.length >= MIN_NAME_LEN);
-  if (cTokens.length === 0) return false;
-  for (const rt of tokens) {
-    for (const ct of cTokens) {
-      if (rt === ct) return true;
-    }
-  }
-  return false;
+/** Full technician display name for matching in review text (first+last, or single name field from HCP). */
+function technicianFullNormFromRaw(raw: Record<string, unknown>): string | null {
+  const first = String(raw.first_name ?? raw.firstName ?? "").trim();
+  const last = String(raw.last_name ?? raw.lastName ?? "").trim();
+  if (first && last) return normPersonName(`${first} ${last}`);
+  const fb = raw.full_name ?? raw.name ?? raw.display_name;
+  if (typeof fb === "string" && fb.trim()) return normPersonName(fb);
+  return null;
 }
 
 function jobIsWithinRecentWindow(jobRaw: Record<string, unknown>, jobUpdatedAtIso: string): boolean {
@@ -74,35 +60,40 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function buildFirstNameToEmployeeIds(
+/**
+ * True if normFull appears as a whole phrase in haystack (word boundaries; multi-word names use \s+ between parts).
+ */
+function exactFullNameInText(normFull: string, normHaystack: string): boolean {
+  const parts = normFull.split(" ").filter((p) => p.length > 0);
+  if (parts.length === 0) return false;
+  const body = parts.map(escapeRegExp).join("\\s+");
+  const re = new RegExp(`\\b${body}\\b`, "i");
+  return re.test(normHaystack);
+}
+
+async function buildTechnicianFullNames(
   companyId: string
-): Promise<Map<string, string[]>> {
-  const map = new Map<string, string[]>();
-  const add = (first: string, id: string) => {
-    const k = normToken(first);
-    if (k.length < MIN_NAME_LEN) return;
-    const list = map.get(k) ?? [];
-    if (!list.includes(id)) list.push(id);
-    map.set(k, list);
-  };
+): Promise<{ hcp_id: string; normFull: string }[]> {
+  const byId = new Map<string, string>();
 
   const empResult = await sql`
     SELECT hcp_id, raw FROM employees WHERE company_id = ${companyId}
   `;
   for (const row of empResult.rows ?? []) {
     const r = row as { hcp_id: string; raw: Record<string, unknown> };
-    const raw = r.raw ?? {};
-    add(String(raw.first_name ?? raw.firstName ?? ""), r.hcp_id);
+    const n = technicianFullNormFromRaw(r.raw ?? {});
+    if (n) byId.set(r.hcp_id, n);
   }
   const prosResult = await sql`
     SELECT hcp_id, raw FROM pros WHERE company_id = ${companyId}
   `;
   for (const row of prosResult.rows ?? []) {
     const r = row as { hcp_id: string; raw: Record<string, unknown> };
-    const raw = r.raw ?? {};
-    add(String(raw.first_name ?? raw.firstName ?? ""), r.hcp_id);
+    const n = technicianFullNormFromRaw(r.raw ?? {});
+    if (n) byId.set(r.hcp_id, n);
   }
-  return map;
+
+  return [...byId.entries()].map(([hcp_id, normFull]) => ({ hcp_id, normFull }));
 }
 
 function techIdsForJobRow(
@@ -117,17 +108,20 @@ function techIdsForJobRow(
 }
 
 /**
- * Auto-assign unassigned Google reviews: customer name vs jobs (72h), then technician first names in text.
+ * Auto-assign only when certain:
+ * 1) A technician's full name appears as an exact phrase in the review comment (unique technician), or
+ * 2) The Google reviewer's display name exactly matches a customer's full first+last (normalized), and exactly one recent job exists for that customer — then assign that job's technicians.
+ * Otherwise leaves the review unassigned.
  */
 export async function autoAssignUnassignedGoogleReviews(
   organizationId: string,
   companyId: string
 ): Promise<{ assigned: number }> {
-  const [reviews, jobRows, revenueRows, firstNameIndex] = await Promise.all([
+  const [reviews, jobRows, revenueRows, techFullNames] = await Promise.all([
     getGoogleBusinessReviewsByOrg(organizationId),
     getJobsWithCustomersForCompany(companyId),
     getJobRevenueAssignments(organizationId),
-    buildFirstNameToEmployeeIds(companyId),
+    buildTechnicianFullNames(companyId),
   ]);
 
   const revenueByJob = new Map(revenueRows.map((r) => [r.job_hcp_id, r.hcp_employee_id]));
@@ -140,50 +134,57 @@ export async function autoAssignUnassignedGoogleReviews(
   for (const rev of reviews) {
     if (rev.assigned_hcp_employee_ids.length > 0) continue;
 
-    const { first: rFirst, last: rLast } = parseReviewerParts(rev.reviewer_name);
-    const techFromCustomer = new Set<string>();
+    const commentNorm = normPersonName(rev.comment ?? "");
 
-    for (const row of recentJobs) {
-      const c = customerNameParts(row.customer_raw);
-      if (!reviewerMatchesCustomer(rFirst, rLast, c.first, c.last)) continue;
-      for (const tid of techIdsForJobRow(row.job_raw, row.job_hcp_id, revenueByJob)) {
-        techFromCustomer.add(tid);
+    // Path 1: exact full technician name phrase in review body only (not reviewer display name).
+    const techIdsFromMention: string[] = [];
+    if (commentNorm.length > 0) {
+      for (const { hcp_id, normFull } of techFullNames) {
+        if (exactFullNameInText(normFull, commentNorm)) {
+          techIdsFromMention.push(hcp_id);
+        }
       }
     }
-
-    if (techFromCustomer.size > 0) {
+    const uniqueMention = [...new Set(techIdsFromMention)];
+    if (uniqueMention.length === 1) {
       await replaceGoogleBusinessReviewAssignmentRows({
         organization_id: organizationId,
         review_id: rev.review_id,
-        hcp_employee_ids: [...techFromCustomer],
-        source: "auto_customer",
+        hcp_employee_ids: uniqueMention,
+        source: "auto_mention",
       });
       assigned++;
       continue;
     }
 
-    const haystack = normToken(`${rev.comment ?? ""} ${rev.reviewer_name ?? ""}`).replace(
-      /\s+/g,
-      " "
-    );
-    const fromMention = new Set<string>();
-    for (const [firstLower, ids] of firstNameIndex) {
-      if (firstLower.length < MIN_NAME_LEN) continue;
-      const re = new RegExp(`\\b${escapeRegExp(firstLower)}\\b`, "i");
-      if (re.test(haystack)) {
-        for (const id of ids) fromMention.add(id);
-      }
+    // Path 2: reviewer display name === customer full name; exactly one matching recent job.
+    const revNorm = reviewerDisplayNorm(rev.reviewer_name);
+    if (!revNorm) {
+      continue;
     }
 
-    if (fromMention.size > 0) {
-      await replaceGoogleBusinessReviewAssignmentRows({
-        organization_id: organizationId,
-        review_id: rev.review_id,
-        hcp_employee_ids: [...fromMention],
-        source: "auto_mention",
-      });
-      assigned++;
+    const matchingJobRows = recentJobs.filter((row) => {
+      const cFull = customerFullNameNorm(row.customer_raw);
+      return cFull != null && cFull === revNorm;
+    });
+
+    if (matchingJobRows.length !== 1) {
+      continue;
     }
+
+    const row = matchingJobRows[0];
+    const techIds = techIdsForJobRow(row.job_raw, row.job_hcp_id, revenueByJob);
+    if (techIds.length === 0) {
+      continue;
+    }
+
+    await replaceGoogleBusinessReviewAssignmentRows({
+      organization_id: organizationId,
+      review_id: rev.review_id,
+      hcp_employee_ids: techIds,
+      source: "auto_customer",
+    });
+    assigned++;
   }
 
   return { assigned };

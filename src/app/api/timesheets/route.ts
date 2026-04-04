@@ -7,7 +7,7 @@ import {
 } from "@/lib/db/queries";
 import { initSchema } from "@/lib/db";
 
-/** GET /api/timesheets - List time entries. Employee: own entries. Admin: all entries in date range (start_date/end_date required). */
+/** GET /api/timesheets - List time entries. Employee: own entries. Admin: org-wide; omit dates for all-time (wide default range). */
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.organizationId) {
@@ -35,13 +35,6 @@ export async function GET(request: Request) {
       endDate
     );
     return NextResponse.json(entries);
-  }
-
-  if (!startDate || !endDate) {
-    return NextResponse.json(
-      { error: "start_date and end_date query params are required for admin" },
-      { status: 400 }
-    );
   }
 
   await initSchema();

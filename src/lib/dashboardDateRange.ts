@@ -1,3 +1,10 @@
+import {
+  DEFAULT_PAY_PERIOD_START_WEEKDAY,
+  DEFAULT_PAY_PERIOD_TIMEZONE,
+  getPayPeriodRangeForOffset,
+  type PayPeriodCalendarSettings,
+} from "./payPeriod";
+
 export type DashboardDatePreset =
   | "thisPayPeriod"
   | "lastPayPeriod"
@@ -42,22 +49,10 @@ export interface DashboardDateRange {
   rangeLabel: string;
 }
 
-function getPayPeriodRange(offset: 0 | -1): { startDate: string; endDate: string } {
-  const dayMs = 24 * 60 * 60 * 1000;
-  const periodDays = 14;
-  const anchorStart = new Date(Date.UTC(2026, 2, 21));
-  const now = new Date();
-  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const diffDays = Math.floor((todayUtc.getTime() - anchorStart.getTime()) / dayMs);
-  const currentIndex = Math.floor(diffDays / periodDays);
-  const index = currentIndex + offset;
-  const start = new Date(anchorStart.getTime() + index * periodDays * dayMs);
-  const end = new Date(start.getTime() + (periodDays - 1) * dayMs);
-  return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
-  };
-}
+export const DEFAULT_PAY_PERIOD_CALENDAR: PayPeriodCalendarSettings = {
+  payPeriodStartWeekday: DEFAULT_PAY_PERIOD_START_WEEKDAY,
+  payPeriodTimezone: DEFAULT_PAY_PERIOD_TIMEZONE,
+};
 
 /**
  * Resolves the selected dashboard preset into API-friendly bounds and a display label.
@@ -66,14 +61,15 @@ function getPayPeriodRange(offset: 0 | -1): { startDate: string; endDate: string
 export function getDashboardDateRange(
   preset: DashboardDatePreset,
   customStart: string,
-  customEnd: string
+  customEnd: string,
+  payPeriodCalendar: PayPeriodCalendarSettings = DEFAULT_PAY_PERIOD_CALENDAR
 ): DashboardDateRange {
   if (preset === "all") {
     return { isAllTime: true, rangeLabel: DASHBOARD_PRESET_LABELS.all };
   }
 
   if (preset === "thisPayPeriod") {
-    const p = getPayPeriodRange(0);
+    const p = getPayPeriodRangeForOffset(0, payPeriodCalendar);
     return {
       isAllTime: false,
       startDate: p.startDate,
@@ -82,7 +78,7 @@ export function getDashboardDateRange(
     };
   }
   if (preset === "lastPayPeriod") {
-    const p = getPayPeriodRange(-1);
+    const p = getPayPeriodRangeForOffset(-1, payPeriodCalendar);
     return {
       isAllTime: false,
       startDate: p.startDate,

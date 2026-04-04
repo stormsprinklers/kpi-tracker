@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExpectedPayTable } from "@/components/team/ExpectedPayTable";
+import { usePayPeriodCalendar } from "@/hooks/usePayPeriodCalendar";
+import { getPayPeriodRangeForOffsetN } from "@/lib/payPeriod";
 import { MetricTooltip } from "./MetricTooltip";
 
 interface TechnicianJobsPerDay {
@@ -20,40 +22,16 @@ interface TimeInsightsResult {
   laborPercentOfRevenue: number | null;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const PAY_PERIOD_DAYS = 14;
-const ANCHOR_START = "2026-03-21"; // First period: 2026-03-21 -> 2026-04-03
-
-function parseYmdUtc(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map((v) => Number(v));
-  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
-}
-
-function formatYmdUtc(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function getBiweeklyRange(periodOffset = 0): { startDate: string; endDate: string } {
-  const anchor = parseYmdUtc(ANCHOR_START);
-  const now = new Date();
-  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const diffDays = Math.floor((todayUtc.getTime() - anchor.getTime()) / DAY_MS);
-  const currentPeriodIndex = Math.floor(diffDays / PAY_PERIOD_DAYS);
-  const periodIndex = currentPeriodIndex + periodOffset;
-  const start = new Date(anchor.getTime() + periodIndex * PAY_PERIOD_DAYS * DAY_MS);
-  const end = new Date(start.getTime() + (PAY_PERIOD_DAYS - 1) * DAY_MS);
-  return { startDate: formatYmdUtc(start), endDate: formatYmdUtc(end) };
-}
-
 export function TimeInsightsClient() {
+  const payCal = usePayPeriodCalendar();
   const [periodOffset, setPeriodOffset] = useState(0);
   const [data, setData] = useState<TimeInsightsResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const range = getBiweeklyRange(periodOffset);
+  const range = useMemo(
+    () => getPayPeriodRangeForOffsetN(periodOffset, payCal),
+    [periodOffset, payCal]
+  );
 
   const fetchData = useCallback(async () => {
     setLoading(true);

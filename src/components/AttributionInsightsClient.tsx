@@ -10,6 +10,7 @@ import {
   type DashboardDatePreset,
   getDashboardDateRange,
 } from "@/lib/dashboardDateRange";
+import { usePayPeriodCalendar } from "@/hooks/usePayPeriodCalendar";
 import { isLikelyBookingCompletionUrl } from "@/lib/webAttribution/bookingCompletionHeuristics";
 import { CallInsightsClient } from "./CallInsightsClient";
 import { MarketingLeadSourceTable } from "./MarketingLeadSourceTable";
@@ -130,9 +131,11 @@ export function AttributionInsightsClient() {
     () => new Set()
   );
 
+  const payPeriodCalendar = usePayPeriodCalendar();
+
   const dr = useMemo(
-    () => getDashboardDateRange(preset, customStart, customEnd),
-    [preset, customStart, customEnd]
+    () => getDashboardDateRange(preset, customStart, customEnd, payPeriodCalendar),
+    [preset, customStart, customEnd, payPeriodCalendar]
   );
 
   const todayStr = new Date().toISOString().slice(0, 10);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import { getPerformancePayOrg } from "@/lib/db/queries";
+import { payPeriodSettingsFromOrg } from "@/lib/payPeriod";
 import { getBiweeklyPeriod, calculateExpectedPay } from "@/lib/performancePay";
 
 /** GET /api/performance-pay/expected - Expected pay. Employee: own only. Admin: all with configs, filterable by date. */
@@ -32,8 +33,8 @@ export async function GET(request: Request) {
 
   if (!startDate || !endDate) {
     const ppOrg = await getPerformancePayOrg(session.user.organizationId);
-    const startWeekday = ppOrg?.pay_period_start_weekday ?? 1;
-    [startDate, endDate] = getBiweeklyPeriod(new Date(), startWeekday);
+    const { payPeriodStartWeekday, payPeriodTimezone } = payPeriodSettingsFromOrg(ppOrg);
+    [startDate, endDate] = getBiweeklyPeriod(new Date(), payPeriodStartWeekday, payPeriodTimezone);
   }
 
   try {

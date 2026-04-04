@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MetricTooltip } from "@/components/MetricTooltip";
+import { usePayPeriodCalendar } from "@/hooks/usePayPeriodCalendar";
+import {
+  DASHBOARD_PRESET_LABELS,
+  DASHBOARD_PRESET_ORDER,
+  type DashboardDatePreset,
+  getDashboardDateRange,
+} from "@/lib/dashboardDateRange";
 
 interface TimeEntry {
   id: string;
@@ -37,32 +44,24 @@ interface TimesheetsClientProps {
   hcpEmployeeId?: string;
 }
 
-/** Same biweekly anchor as dashboard / Time Insights (first period 2026-03-21 → 2026-04-03). */
-function getPayPeriodRange(offset: 0 | -1): { startDate: string; endDate: string } {
-  const dayMs = 24 * 60 * 60 * 1000;
-  const periodDays = 14;
-  const anchorStart = new Date(Date.UTC(2026, 2, 21));
-  const now = new Date();
-  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const diffDays = Math.floor((todayUtc.getTime() - anchorStart.getTime()) / dayMs);
-  const currentIndex = Math.floor(diffDays / periodDays);
-  const index = currentIndex + offset;
-  const start = new Date(anchorStart.getTime() + index * periodDays * dayMs);
-  const end = new Date(start.getTime() + (periodDays - 1) * dayMs);
-  return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
-  };
-}
-
 export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId }: TimesheetsClientProps = {}) {
+  const payCal = usePayPeriodCalendar();
+  const [preset, setPreset] = useState<DashboardDatePreset>("thisPayPeriod");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+
+  const dateRange = useMemo(
+    () => getDashboardDateRange(preset, customStart, customEnd, payCal),
+    [preset, customStart, customEnd, payCal]
+  );
+  const queryStart = dateRange.isAllTime ? undefined : dateRange.startDate;
+  const queryEnd = dateRange.isAllTime ? undefined : dateRange.endDate;
+
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [formEmployeeId, setFormEmployeeId] = useState<string>("");
-  const [startDate, setStartDate] = useState(() => getPayPeriodRange(0).startDate);
-  const [endDate, setEndDate] = useState(() => getPayPeriodRange(0).endDate);
   const [showForm, setShowForm] = useState(false);
   const [formDate, setFormDate] = useState(new Date().toISOString().slice(0, 10));
   const [formHours, setFormHours] = useState("8");
@@ -135,7 +134,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       .catch(() => {});
   }, [isAdmin]);
 
-  function fetchEntries() {
+  const fetchEntries = useCallback(() => {
     if (!isAdmin && !effectiveHcpEmployeeId) {
       setEntries([]);
       setLoading(false);
@@ -144,8 +143,8 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
     setLoading(true);
     setError(null);
     const params = new URLSearchParams();
-    if (startDate) params.set("start_date", startDate);
-    if (endDate) params.set("end_date", endDate);
+    if (queryStart) params.set("start_date", queryStart);
+    if (queryEnd) params.set("end_date", queryEnd);
     if (effectiveHcpEmployeeId) params.set("hcp_employee_id", effectiveHcpEmployeeId);
     fetch(`/api/timesheets?${params}`)
       .then((res) => {
@@ -155,24 +154,24 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       .then(setEntries)
       .catch((e) => setError(e instanceof Error ? e.message : "Error"))
       .finally(() => setLoading(false));
-  }
+  }, [effectiveHcpEmployeeId, isAdmin, queryEnd, queryStart]);
 
   useEffect(() => {
     fetchEntries();
-  }, [startDate, endDate, effectiveHcpEmployeeId]);
+  }, [fetchEntries]);
 
   useEffect(() => {
     if (!isAdmin) return;
     setTimeOffLoading(true);
     const params = new URLSearchParams();
-    params.set("start_date", startDate);
-    params.set("end_date", endDate);
+    if (queryStart) params.set("startDate", queryStart);
+    if (queryEnd) params.set("endDate", queryEnd);
     fetch(`/api/time-off?${params}`)
       .then((res) => (res.ok ? res.json() : { requests: [] }))
       .then((data: { requests: TimeOffRequest[] }) => setTimeOffRequests(data.requests ?? []))
       .catch(() => setTimeOffRequests([]))
       .finally(() => setTimeOffLoading(false));
-  }, [isAdmin, startDate, endDate]);
+  }, [isAdmin, queryEnd, queryStart]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -336,60 +335,82 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
 
   return (
     <div className="mt-4 space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          From
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
-          />
-        </label>
-        <label className="text-xs text-zinc-600 dark:text-zinc-400">
-          To
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
-          />
-        </label>
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            disabled={employees.length === 0}
-            className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            Add hours
-          </button>
-        )}
-        {isAdmin && (
-          <label className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            {importingCsv ? "Importing..." : "Import CSV"}
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              disabled={importingCsv}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleImportCsv(file);
-                e.target.value = "";
-              }}
-            />
-          </label>
-        )}
-        {!isAdmin && effectiveHcpEmployeeId && (
-          <button
-            type="button"
-            onClick={() => setShowTimeOffForm(true)}
-            className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Request time off
-          </button>
-        )}
+      <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Time period</label>
+            <select
+              value={preset}
+              onChange={(e) => setPreset(e.target.value as DashboardDatePreset)}
+              className="mt-1 rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+              aria-label="Timesheets time period"
+            >
+              {DASHBOARD_PRESET_ORDER.map((key) => (
+                <option key={key} value={key}>
+                  {DASHBOARD_PRESET_LABELS[key]}
+                </option>
+              ))}
+            </select>
+          </div>
+          {preset === "custom" && (
+            <>
+              <label className="text-xs text-zinc-600 dark:text-zinc-400">
+                From
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+              </label>
+              <label className="text-xs text-zinc-600 dark:text-zinc-400">
+                To
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  className="ml-2 rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+                />
+              </label>
+            </>
+          )}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+              disabled={employees.length === 0}
+              className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              Add hours
+            </button>
+          )}
+          {isAdmin && (
+            <label className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+              {importingCsv ? "Importing..." : "Import CSV"}
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                disabled={importingCsv}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImportCsv(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          )}
+          {!isAdmin && effectiveHcpEmployeeId && (
+            <button
+              type="button"
+              onClick={() => setShowTimeOffForm(true)}
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Request time off
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
       </div>
 
       {showTimeOffForm && !isAdmin && (

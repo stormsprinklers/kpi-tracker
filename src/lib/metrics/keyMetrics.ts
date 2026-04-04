@@ -3,7 +3,9 @@ import {
   getInvoicesFromDb,
   getJobsFromDb,
   getOrganizationById,
+  getPerformancePayOrg,
 } from "../db/queries";
+import { getPayPeriodRangeForOffset, payPeriodSettingsFromOrg } from "../payPeriod";
 import { getTechnicianRevenue } from "./technicianRevenue";
 
 export type KeyMetricsRange =
@@ -127,25 +129,6 @@ function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): b
   return scheduledDay > todayYmd;
 }
 
-function getPayPeriodRange(offset: 0 | -1): { startDate: string; endDate: string } {
-  const dayMs = 24 * 60 * 60 * 1000;
-  const periodDays = 14;
-  const anchorStart = new Date(Date.UTC(2026, 2, 21)); // 2026-03-21
-  const now = new Date();
-  const todayUtc = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  );
-  const diffDays = Math.floor((todayUtc.getTime() - anchorStart.getTime()) / dayMs);
-  const currentIndex = Math.floor(diffDays / periodDays);
-  const index = currentIndex + offset;
-  const start = new Date(anchorStart.getTime() + index * periodDays * dayMs);
-  const end = new Date(start.getTime() + (periodDays - 1) * dayMs);
-  return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
-  };
-}
-
 function estimateInDateRange(estimate: Record<string, unknown>, startDate: string | null, endDate: string | null): boolean {
   if (!startDate || !endDate) return true;
   const estDate = getEstimateDate(estimate);
@@ -162,16 +145,9 @@ function hasApprovedOption(estimate: Record<string, unknown>): boolean {
   );
 }
 
-function getDateRangeForPeriod(range: KeyMetricsRange): { startDate: string | null; endDate: string | null } {
-  if (range === "thisPayPeriod") {
-    const p = getPayPeriodRange(0);
-    return { startDate: p.startDate, endDate: p.endDate };
-  }
-  if (range === "lastPayPeriod") {
-    const p = getPayPeriodRange(-1);
-    return { startDate: p.startDate, endDate: p.endDate };
-  }
-
+function getDateRangeForPeriod(
+  range: Exclude<KeyMetricsRange, "thisPayPeriod" | "lastPayPeriod">
+): { startDate: string | null; endDate: string | null } {
   const today = new Date();
   const end = new Date(today);
   end.setHours(23, 59, 59, 999);
@@ -189,23 +165,41 @@ export type KeyMetricsInput =
   | KeyMetricsRange
   | { startDate: string | null; endDate: string | null };
 
+async function normalizeKeyMetricsInput(
+  organizationId: string,
+  input: KeyMetricsInput
+): Promise<KeyMetricsInput> {
+  if (typeof input !== "string") return input;
+  if (input !== "thisPayPeriod" && input !== "lastPayPeriod") return input;
+  const ppOrg = await getPerformancePayOrg(organizationId);
+  const settings = payPeriodSettingsFromOrg(ppOrg);
+  const p = getPayPeriodRangeForOffset(input === "thisPayPeriod" ? 0 : -1, settings);
+  return { startDate: p.startDate, endDate: p.endDate };
+}
+
 function resolveKeyMetricsWindow(
   input: KeyMetricsInput
 ): { startDate: string | null; endDate: string | null } {
   if (typeof input === "string") {
+    if (input === "thisPayPeriod" || input === "lastPayPeriod") {
+      throw new Error("Pay period presets must be normalized before resolving the metrics window");
+    }
     return getDateRangeForPeriod(input);
   }
   return { startDate: input.startDate, endDate: input.endDate };
 }
 
 export async function getKeyMetrics(organizationId: string, input: KeyMetricsInput = "7d"): Promise<KeyMetrics> {
-  const org = await getOrganizationById(organizationId);
+  const [org, normalizedInput] = await Promise.all([
+    getOrganizationById(organizationId),
+    normalizeKeyMetricsInput(organizationId, input),
+  ]);
   const companyId = org?.hcp_company_id?.trim() || "";
   if (!companyId) {
     return { jobCount: 0, revenue: 0, avgJobValue: null, conversionRate: null };
   }
 
-  const { startDate, endDate } = resolveKeyMetricsWindow(input);
+  const { startDate, endDate } = resolveKeyMetricsWindow(normalizedInput);
 
   let jobs: unknown[] = [];
   try {
