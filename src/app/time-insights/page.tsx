@@ -18,7 +18,7 @@ export default async function TimeInsightsPage() {
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             Average jobs per day per technician, drive time, and job time per line item (single-line-item jobs only).
           </p>
-          <TimeInsightsClient />
+          <TimeInsightsClient isAdmin={session.user.role === "admin"} />
         </section>
       </main>
     </div>

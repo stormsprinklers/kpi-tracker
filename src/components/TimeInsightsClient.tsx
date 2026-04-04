@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PayrollExportPanel } from "@/components/PayrollExportPanel";
 import { ExpectedPayTable } from "@/components/team/ExpectedPayTable";
 import { usePayPeriodCalendar } from "@/hooks/usePayPeriodCalendar";
 import { getPayPeriodRangeForOffsetN } from "@/lib/payPeriod";
@@ -22,7 +23,7 @@ interface TimeInsightsResult {
   laborPercentOfRevenue: number | null;
 }
 
-export function TimeInsightsClient() {
+export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const payCal = usePayPeriodCalendar();
   const [periodOffset, setPeriodOffset] = useState(0);
   const [data, setData] = useState<TimeInsightsResult | null>(null);
@@ -87,11 +88,20 @@ export function TimeInsightsClient() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-          Date range
-        </span>
-        {dateSelector}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            Date range
+          </span>
+          {dateSelector}
+        </div>
+        {isAdmin && (
+          <PayrollExportPanel
+            startDate={range.startDate}
+            endDate={range.endDate}
+            excludeZeroHours
+          />
+        )}
       </div>
 
       {loading && (

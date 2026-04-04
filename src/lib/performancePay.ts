@@ -34,6 +34,32 @@ export type BonusType =
   | "revenue_per_hour"
   | "avg_billable_hours";
 
+/** Extra columns for payroll / HR export (Time Insights, etc.). */
+export interface PayrollExportDetail {
+  /** Straight-time bucket from timesheets using 40h per Mon–Sun workweek. */
+  regularHours: number;
+  /** Hours beyond 40 in any workweek (same split as regular). */
+  overtimeHours: number;
+  /** Configured base hourly rate (not blended with bonuses or commission). Null when plan is not hourly-based. */
+  baseHourlyRate: number | null;
+  /** Hourly rate used for base pay this period (metric tiers, CSR booking bump). Null when not hourly-based. */
+  appliedHourlyRate: number | null;
+  /** When true, Performance Pay applies 1.5× base rate to weekly hours over 40 (hourly-to-commission hourly side only today). */
+  overtimePremiumApplies: boolean;
+  /** All Google reviews assigned to the employee in range (same as Reviews in expected pay). */
+  googleReviewsCount: number;
+  fiveStarReviewsCount: number;
+  reviewBonusAmount: number;
+  /** Primary commission % from config (tier match for tiered plans; flat % otherwise). Null if N/A. */
+  commissionRatePct: number | null;
+  /** Commission dollars at that rate (tier logic included); may be hypothetical if commission does not win. */
+  commissionDollars: number;
+  /** True when commission is included in expected gross (pure commission, hourly+tiers, or commission wins hourly-or-commission). */
+  commissionCountsTowardGross: boolean;
+  /** Short notes for payroll staff. */
+  guide: string[];
+}
+
 export interface ExpectedPayResult {
   hcpEmployeeId: string;
   employeeName?: string;
@@ -49,6 +75,8 @@ export interface ExpectedPayResult {
   effectiveHourlyRate: number | null;
   /** Used to exclude office/CSR pay from labor % of revenue while still listing rows in the expected pay table. */
   structureType: StructureType;
+  /** Populated when requested (e.g. payroll export). */
+  payrollExport?: PayrollExportDetail;
 }
 
 function payTypeLabelForStructure(structureType: StructureType): string {
@@ -150,6 +178,112 @@ function hourlyPayWithWeeklyOvertime(
     total += regular * baseRatePerHour + overtime * baseRatePerHour * OT_PREMIUM_MULTIPLIER;
   }
   return Math.round(total * 100) / 100;
+}
+
+/** Mon–Sun workweek hours → period totals for payroll display (40h straight per week). */
+function regularOvertimeHoursFromWeeks(hoursByWeek: Map<string, number>): {
+  regularHours: number;
+  overtimeHours: number;
+} {
+  let regular = 0;
+  let overtime = 0;
+  for (const weekHours of hoursByWeek.values()) {
+    regular += Math.min(weekHours, WEEKLY_OT_THRESHOLD_HOURS);
+    overtime += Math.max(0, weekHours - WEEKLY_OT_THRESHOLD_HOURS);
+  }
+  return {
+    regularHours: Math.round(regular * 100) / 100,
+    overtimeHours: Math.round(overtime * 100) / 100,
+  };
+}
+
+function buildPayrollGuide(
+  st: StructureType,
+  ctx: {
+    commissionDollars: number;
+    commissionRatePct: number | null;
+    hourlyPay?: number;
+    commissionPay?: number;
+    metricLabel?: string;
+    bookingThresholdPct?: number;
+  }
+): string[] {
+  const lines: string[] = [];
+  const eps = 0.005;
+
+  switch (st) {
+    case "pure_hourly":
+      lines.push(
+        "Plan: hourly. App multiplies all logged hours by the configured rate (no 1.5× weekly OT in Performance Pay for this plan)."
+      );
+      lines.push(
+        "Regular vs. OT hours use a 40h cap per Mon–Sun week from timesheets for your payroll worksheets."
+      );
+      break;
+    case "hourly_commission_tiers":
+      lines.push(
+        "Plan: hourly plus revenue-tier commission. Gross = hours × base rate + matching-tier % × attributed revenue."
+      );
+      if (ctx.commissionDollars <= eps) {
+        lines.push("No tier matched this period’s revenue; commission is $0.");
+      } else if (ctx.commissionRatePct != null) {
+        lines.push(
+          `Active tier: ${ctx.commissionRatePct}% × revenue = $${ctx.commissionDollars.toFixed(2)} (included in gross).`
+        );
+      }
+      lines.push(
+        "Regular vs. OT hours use 40h/week from timesheets; the hourly leg does not apply a 1.5× OT multiplier in the app."
+      );
+      break;
+    case "hourly_to_commission": {
+      const hp = ctx.hourlyPay ?? 0;
+      const cp = ctx.commissionPay ?? 0;
+      lines.push(
+        "Plan: hourly (with 1.5× pay on hours over 40 per week) OR flat commission on revenue—whichever is higher."
+      );
+      if (Math.abs(hp - cp) < eps) {
+        lines.push("Hourly (incl. OT) and commission are equal; gross uses that amount.");
+      } else if (cp > hp) {
+        lines.push(
+          `Commission wins: ${ctx.commissionRatePct ?? "—"}% × revenue = $${cp.toFixed(2)} (hourly incl. OT would be $${hp.toFixed(2)}).`
+        );
+        lines.push(
+          "Weekly OT premium applies only on the hourly path; it is not used when commission is higher."
+        );
+      } else {
+        lines.push(
+          `Hourly wins (incl. OT): $${hp.toFixed(2)}. Commission at ${ctx.commissionRatePct ?? "—"}% would be $${cp.toFixed(2)}—not added to gross.`
+        );
+      }
+      break;
+    }
+    case "pure_commission":
+      lines.push(
+        `Plan: commission only. Gross = ${ctx.commissionRatePct ?? "—"}% × attributed revenue ($${ctx.commissionDollars.toFixed(2)}).`
+      );
+      lines.push("Hour columns are from timesheets for reference only; they do not drive pay under this plan.");
+      break;
+    case "hourly_metrics":
+      lines.push(
+        `Plan: hourly metric tiers (${ctx.metricLabel ?? "metric"}). Applied rate is the highest tier at or below this period’s value.`
+      );
+      lines.push(
+        "Regular vs. OT hours are for reference; pay uses total hours × tier rate (no weekly OT premium in app)."
+      );
+      break;
+    case "csr_hourly_booking_rate":
+      lines.push(
+        "Plan: CSR hourly with booking-rate bump above threshold. Gross = hours × (base + increment for each point over threshold)."
+      );
+      if (typeof ctx.bookingThresholdPct === "number") {
+        lines.push(`Booking threshold from config: ${ctx.bookingThresholdPct}%.`);
+      }
+      break;
+    default:
+      lines.push("Performance Pay plan: see pay type and breakdown in app.");
+  }
+
+  return lines;
 }
 
 /** Stub bonus amount for bonus types that don't have data yet. Returns 0. */
@@ -323,30 +457,53 @@ export async function calculateExpectedPay(
 
     let basePay = 0;
     const breakdown: Record<string, number> = {};
+    const byWeekForPayroll = hoursByEmployeeWeek.get(empId) ?? new Map<string, number>();
+    const { regularHours, overtimeHours } = regularOvertimeHoursFromWeeks(byWeekForPayroll);
+
+    let payrollBaseHourlyRate: number | null = null;
+    let payrollAppliedHourlyRate: number | null = null;
+    let overtimePremiumApplies = false;
+    let payrollCommissionRatePct: number | null = null;
+    let payrollCommissionDollars = 0;
+    let payrollCommissionCountsTowardGross = false;
+    let payrollHourlyPay: number | undefined;
+    let payrollCommissionPay: number | undefined;
+    let payrollMetricLabel: string | undefined;
+    let payrollBookingThresholdPct: number | undefined;
 
     switch (config.structure_type as StructureType) {
       case "pure_hourly": {
         const rate = (cfg.hourly_rate as number) ?? 0;
         basePay = hours * rate;
         breakdown.base = basePay;
+        payrollBaseHourlyRate = rate;
+        payrollAppliedHourlyRate = rate;
         break;
       }
       case "hourly_commission_tiers": {
         const rate = (cfg.hourly_rate as number) ?? 0;
-        const tiers = (cfg.tiers as Array<{ min_revenue: number; max_revenue?: number; rate_pct: number }>) ?? [];
+        const tiers =
+          (cfg.tiers as Array<{ min_revenue: number; max_revenue?: number; rate_pct: number }>) ?? [];
         const base = hours * rate;
         let commission = 0;
+        let matchedPct: number | null = null;
         for (const t of tiers) {
           const minRev = t.min_revenue ?? 0;
           const maxRev = t.max_revenue ?? Infinity;
           if (revenue >= minRev && revenue < maxRev) {
             commission = revenue * ((t.rate_pct ?? 0) / 100);
+            matchedPct = t.rate_pct ?? null;
             break;
           }
         }
         basePay = base + commission;
         breakdown.base = base;
         breakdown.commission = commission;
+        payrollBaseHourlyRate = rate;
+        payrollAppliedHourlyRate = rate;
+        payrollCommissionRatePct = matchedPct;
+        payrollCommissionDollars = commission;
+        payrollCommissionCountsTowardGross = commission > 0.005;
         break;
       }
       case "hourly_to_commission": {
@@ -358,12 +515,23 @@ export async function calculateExpectedPay(
         basePay = Math.max(hourlyPay, commissionPay);
         breakdown.hourly = hourlyPay;
         breakdown.commission = commissionPay;
+        overtimePremiumApplies = true;
+        payrollBaseHourlyRate = rate;
+        payrollAppliedHourlyRate = rate;
+        payrollCommissionRatePct = commissionRate;
+        payrollCommissionDollars = commissionPay;
+        payrollCommissionCountsTowardGross = commissionPay >= hourlyPay - 0.005;
+        payrollHourlyPay = hourlyPay;
+        payrollCommissionPay = commissionPay;
         break;
       }
       case "pure_commission": {
         const commissionRate = (cfg.commission_rate_pct as number) ?? 0;
         basePay = revenue * (commissionRate / 100);
         breakdown.commission = basePay;
+        payrollCommissionRatePct = commissionRate;
+        payrollCommissionDollars = basePay;
+        payrollCommissionCountsTowardGross = true;
         break;
       }
       case "hourly_metrics": {
@@ -378,6 +546,9 @@ export async function calculateExpectedPay(
         }
         basePay = hours * rate;
         breakdown.base = basePay;
+        payrollBaseHourlyRate = rate;
+        payrollAppliedHourlyRate = rate;
+        payrollMetricLabel = metric === "booking_rate" ? "booking rate" : "revenue per hour";
         break;
       }
       case "csr_hourly_booking_rate": {
@@ -392,6 +563,9 @@ export async function calculateExpectedPay(
         if (increasePerHr > 0) {
           breakdown.booking_rate_bump = hours * increasePerHr;
         }
+        payrollBaseHourlyRate = baseHourly;
+        payrollAppliedHourlyRate = effectiveHourly;
+        payrollBookingThresholdPct = thresholdPct;
         break;
       }
       default:
@@ -429,6 +603,38 @@ export async function calculateExpectedPay(
     const effectiveHourlyRate =
       hours > 0 ? Math.round((expectedPayTotal / hours) * 100) / 100 : null;
 
+    const guideLines = buildPayrollGuide(config.structure_type as StructureType, {
+      commissionDollars: payrollCommissionDollars,
+      commissionRatePct: payrollCommissionRatePct,
+      hourlyPay: payrollHourlyPay,
+      commissionPay: payrollCommissionPay,
+      metricLabel: payrollMetricLabel,
+      bookingThresholdPct: payrollBookingThresholdPct,
+    });
+    if (fiveStarBonus > 0.005) {
+      guideLines.push(
+        `5★ Google review bonus in gross: ${fiveStarReviews} reviews × org bonus rate ($${fiveStarBonus.toFixed(2)}).`
+      );
+    }
+    if (bonusTotal > fiveStarBonus + 0.005) {
+      guideLines.push("Other configured bonuses in Performance Pay are included in expected gross.");
+    }
+
+    const payrollExport: PayrollExportDetail = {
+      regularHours,
+      overtimeHours,
+      baseHourlyRate: payrollBaseHourlyRate,
+      appliedHourlyRate: payrollAppliedHourlyRate,
+      overtimePremiumApplies,
+      googleReviewsCount: reviews,
+      fiveStarReviewsCount: fiveStarReviews,
+      reviewBonusAmount: fiveStarBonus,
+      commissionRatePct: payrollCommissionRatePct,
+      commissionDollars: Math.round(payrollCommissionDollars * 100) / 100,
+      commissionCountsTowardGross: payrollCommissionCountsTowardGross,
+      guide: guideLines,
+    };
+
     results.push({
       hcpEmployeeId: empId,
       employeeName: employeeNames.get(empId),
@@ -440,6 +646,7 @@ export async function calculateExpectedPay(
       payTypeLabel,
       effectiveHourlyRate,
       structureType: config.structure_type as StructureType,
+      payrollExport,
     });
   }
 
