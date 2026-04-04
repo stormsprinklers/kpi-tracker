@@ -33,8 +33,8 @@ export async function GET(request: Request) {
 
   if (!startDate || !endDate) {
     const ppOrg = await getPerformancePayOrg(session.user.organizationId);
-    const { payPeriodStartWeekday, payPeriodTimezone } = payPeriodSettingsFromOrg(ppOrg);
-    [startDate, endDate] = getBiweeklyPeriod(new Date(), payPeriodStartWeekday, payPeriodTimezone);
+    const cal = payPeriodSettingsFromOrg(ppOrg);
+    [startDate, endDate] = getBiweeklyPeriod(new Date(), cal);
   }
 
   try {

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PerformancePayWizard } from "@/components/team/PerformancePayWizard";
 import { PerformancePayConfigList } from "@/components/team/PerformancePayConfigList";
-import { isValidIanaTimeZone } from "@/lib/payPeriod";
+import { isValidIanaTimeZone, listIanaTimeZones, TIMEZONE_SUGGESTIONS } from "@/lib/payPeriod";
 
 interface Config {
   scope_type: string;
@@ -19,6 +19,7 @@ interface SetupData {
     bonus_per_five_star_review?: number | null;
     pay_period_start_weekday?: number;
     pay_period_timezone?: string;
+    pay_period_anchor_date?: string | null;
   };
   roles: { id: string; name: string }[];
   configs: Config[];
@@ -46,7 +47,9 @@ export function PerformancePayPageClient() {
 
   const [payPeriodWeekday, setPayPeriodWeekday] = useState(1);
   const [payPeriodTimezone, setPayPeriodTimezone] = useState("UTC");
-  const [ianaZones, setIanaZones] = useState<string[]>([]);
+  const [payPeriodAnchor, setPayPeriodAnchor] = useState("");
+  const [ianaZones, setIanaZones] = useState<string[]>(() => listIanaTimeZones());
+  const [tzFilter, setTzFilter] = useState("");
   const [periodSaving, setPeriodSaving] = useState(false);
   const [periodError, setPeriodError] = useState<string | null>(null);
   const [periodSaved, setPeriodSaved] = useState(false);
@@ -87,10 +90,34 @@ export function PerformancePayPageClient() {
           setIanaZones(data.timeZones);
         }
       } catch {
-        /* ignore */
+        /* keep listIanaTimeZones() from useState initializer */
       }
     })();
   }, []);
+
+  const suggestionSet = useMemo(() => new Set<string>(TIMEZONE_SUGGESTIONS), []);
+  const restZones = useMemo(
+    () => ianaZones.filter((z) => !suggestionSet.has(z)),
+    [ianaZones, suggestionSet]
+  );
+  const filteredRestZones = useMemo(() => {
+    const q = tzFilter.trim().toLowerCase();
+    let list = q ? restZones.filter((z) => z.toLowerCase().includes(q)) : restZones;
+    const cur = payPeriodTimezone.trim();
+    if (cur && restZones.includes(cur) && !list.includes(cur)) {
+      list = [cur, ...list];
+    }
+    return list;
+  }, [restZones, tzFilter, payPeriodTimezone]);
+
+  const orphanSavedTimezone = useMemo(() => {
+    const cur = payPeriodTimezone.trim();
+    if (!cur || suggestionSet.has(cur) || restZones.includes(cur)) return null;
+    return cur;
+  }, [payPeriodTimezone, restZones, suggestionSet]);
+
+  const payPeriodWeekdayLabel =
+    WEEKDAY_OPTIONS.find((o) => o.value === payPeriodWeekday)?.label ?? "that weekday";
 
   useEffect(() => {
     const org = setup?.org;
@@ -99,6 +126,10 @@ export function PerformancePayPageClient() {
     if (typeof w === "number" && w >= 0 && w <= 6) setPayPeriodWeekday(w);
     const tz = org.pay_period_timezone?.trim();
     if (tz) setPayPeriodTimezone(tz);
+    const a = org.pay_period_anchor_date;
+    setPayPeriodAnchor(
+      a != null && String(a).trim() !== "" ? String(a).trim().slice(0, 10) : ""
+    );
   }, [setup]);
 
   const roleNames = new Map(setup?.roles?.map((r) => [r.id, r.name]) ?? []);
@@ -131,6 +162,8 @@ export function PerformancePayPageClient() {
         body: JSON.stringify({
           pay_period_start_weekday: payPeriodWeekday,
           pay_period_timezone: tz,
+          pay_period_anchor_date:
+            payPeriodAnchor.trim() === "" ? null : payPeriodAnchor.trim().slice(0, 10),
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -188,6 +221,24 @@ export function PerformancePayPageClient() {
           each 14-day block starts on. Dashboard presets, timesheets defaults, expected pay, and Time Insights
           all follow these settings.
         </p>
+        <div className="mt-3 max-w-xl">
+          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            First pay period starts on (optional)
+          </label>
+          <input
+            type="date"
+            value={payPeriodAnchor}
+            onChange={(e) => {
+              setPayPeriodAnchor(e.target.value);
+              setPeriodSaved(false);
+            }}
+            className="mt-1 rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            Leave blank to use the built-in grid (14-day blocks from 1970). When set, period #0 begins on the
+            first {payPeriodWeekdayLabel} on or after this date; the saved value is that snapped start date.
+          </p>
+        </div>
         <div className="mt-3 flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
@@ -208,28 +259,56 @@ export function PerformancePayPageClient() {
               ))}
             </select>
           </div>
-          <div className="min-w-[12rem] flex-1">
+          <div className="min-w-[min(100%,18rem)] max-w-lg flex-1">
             <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Time zone (IANA)
+              Time zone
             </label>
             <input
-              type="text"
-              list="pay-period-iana-zones"
+              type="search"
+              placeholder="Filter full list (optional)"
+              value={tzFilter}
+              onChange={(e) => setTzFilter(e.target.value)}
+              className="mt-1 w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+              aria-label="Filter time zone list"
+            />
+            <select
               value={payPeriodTimezone}
               onChange={(e) => {
                 setPayPeriodTimezone(e.target.value);
                 setPeriodSaved(false);
               }}
-              placeholder="America/Denver"
-              className="mt-1 w-full max-w-md rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-            />
-            {ianaZones.length > 0 && (
-              <datalist id="pay-period-iana-zones">
-                {ianaZones.map((z) => (
-                  <option key={z} value={z} />
+              className="mt-1.5 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+              aria-label="Pay period time zone"
+            >
+              {orphanSavedTimezone ? (
+                <option value={orphanSavedTimezone}>
+                  {orphanSavedTimezone} (saved — not in list below)
+                </option>
+              ) : null}
+              <optgroup label="Common">
+                {TIMEZONE_SUGGESTIONS.map((z) => (
+                  <option key={z} value={z}>
+                    {z.replace(/_/g, " ")}
+                  </option>
                 ))}
-              </datalist>
-            )}
+              </optgroup>
+              <optgroup
+                label={
+                  tzFilter.trim()
+                    ? `All IANA (${filteredRestZones.length} shown)`
+                    : `All IANA (${restZones.length})`
+                }
+              >
+                {filteredRestZones.map((z) => (
+                  <option key={z} value={z}>
+                    {z}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              Region/City names (e.g. America/Denver). Use the filter to find a zone quickly.
+            </p>
           </div>
           <button
             type="button"

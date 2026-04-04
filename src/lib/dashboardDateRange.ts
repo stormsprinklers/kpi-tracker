@@ -1,9 +1,10 @@
 import {
-  DEFAULT_PAY_PERIOD_START_WEEKDAY,
-  DEFAULT_PAY_PERIOD_TIMEZONE,
+  DEFAULT_PAY_PERIOD_CALENDAR,
   getPayPeriodRangeForOffset,
   type PayPeriodCalendarSettings,
 } from "./payPeriod";
+
+export { DEFAULT_PAY_PERIOD_CALENDAR };
 
 export type DashboardDatePreset =
   | "thisPayPeriod"
@@ -48,11 +49,6 @@ export interface DashboardDateRange {
   endDate?: string;
   rangeLabel: string;
 }
-
-export const DEFAULT_PAY_PERIOD_CALENDAR: PayPeriodCalendarSettings = {
-  payPeriodStartWeekday: DEFAULT_PAY_PERIOD_START_WEEKDAY,
-  payPeriodTimezone: DEFAULT_PAY_PERIOD_TIMEZONE,
-};
 
 /**
  * Resolves the selected dashboard preset into API-friendly bounds and a display label.

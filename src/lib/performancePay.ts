@@ -12,7 +12,11 @@ import {
 import { getTechnicianRevenue } from "./metrics/technicianRevenue";
 import { getCsrKpiList } from "./metrics/csrKpis";
 import { getOrganizationById } from "./db/queries";
-import { DEFAULT_PAY_PERIOD_TIMEZONE, getBiweeklyPeriodBounds } from "./payPeriod";
+import {
+  DEFAULT_PAY_PERIOD_CALENDAR,
+  getBiweeklyPeriodBounds,
+  type PayPeriodCalendarSettings,
+} from "./payPeriod";
 
 export type StructureType =
   | "pure_hourly"
@@ -88,17 +92,12 @@ export interface CalculateExpectedPayOptions {
   hcpEmployeeId?: string;
 }
 
-/** Compute biweekly period from a date, start weekday, and IANA time zone. Returns [startDate, endDate] in YYYY-MM-DD. */
+/** Compute biweekly period from a date and org calendar settings. Returns [startDate, endDate] in YYYY-MM-DD. */
 export function getBiweeklyPeriod(
   fromDate: Date,
-  payPeriodStartWeekday: number = 1,
-  timeZone: string = DEFAULT_PAY_PERIOD_TIMEZONE
+  settings: PayPeriodCalendarSettings = DEFAULT_PAY_PERIOD_CALENDAR
 ): [string, string] {
-  const { startDate, endDate } = getBiweeklyPeriodBounds(
-    fromDate,
-    payPeriodStartWeekday,
-    timeZone
-  );
+  const { startDate, endDate } = getBiweeklyPeriodBounds(fromDate, settings);
   return [startDate, endDate];
 }
 

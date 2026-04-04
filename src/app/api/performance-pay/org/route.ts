@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
-import { setPerformancePayOrgFiveStarBonus, upsertPerformancePayOrg } from "@/lib/db/queries";
-import { isValidIanaTimeZone } from "@/lib/payPeriod";
+import {
+  getPerformancePayOrg,
+  setPerformancePayOrgFiveStarBonus,
+  upsertPerformancePayOrg,
+} from "@/lib/db/queries";
+import { isValidIanaTimeZone, normalizePayPeriodAnchorYmd } from "@/lib/payPeriod";
 
 /** PATCH /api/performance-pay/org — org-wide Performance Pay settings (admin only). */
 export async function PATCH(request: Request) {
@@ -18,6 +22,7 @@ export async function PATCH(request: Request) {
     bonus_per_five_star_review?: number | null;
     pay_period_start_weekday?: number;
     pay_period_timezone?: string;
+    pay_period_anchor_date?: string | null;
   };
   try {
     body = await request.json();
@@ -29,12 +34,13 @@ export async function PATCH(request: Request) {
   const hasWeekday =
     typeof body.pay_period_start_weekday === "number" && !Number.isNaN(body.pay_period_start_weekday);
   const hasTz = typeof body.pay_period_timezone === "string";
+  const hasAnchor = Object.prototype.hasOwnProperty.call(body, "pay_period_anchor_date");
 
-  if (!hasBonus && !hasWeekday && !hasTz) {
+  if (!hasBonus && !hasWeekday && !hasTz && !hasAnchor) {
     return NextResponse.json(
       {
         error:
-          "Provide bonus_per_five_star_review and/or pay_period_start_weekday and/or pay_period_timezone",
+          "Provide bonus_per_five_star_review and/or pay_period_start_weekday and/or pay_period_timezone and/or pay_period_anchor_date",
       },
       { status: 400 }
     );
@@ -60,6 +66,31 @@ export async function PATCH(request: Request) {
   await initSchema();
   const orgId = session.user.organizationId;
 
+  let anchorNormalized: string | null | undefined = undefined;
+  if (hasAnchor) {
+    const raw = body.pay_period_anchor_date;
+    if (raw === null || raw === "") {
+      anchorNormalized = null;
+    } else if (typeof raw !== "string") {
+      return NextResponse.json(
+        { error: "pay_period_anchor_date must be a YYYY-MM-DD string, null, or empty string" },
+        { status: 400 }
+      );
+    } else {
+      const weekdayForAnchor = hasWeekday
+        ? body.pay_period_start_weekday!
+        : (await getPerformancePayOrg(orgId))?.pay_period_start_weekday ?? 1;
+      const n = normalizePayPeriodAnchorYmd(raw, weekdayForAnchor);
+      if (!n) {
+        return NextResponse.json(
+          { error: "pay_period_anchor_date must be a valid calendar date (YYYY-MM-DD)" },
+          { status: 400 }
+        );
+      }
+      anchorNormalized = n;
+    }
+  }
+
   if (hasBonus) {
     const raw = body.bonus_per_five_star_review;
     let value: number | null = null;
@@ -76,10 +107,11 @@ export async function PATCH(request: Request) {
     await setPerformancePayOrgFiveStarBonus(orgId, value);
   }
 
-  if (hasWeekday || hasTz) {
+  if (hasWeekday || hasTz || hasAnchor) {
     await upsertPerformancePayOrg(orgId, {
       pay_period_start_weekday: hasWeekday ? body.pay_period_start_weekday : undefined,
       pay_period_timezone: hasTz ? body.pay_period_timezone!.trim() : undefined,
+      pay_period_anchor_date: hasAnchor ? anchorNormalized : undefined,
     });
   }
 

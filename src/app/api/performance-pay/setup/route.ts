@@ -103,6 +103,7 @@ export async function GET() {
       setup_completed: false,
       pay_period_start_weekday: 1,
       pay_period_timezone: "UTC",
+      pay_period_anchor_date: null,
       bonus_per_five_star_review: null,
       updated_at: new Date().toISOString(),
     },

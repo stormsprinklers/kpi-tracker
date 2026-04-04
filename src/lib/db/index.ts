@@ -648,6 +648,12 @@ export async function initSchema(): Promise<void> {
       ) THEN
         ALTER TABLE performance_pay_org ADD COLUMN pay_period_timezone TEXT NOT NULL DEFAULT 'UTC';
       END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'performance_pay_org' AND column_name = 'pay_period_anchor_date'
+      ) THEN
+        ALTER TABLE performance_pay_org ADD COLUMN pay_period_anchor_date DATE;
+      END IF;
     END $$;
   `;
   await sql`

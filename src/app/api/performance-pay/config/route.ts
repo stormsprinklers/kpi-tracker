@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
+  getPerformancePayOrg,
   upsertPerformancePayConfig,
   upsertPerformancePayOrg,
   deletePerformancePayConfig,
   upsertPerformancePayAssignment,
 } from "@/lib/db/queries";
-import { isValidIanaTimeZone } from "@/lib/payPeriod";
+import { isValidIanaTimeZone, normalizePayPeriodAnchorYmd } from "@/lib/payPeriod";
 
 /** POST /api/performance-pay/config - Create/update config for role or employee (admin only). */
 export async function POST(request: Request) {
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
     setup_completed?: boolean;
     pay_period_start_weekday?: number;
     pay_period_timezone?: string;
+    pay_period_anchor_date?: string | null;
   };
 
   const scopeType = body.scope_type;
@@ -71,15 +73,38 @@ export async function POST(request: Request) {
     bonuses_json: bonusesJson,
   });
 
+  const hasAnchorKey = Object.prototype.hasOwnProperty.call(body, "pay_period_anchor_date");
+  let anchorForOrg: string | null | undefined = undefined;
+  if (hasAnchorKey) {
+    const raw = body.pay_period_anchor_date;
+    if (raw === null || raw === "") {
+      anchorForOrg = null;
+    } else if (typeof raw === "string") {
+      const w =
+        typeof body.pay_period_start_weekday === "number" && !Number.isNaN(body.pay_period_start_weekday)
+          ? body.pay_period_start_weekday
+          : (await getPerformancePayOrg(session.user.organizationId))?.pay_period_start_weekday ?? 1;
+      const n = normalizePayPeriodAnchorYmd(raw, w);
+      if (!n) {
+        return NextResponse.json({ error: "Invalid pay_period_anchor_date" }, { status: 400 });
+      }
+      anchorForOrg = n;
+    } else {
+      return NextResponse.json({ error: "pay_period_anchor_date must be string or null" }, { status: 400 });
+    }
+  }
+
   if (
     body.setup_completed === true ||
     body.pay_period_start_weekday != null ||
-    body.pay_period_timezone != null
+    body.pay_period_timezone != null ||
+    hasAnchorKey
   ) {
     await upsertPerformancePayOrg(session.user.organizationId, {
       setup_completed: body.setup_completed,
       pay_period_start_weekday: body.pay_period_start_weekday,
       pay_period_timezone: body.pay_period_timezone,
+      pay_period_anchor_date: hasAnchorKey ? anchorForOrg : undefined,
     });
   } else {
     await upsertPerformancePayOrg(session.user.organizationId, {

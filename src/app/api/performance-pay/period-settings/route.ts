@@ -20,6 +20,7 @@ export async function GET() {
   return NextResponse.json({
     pay_period_start_weekday: settings.payPeriodStartWeekday,
     pay_period_timezone: settings.payPeriodTimezone,
+    pay_period_anchor_date: settings.payPeriodAnchorDate,
     timeZones: listIanaTimeZones(),
   });
 }

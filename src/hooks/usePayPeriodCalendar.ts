@@ -2,15 +2,11 @@
 
 import { useEffect, useState } from "react";
 import {
-  DEFAULT_PAY_PERIOD_START_WEEKDAY,
-  DEFAULT_PAY_PERIOD_TIMEZONE,
+  DEFAULT_PAY_PERIOD_CALENDAR,
   type PayPeriodCalendarSettings,
 } from "@/lib/payPeriod";
 
-const DEFAULT_CALENDAR: PayPeriodCalendarSettings = {
-  payPeriodStartWeekday: DEFAULT_PAY_PERIOD_START_WEEKDAY,
-  payPeriodTimezone: DEFAULT_PAY_PERIOD_TIMEZONE,
-};
+const DEFAULT_CALENDAR = DEFAULT_PAY_PERIOD_CALENDAR;
 
 /** Loads org pay period weekday + IANA timezone from the server (falls back to UTC / Monday). */
 export function usePayPeriodCalendar(): PayPeriodCalendarSettings {
@@ -25,15 +21,23 @@ export function usePayPeriodCalendar(): PayPeriodCalendarSettings {
         const data = (await res.json()) as {
           pay_period_start_weekday?: number;
           pay_period_timezone?: string;
+          pay_period_anchor_date?: string | null;
         };
         if (cancelled) return;
         const w = data.pay_period_start_weekday;
         const tz = data.pay_period_timezone?.trim();
+        const anchorRaw = data.pay_period_anchor_date;
+        const anchor =
+          anchorRaw != null && String(anchorRaw).trim() !== ""
+            ? String(anchorRaw).trim().slice(0, 10)
+            : null;
         if (typeof w === "number" && w >= 0 && w <= 6 && tz) {
           setCal((prev) =>
-            prev.payPeriodStartWeekday === w && prev.payPeriodTimezone === tz
+            prev.payPeriodStartWeekday === w &&
+            prev.payPeriodTimezone === tz &&
+            prev.payPeriodAnchorDate === anchor
               ? prev
-              : { payPeriodStartWeekday: w, payPeriodTimezone: tz }
+              : { payPeriodStartWeekday: w, payPeriodTimezone: tz, payPeriodAnchorDate: anchor }
           );
         }
       } catch {

@@ -2028,6 +2028,8 @@ export interface PerformancePayOrg {
   pay_period_start_weekday: number;
   /** IANA time zone for pay period calendar boundaries (e.g. America/Denver). */
   pay_period_timezone: string;
+  /** First day of pay period #0 (snapped to pay_period_start_weekday). Null = default grid from 1970. */
+  pay_period_anchor_date: string | null;
   /** Flat bonus in dollars per assigned 5★ Google review in the pay period (org-wide). */
   bonus_per_five_star_review: number | null;
   updated_at: string;
@@ -2061,6 +2063,7 @@ export async function getPerformancePayOrg(organizationId: string): Promise<Perf
   const result = await sql`
     SELECT organization_id, setup_completed, pay_period_start_weekday,
       COALESCE(NULLIF(TRIM(pay_period_timezone), ''), 'UTC') AS pay_period_timezone,
+      pay_period_anchor_date::text AS pay_period_anchor_date,
       bonus_per_five_star_review::float8 AS bonus_per_five_star_review,
       updated_at
     FROM performance_pay_org
@@ -2075,7 +2078,12 @@ export async function getPerformancePayOrg(organizationId: string): Promise<Perf
     const n = Number(b);
     if (!Number.isNaN(n)) bonus = n;
   }
-  return { ...row, bonus_per_five_star_review: bonus };
+  const anchorRaw = row.pay_period_anchor_date;
+  const anchor =
+    anchorRaw != null && String(anchorRaw).trim() !== ""
+      ? String(anchorRaw).trim().slice(0, 10)
+      : null;
+  return { ...row, bonus_per_five_star_review: bonus, pay_period_anchor_date: anchor };
 }
 
 export async function upsertPerformancePayOrg(
@@ -2084,6 +2092,7 @@ export async function upsertPerformancePayOrg(
     setup_completed?: boolean;
     pay_period_start_weekday?: number;
     pay_period_timezone?: string;
+    pay_period_anchor_date?: string | null;
   }
 ): Promise<void> {
   const tzInsert =
@@ -2095,21 +2104,32 @@ export async function upsertPerformancePayOrg(
       ? String(params.pay_period_timezone).trim() || "UTC"
       : null;
 
+  const anchorProvided = params.pay_period_anchor_date !== undefined;
+  const anchorSqlValue =
+    anchorProvided && params.pay_period_anchor_date !== null && params.pay_period_anchor_date !== ""
+      ? String(params.pay_period_anchor_date).trim().slice(0, 10)
+      : null;
+
   await sql`
     INSERT INTO performance_pay_org (
-      organization_id, setup_completed, pay_period_start_weekday, pay_period_timezone, updated_at
+      organization_id, setup_completed, pay_period_start_weekday, pay_period_timezone, pay_period_anchor_date, updated_at
     )
     VALUES (
       ${organizationId}::uuid,
       ${params.setup_completed ?? false},
       ${params.pay_period_start_weekday ?? 1},
       ${tzInsert},
+      ${anchorProvided ? anchorSqlValue : null},
       NOW()
     )
     ON CONFLICT (organization_id) DO UPDATE SET
       setup_completed = COALESCE(${params.setup_completed ?? null}::boolean, performance_pay_org.setup_completed),
       pay_period_start_weekday = COALESCE(${params.pay_period_start_weekday ?? null}::int, performance_pay_org.pay_period_start_weekday),
       pay_period_timezone = COALESCE(${tzUpdate}::text, performance_pay_org.pay_period_timezone),
+      pay_period_anchor_date = CASE
+        WHEN ${anchorProvided}::boolean THEN ${anchorSqlValue}::date
+        ELSE performance_pay_org.pay_period_anchor_date
+      END,
       updated_at = NOW()
   `;
 }
