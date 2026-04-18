@@ -118,6 +118,11 @@ export interface CalculateExpectedPayOptions {
   startDate: string;
   endDate: string;
   hcpEmployeeId?: string;
+  /**
+   * When true, every employee with at least one time entry in the range is included, even without a
+   * Performance Pay plan (expected pay $0; hours/reviews still shown). Admin-style rollups only.
+   */
+  includeTimesheetEmployeesWithoutPayConfig?: boolean;
 }
 
 /** Compute biweekly period from a date and org calendar settings. Returns [startDate, endDate] in YYYY-MM-DD. */
@@ -299,8 +304,13 @@ function getBonusAmount(
 export async function calculateExpectedPay(
   options: CalculateExpectedPayOptions
 ): Promise<ExpectedPayResult[]> {
-  const { organizationId, startDate, endDate, hcpEmployeeId: filterEmployeeId } =
-    options;
+  const {
+    organizationId,
+    startDate,
+    endDate,
+    hcpEmployeeId: filterEmployeeId,
+    includeTimesheetEmployeesWithoutPayConfig,
+  } = options;
 
   const [ppOrg, configs, assignments, roles] = await Promise.all([
     getPerformancePayOrg(organizationId),
@@ -385,6 +395,15 @@ export async function calculateExpectedPay(
     byWeek.set(weekKey, (byWeek.get(weekKey) ?? 0) + h);
   }
 
+  if (includeTimesheetEmployeesWithoutPayConfig && !filterEmployeeId) {
+    const expanded = new Set(targetIds);
+    for (const e of timeEntries) {
+      const id = e.hcp_employee_id?.trim();
+      if (id) expanded.add(id);
+    }
+    targetIds = Array.from(expanded);
+  }
+
   const techByEmployee = new Map(
     techResult.technicians.map((t) => [
       t.technicianId,
@@ -434,7 +453,49 @@ export async function calculateExpectedPay(
 
   for (const empId of targetIds) {
     const config = getEffectiveConfig(empId);
-    if (!config) continue;
+    if (!config) {
+      if (!includeTimesheetEmployeesWithoutPayConfig) continue;
+
+      const hours = hoursByEmployee.get(empId) ?? 0;
+      const byWeekForPayroll = hoursByEmployeeWeek.get(empId) ?? new Map<string, number>();
+      const { regularHours, overtimeHours } = regularOvertimeHoursFromWeeks(byWeekForPayroll);
+      const tech = techByEmployee.get(empId);
+      const revenue = tech?.totalRevenue ?? 0;
+      const reviews = reviewCounts[empId.trim()] ?? reviewCounts[empId] ?? 0;
+      const fiveStarReviews =
+        fiveStarReviewCounts[empId.trim()] ?? fiveStarReviewCounts[empId] ?? 0;
+      const guideLines = [
+        "No Performance Pay plan is assigned for this employee in this period. Hours come from timesheets only; expected pay is $0.",
+      ];
+      const payrollExport: PayrollExportDetail = {
+        regularHours,
+        overtimeHours,
+        baseHourlyRate: null,
+        appliedHourlyRate: null,
+        overtimePremiumApplies: false,
+        googleReviewsCount: reviews,
+        fiveStarReviewsCount: fiveStarReviews,
+        reviewBonusAmount: 0,
+        commissionRatePct: null,
+        commissionDollars: 0,
+        commissionCountsTowardGross: false,
+        guide: guideLines,
+      };
+      results.push({
+        hcpEmployeeId: empId,
+        employeeName: employeeNames.get(empId),
+        totalRevenue: Math.round(revenue * 100) / 100,
+        reviews,
+        expectedPay: 0,
+        breakdown: {},
+        hoursWorked: Math.round(hours * 100) / 100,
+        payTypeLabel: "—",
+        effectiveHourlyRate: null,
+        structureType: "pure_hourly",
+        payrollExport,
+      });
+      continue;
+    }
 
     const hours = hoursByEmployee.get(empId) ?? 0;
     const tech = techByEmployee.get(empId);
@@ -649,6 +710,12 @@ export async function calculateExpectedPay(
       payrollExport,
     });
   }
+
+  results.sort((a, b) => {
+    const na = (a.employeeName ?? a.hcpEmployeeId).toLowerCase();
+    const nb = (b.employeeName ?? b.hcpEmployeeId).toLowerCase();
+    return na.localeCompare(nb);
+  });
 
   return results;
 }

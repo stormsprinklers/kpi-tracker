@@ -20,6 +20,10 @@ export async function GET(request: Request) {
   const hcpEmployeeId = searchParams.get("hcpEmployeeId") ?? undefined;
 
   const isAdmin = session.user.role === "admin";
+  const includeTimesheetEmployees =
+    isAdmin &&
+    (searchParams.get("includeTimesheetEmployees") === "1" ||
+      searchParams.get("includeTimesheetEmployees") === "true");
 
   if (!isAdmin) {
     const empId = session.user.hcpEmployeeId ?? null;
@@ -43,6 +47,7 @@ export async function GET(request: Request) {
       startDate,
       endDate,
       hcpEmployeeId: isAdmin ? hcpEmployeeId : session.user.hcpEmployeeId ?? undefined,
+      includeTimesheetEmployeesWithoutPayConfig: includeTimesheetEmployees,
     });
 
     return NextResponse.json({

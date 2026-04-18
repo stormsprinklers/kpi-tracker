@@ -77,6 +77,7 @@ export function PayrollExportPanel({
     setError(null);
     try {
       const params = new URLSearchParams({ startDate, endDate });
+      params.set("includeTimesheetEmployees", "1");
       const res = await fetch(`/api/performance-pay/expected?${params}`);
       const data = (await res.json()) as { results?: ExpectedPayResult[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to load");

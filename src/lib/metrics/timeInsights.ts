@@ -509,6 +509,7 @@ export async function getTimeInsights(
         organizationId,
         startDate,
         endDate,
+        includeTimesheetEmployeesWithoutPayConfig: true,
       });
       let totalExpectedPay = 0;
       let totalAttributedRevenue = 0;

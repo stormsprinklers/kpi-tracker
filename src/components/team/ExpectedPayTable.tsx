@@ -14,7 +14,24 @@ type ExpectedPayTableProps = {
   avgJobsPerDayByEmployee?: Record<string, number>;
   /** Omit rows with no timesheet hours in the selected range (Time Insights). */
   excludeZeroHours?: boolean;
+  /**
+   * When true, replaces a single Hours column with Reg. hrs and OT hrs (40h per Mon–Sun week from timesheets).
+   * Used by Time Insights.
+   */
+  splitRegularOvertimeHours?: boolean;
+  /**
+   * When true, requests everyone with timesheet rows in range (including employees without a Performance Pay plan).
+   * Admin API only; no effect for non-admin sessions.
+   */
+  includeTimesheetEmployees?: boolean;
 };
+
+function regOtFromResult(r: ExpectedPayResult): { reg: number; ot: number } {
+  const p = r.payrollExport;
+  if (p) return { reg: p.regularHours, ot: p.overtimeHours };
+  const h = typeof r.hoursWorked === "number" && !Number.isNaN(r.hoursWorked) ? r.hoursWorked : 0;
+  return { reg: h, ot: 0 };
+}
 
 function formatMoney(n: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -28,18 +45,32 @@ function formatMoney(n: number): string {
 function ExpectedPayTableRow({
   r,
   avgJobsPerDayByEmployee,
+  splitRegularOvertimeHours,
 }: {
   r: ExpectedPayResult;
   avgJobsPerDayByEmployee?: Record<string, number>;
+  splitRegularOvertimeHours?: boolean;
 }) {
+  const { reg, ot } = regOtFromResult(r);
   return (
     <tr className="border-b border-zinc-100 dark:border-zinc-800">
       <td className="py-2 pl-4 text-zinc-900 dark:text-zinc-50">
         {r.employeeName ?? r.hcpEmployeeId}
       </td>
-      <td className="py-2 pr-6 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
-        {r.hoursWorked != null ? r.hoursWorked.toFixed(2) : "—"}
-      </td>
+      {splitRegularOvertimeHours ? (
+        <>
+          <td className="py-2 pr-3 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+            {reg.toFixed(2)}
+          </td>
+          <td className="py-2 pr-6 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+            {ot.toFixed(2)}
+          </td>
+        </>
+      ) : (
+        <td className="py-2 pr-6 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+          {r.hoursWorked != null ? r.hoursWorked.toFixed(2) : "—"}
+        </td>
+      )}
       <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
         {typeof avgJobsPerDayByEmployee?.[r.hcpEmployeeId] === "number"
           ? avgJobsPerDayByEmployee[r.hcpEmployeeId].toFixed(2)
@@ -67,6 +98,8 @@ export function ExpectedPayTable({
   syncedEndDate,
   avgJobsPerDayByEmployee,
   excludeZeroHours = false,
+  splitRegularOvertimeHours = false,
+  includeTimesheetEmployees = false,
 }: ExpectedPayTableProps = {}) {
   const isSynced =
     typeof syncedStartDate === "string" &&
@@ -109,7 +142,9 @@ export function ExpectedPayTable({
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch(`/api/performance-pay/expected?startDate=${s}&endDate=${e}`);
+      const params = new URLSearchParams({ startDate: s, endDate: e });
+      if (includeTimesheetEmployees) params.set("includeTimesheetEmployees", "1");
+      const res = await fetch(`/api/performance-pay/expected?${params.toString()}`);
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
         throw new Error(data.error ?? "Failed to load");
@@ -126,7 +161,7 @@ export function ExpectedPayTable({
     } finally {
       setLoading(false);
     }
-  }, [isSynced, syncedStartDate, syncedEndDate, startDate, endDate]);
+  }, [isSynced, syncedStartDate, syncedEndDate, startDate, endDate, includeTimesheetEmployees]);
 
   useEffect(() => {
     fetchExpected();
@@ -149,15 +184,22 @@ export function ExpectedPayTable({
 
   const totals = useMemo(() => {
     let totalHours = 0;
+    let totalReg = 0;
+    let totalOt = 0;
     let totalPay = 0;
     for (const r of visibleResults) {
       totalHours += typeof r.hoursWorked === "number" ? r.hoursWorked : 0;
+      const { reg, ot } = regOtFromResult(r);
+      totalReg += reg;
+      totalOt += ot;
       totalPay += typeof r.expectedPay === "number" ? r.expectedPay : 0;
     }
     const blendedEffective =
       totalHours > 0 ? Math.round((totalPay / totalHours) * 100) / 100 : null;
-    return { totalHours, totalPay, blendedEffective };
+    return { totalHours, totalReg, totalOt, totalPay, blendedEffective };
   }, [visibleResults]);
+
+  const tableColSpan = splitRegularOvertimeHours ? 9 : 8;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -206,12 +248,29 @@ export function ExpectedPayTable({
               <th className="pb-2 pl-4 text-left font-medium text-zinc-700 dark:text-zinc-300">
                 Employee
               </th>
-              <th className="pb-2 pr-6 text-right font-medium text-zinc-700 dark:text-zinc-300">
-                <MetricTooltip
-                  label="Hours"
-                  tooltip="Total hours from timesheets in this period."
-                />
-              </th>
+              {splitRegularOvertimeHours ? (
+                <>
+                  <th className="pb-2 pr-3 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                    <MetricTooltip
+                      label="Reg. hrs"
+                      tooltip="Straight-time bucket from timesheets: up to 40 hours per Mon–Sun workweek in this pay period (same rule as payroll export)."
+                    />
+                  </th>
+                  <th className="pb-2 pr-6 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                    <MetricTooltip
+                      label="OT hrs"
+                      tooltip="Hours beyond 40 in any Mon–Sun workweek in this period (from timesheets). Overtime pay in Performance Pay still follows each pay plan (e.g. only hourly-or-commission uses 1.5× on this OT)."
+                    />
+                  </th>
+                </>
+              ) : (
+                <th className="pb-2 pr-6 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                  <MetricTooltip
+                    label="Hours"
+                    tooltip="Total hours from timesheets in this period."
+                  />
+                </th>
+              )}
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
                   label="Avg Jobs/Day"
@@ -256,13 +315,14 @@ export function ExpectedPayTable({
                 key={r.hcpEmployeeId}
                 r={r}
                 avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
+                splitRegularOvertimeHours={splitRegularOvertimeHours}
               />
             ))}
             {csrRows.length > 0 && (
               <>
                 <tr className="border-b border-zinc-200 bg-zinc-100/90 dark:border-zinc-700 dark:bg-zinc-800/80">
                   <td
-                    colSpan={8}
+                    colSpan={tableColSpan}
                     className="py-2 pl-4 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
                   >
                     Office staff (CSR pay)
@@ -273,6 +333,7 @@ export function ExpectedPayTable({
                     key={r.hcpEmployeeId}
                     r={r}
                     avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
+                    splitRegularOvertimeHours={splitRegularOvertimeHours}
                   />
                 ))}
               </>
@@ -284,9 +345,20 @@ export function ExpectedPayTable({
                 <td className="py-2.5 pl-4 font-semibold text-zinc-900 dark:text-zinc-50">
                   Total
                 </td>
-                <td className="py-2.5 pr-6 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                  {totals.totalHours.toFixed(2)}
-                </td>
+                {splitRegularOvertimeHours ? (
+                  <>
+                    <td className="py-2.5 pr-3 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                      {totals.totalReg.toFixed(2)}
+                    </td>
+                    <td className="py-2.5 pr-6 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                      {totals.totalOt.toFixed(2)}
+                    </td>
+                  </>
+                ) : (
+                  <td className="py-2.5 pr-6 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                    {totals.totalHours.toFixed(2)}
+                  </td>
+                )}
                 <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                   —
                 </td>
