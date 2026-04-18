@@ -292,12 +292,19 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
         error?: string;
         importedRows?: number;
         unmatchedEmployees?: string[];
+        format?: string;
       };
       if (!res.ok) throw new Error(data.error ?? "Import failed");
 
       const unmatched = (data.unmatchedEmployees ?? []).length;
       setUnmatchedCsvNames(data.unmatchedEmployees ?? []);
-      const msg = `Imported ${data.importedRows ?? 0} entries${unmatched > 0 ? ` (${unmatched} unmatched employee name${unmatched > 1 ? "s" : ""})` : ""}.`;
+      const fmtLabel =
+        data.format === "hcp_time_tracking"
+          ? " (HCP time tracking export)"
+          : data.format === "legacy_wide"
+            ? " (legacy wide export)"
+            : "";
+      const msg = `Imported ${data.importedRows ?? 0} day(s)${fmtLabel}${unmatched > 0 ? ` (${unmatched} unmatched employee name${unmatched > 1 ? "s" : ""})` : ""}.`;
       setImportResult(msg);
       fetchEntries();
     } catch (err) {
@@ -385,7 +392,10 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
             </button>
           )}
           {isAdmin && (
-            <label className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+            <label
+              title="Housecall Pro time tracking CSV (Employee Name / Date / Total Hours) or legacy Date + name columns export"
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
               {importingCsv ? "Importing..." : "Import CSV"}
               <input
                 type="file"

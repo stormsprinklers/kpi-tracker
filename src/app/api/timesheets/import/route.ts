@@ -7,42 +7,20 @@ import {
   getTimesheetImportNameMappings,
   upsertImportedTimeEntry,
 } from "@/lib/db/queries";
+import {
+  detectTimesheetCsvFormat,
+  findHeaderColumn,
+  normalizeCsvPersonName,
+  parseCsv,
+  parseLegacyExportDate,
+  parseUsDateToIso,
+} from "@/lib/timesheetImportCsv";
 
 function normalizeName(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, " ").trim();
+  return normalizeCsvPersonName(s);
 }
 
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === "," && !inQuotes) {
-      out.push(cur);
-      cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  out.push(cur);
-  return out.map((v) => v.trim());
-}
-
-function parseExportDate(raw: string): string | null {
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
-
-/** POST /api/timesheets/import - Admin CSV import from HCP time card export. */
+/** POST /api/timesheets/import - Admin CSV import from HCP time card export (legacy wide) or time tracking export (row-based). */
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.organizationId) {
@@ -65,14 +43,21 @@ export async function POST(request: Request) {
   }
 
   const text = await file.text();
-  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
-  if (lines.length < 2) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) {
     return NextResponse.json({ error: "CSV appears empty" }, { status: 400 });
   }
 
-  const header = parseCsvLine(lines[0]);
-  if (header.length < 3 || normalizeName(header[0]) !== "date") {
-    return NextResponse.json({ error: "Unexpected CSV format. First column must be Date." }, { status: 400 });
+  const header = rows[0] ?? [];
+  const fmt = detectTimesheetCsvFormat(header);
+  if (fmt === "unknown") {
+    return NextResponse.json(
+      {
+        error:
+          "Unexpected CSV format. Use the Housecall Pro time tracking export (Employee Name, Date, Total Hours, …) or the legacy export whose first column is Date.",
+      },
+      { status: 400 }
+    );
   }
 
   const employees = await getEmployeesForSelector(org.hcp_company_id);
@@ -91,34 +76,58 @@ export async function POST(request: Request) {
   let skippedRows = 0;
   const unmatchedEmployees = new Set<string>();
 
-  for (let rowIdx = 1; rowIdx < lines.length; rowIdx++) {
-    const row = parseCsvLine(lines[rowIdx]);
-    const dateIso = parseExportDate(row[0] ?? "");
-    if (!dateIso) {
-      skippedRows++;
-      continue;
+  const resolveEmployeeId = (displayName: string): string | null => {
+    const key = normalizeName(displayName);
+    return mappedEmployeeByCsvName.get(key) ?? employeeByName.get(key) ?? null;
+  };
+
+  if (fmt === "hcp_time_tracking") {
+    const idxEmp = findHeaderColumn(header, "employee name");
+    const idxDate = findHeaderColumn(header, "date");
+    const idxTotal = findHeaderColumn(header, "total hours");
+    if (idxDate < 0 || idxTotal < 0) {
+      return NextResponse.json(
+        { error: "CSV is missing required columns Date and/or Total Hours." },
+        { status: 400 }
+      );
     }
+    const idxName = idxEmp >= 0 ? idxEmp : 0;
 
-    // HCP export: Date, EmpName, EmpName (hours), Emp2, Emp2 (hours), ...
-    for (let col = 1; col < header.length; col += 2) {
-      const nameHeader = header[col] ?? "";
-      const hoursHeader = header[col + 1] ?? "";
-      if (!nameHeader || !hoursHeader) continue;
-      if (!/\(hours\)\s*$/i.test(hoursHeader)) continue;
+    let currentEmployeeName: string | null = null;
 
-      const normalizedHeader = normalizeName(nameHeader);
-      const employeeId =
-        mappedEmployeeByCsvName.get(normalizedHeader) ??
-        employeeByName.get(normalizedHeader);
-      if (!employeeId) {
-        if (nameHeader.trim()) unmatchedEmployees.add(nameHeader.trim());
+    for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
+      const row = rows[rowIdx] ?? [];
+      const nameCell = (row[idxName] ?? "").trim();
+      const t0 = normalizeName(nameCell);
+      if (t0 === "employee total" || t0 === "grand total") {
+        continue;
+      }
+      if (nameCell) {
+        currentEmployeeName = nameCell;
+      }
+      if (!currentEmployeeName) {
+        skippedRows++;
         continue;
       }
 
-      const decimalHoursRaw = row[col + 1] ?? "";
-      if (!decimalHoursRaw || !decimalHoursRaw.trim()) continue;
-      const parsed = parseFloat(decimalHoursRaw);
+      const dateRaw = row[idxDate] ?? "";
+      const dateIso = parseUsDateToIso(dateRaw) ?? parseLegacyExportDate(dateRaw);
+      if (!dateIso) {
+        skippedRows++;
+        continue;
+      }
+
+      const hoursRaw = (row[idxTotal] ?? "").trim();
+      if (!hoursRaw) continue;
+
+      const parsed = parseFloat(hoursRaw.replace(/,/g, ""));
       if (Number.isNaN(parsed)) continue;
+
+      const employeeId = resolveEmployeeId(currentEmployeeName);
+      if (!employeeId) {
+        unmatchedEmployees.add(currentEmployeeName);
+        continue;
+      }
 
       await upsertImportedTimeEntry({
         organization_id: session.user.organizationId,
@@ -129,6 +138,45 @@ export async function POST(request: Request) {
       });
       importedRows++;
     }
+  } else {
+    // legacy_wide: Date, EmpName, EmpName (hours), ...
+    for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
+      const row = rows[rowIdx];
+      const dateIso = parseLegacyExportDate(row[0] ?? "");
+      if (!dateIso) {
+        skippedRows++;
+        continue;
+      }
+
+      for (let col = 1; col < header.length; col += 2) {
+        const nameHeader = header[col] ?? "";
+        const hoursHeader = header[col + 1] ?? "";
+        if (!nameHeader || !hoursHeader) continue;
+        if (!/\(hours\)\s*$/i.test(hoursHeader)) continue;
+
+        const normalizedHeader = normalizeName(nameHeader);
+        const employeeId =
+          mappedEmployeeByCsvName.get(normalizedHeader) ?? employeeByName.get(normalizedHeader);
+        if (!employeeId) {
+          if (nameHeader.trim()) unmatchedEmployees.add(nameHeader.trim());
+          continue;
+        }
+
+        const decimalHoursRaw = row[col + 1] ?? "";
+        if (!decimalHoursRaw || !decimalHoursRaw.trim()) continue;
+        const parsed = parseFloat(decimalHoursRaw.replace(/,/g, ""));
+        if (Number.isNaN(parsed)) continue;
+
+        await upsertImportedTimeEntry({
+          organization_id: session.user.organizationId,
+          hcp_employee_id: employeeId,
+          entry_date: dateIso,
+          hours: parsed,
+          notes: `[Imported CSV] ${importedAt}`,
+        });
+        importedRows++;
+      }
+    }
   }
 
   return NextResponse.json({
@@ -136,6 +184,6 @@ export async function POST(request: Request) {
     importedRows,
     skippedRows,
     unmatchedEmployees: Array.from(unmatchedEmployees),
+    format: fmt,
   });
 }
-
