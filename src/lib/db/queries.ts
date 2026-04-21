@@ -1224,60 +1224,77 @@ export async function deleteOrganizationInvitation(id: string) {
   await sql`DELETE FROM organization_invitations WHERE id = ${id}::uuid`;
 }
 
-// Crews (foreman + members → dashboard KPI rollups by HCP employee id)
+// Crews (foreman + members by HCP employee id — synced employees/pros, app account not required)
 export type CrewMemberRow = {
-  userId: string;
-  email: string;
-  hcpEmployeeId: string | null;
+  hcpEmployeeId: string;
+  displayName: string;
 };
 
 export type CrewWithMembersRow = {
   id: string;
   name: string;
-  foremanUserId: string;
-  foremanEmail: string;
-  foremanHcpEmployeeId: string | null;
+  foremanHcpEmployeeId: string;
+  foremanDisplayName: string;
   members: CrewMemberRow[];
 };
 
+export async function assertValidCrewHcpIdsForOrganization(
+  organizationId: string,
+  hcpEmployeeIds: string[]
+): Promise<void> {
+  const org = await getOrganizationById(organizationId);
+  const companyId = org?.hcp_company_id?.trim();
+  if (!companyId) {
+    throw new Error("Connect Housecall Pro to manage crews");
+  }
+  const roster = await getEmployeesAndProsForCsrSelector(companyId);
+  const allowed = new Set(roster.map((r) => r.id.trim()).filter(Boolean));
+  const unique = [...new Set(hcpEmployeeIds.map((id) => id.trim()).filter(Boolean))];
+  for (const id of unique) {
+    if (!allowed.has(id)) {
+      throw new Error(`"${id}" is not a synced employee or pro for this organization`);
+    }
+  }
+}
+
+async function buildHcpNameMap(organizationId: string): Promise<Map<string, string>> {
+  const org = await getOrganizationById(organizationId);
+  const companyId = org?.hcp_company_id?.trim();
+  if (!companyId) return new Map();
+  const roster = await getEmployeesAndProsForCsrSelector(companyId);
+  return new Map(roster.map((e) => [e.id.trim(), e.name]));
+}
+
 export async function listCrewsWithMembers(organizationId: string): Promise<CrewWithMembersRow[]> {
+  const nameByHcp = await buildHcpNameMap(organizationId);
   const crewRows = await sql`
-    SELECT c.id::text, c.name, c.foreman_user_id::text,
-      fu.email AS foreman_email,
-      fu.hcp_employee_id AS foreman_hcp_employee_id
+    SELECT c.id::text, c.name, TRIM(c.foreman_hcp_employee_id) AS foreman_hcp
     FROM crews c
-    INNER JOIN users fu ON fu.id = c.foreman_user_id
     WHERE c.organization_id = ${organizationId}::uuid
     ORDER BY c.name ASC
   `;
-  const crews = (crewRows.rows ?? []) as {
-    id: string;
-    name: string;
-    foreman_user_id: string;
-    foreman_email: string;
-    foreman_hcp_employee_id: string | null;
-  }[];
-  if (crews.length === 0) return [];
-
   const out: CrewWithMembersRow[] = [];
-  for (const c of crews) {
+  for (const row of crewRows.rows ?? []) {
+    const r = row as { id: string; name: string; foreman_hcp: string };
+    const fh = (r.foreman_hcp ?? "").trim();
     const memRes = await sql`
-      SELECT u.id::text, u.email, u.hcp_employee_id
-      FROM crew_members cm
-      INNER JOIN users u ON u.id = cm.user_id
-      WHERE cm.crew_id = ${c.id}::uuid
-      ORDER BY u.email ASC
+      SELECT TRIM(hcp_employee_id) AS hid
+      FROM crew_members
+      WHERE crew_id = ${r.id}::uuid
+      ORDER BY hcp_employee_id ASC
     `;
-    const members: CrewMemberRow[] = (memRes.rows ?? []).map((m) => {
-      const r = m as { id: string; email: string; hcp_employee_id: string | null };
-      return { userId: r.id, email: r.email, hcpEmployeeId: r.hcp_employee_id ?? null };
-    });
+    const memberIds = (memRes.rows ?? [])
+      .map((m) => (m as { hid: string }).hid)
+      .filter((id): id is string => Boolean(id?.trim()));
+    const members: CrewMemberRow[] = memberIds.map((hid) => ({
+      hcpEmployeeId: hid,
+      displayName: nameByHcp.get(hid) ?? hid,
+    }));
     out.push({
-      id: c.id,
-      name: c.name,
-      foremanUserId: c.foreman_user_id,
-      foremanEmail: c.foreman_email,
-      foremanHcpEmployeeId: c.foreman_hcp_employee_id ?? null,
+      id: r.id,
+      name: r.name,
+      foremanHcpEmployeeId: fh,
+      foremanDisplayName: nameByHcp.get(fh) ?? fh,
       members,
     });
   }
@@ -1285,42 +1302,34 @@ export async function listCrewsWithMembers(organizationId: string): Promise<Crew
 }
 
 export async function getCrewById(crewId: string, organizationId: string): Promise<CrewWithMembersRow | null> {
+  const nameByHcp = await buildHcpNameMap(organizationId);
   const check = await sql`
-    SELECT c.id::text, c.name, c.foreman_user_id::text,
-      fu.email AS foreman_email,
-      fu.hcp_employee_id AS foreman_hcp_employee_id
+    SELECT c.id::text, c.name, TRIM(c.foreman_hcp_employee_id) AS foreman_hcp
     FROM crews c
-    INNER JOIN users fu ON fu.id = c.foreman_user_id
     WHERE c.id = ${crewId}::uuid AND c.organization_id = ${organizationId}::uuid
     LIMIT 1
   `;
-  const row = check.rows?.[0] as
-    | {
-        id: string;
-        name: string;
-        foreman_user_id: string;
-        foreman_email: string;
-        foreman_hcp_employee_id: string | null;
-      }
-    | undefined;
+  const row = check.rows?.[0] as { id: string; name: string; foreman_hcp: string } | undefined;
   if (!row) return null;
+  const fh = (row.foreman_hcp ?? "").trim();
   const memRes = await sql`
-    SELECT u.id::text, u.email, u.hcp_employee_id
-    FROM crew_members cm
-    INNER JOIN users u ON u.id = cm.user_id
-    WHERE cm.crew_id = ${row.id}::uuid
-    ORDER BY u.email ASC
+    SELECT TRIM(hcp_employee_id) AS hid
+    FROM crew_members
+    WHERE crew_id = ${row.id}::uuid
+    ORDER BY hcp_employee_id ASC
   `;
-  const members: CrewMemberRow[] = (memRes.rows ?? []).map((m) => {
-    const r = m as { id: string; email: string; hcp_employee_id: string | null };
-    return { userId: r.id, email: r.email, hcpEmployeeId: r.hcp_employee_id ?? null };
-  });
+  const memberIds = (memRes.rows ?? [])
+    .map((m) => (m as { hid: string }).hid)
+    .filter((id): id is string => Boolean(id?.trim()));
+  const members: CrewMemberRow[] = memberIds.map((hid) => ({
+    hcpEmployeeId: hid,
+    displayName: nameByHcp.get(hid) ?? hid,
+  }));
   return {
     id: row.id,
     name: row.name,
-    foremanUserId: row.foreman_user_id,
-    foremanEmail: row.foreman_email,
-    foremanHcpEmployeeId: row.foreman_hcp_employee_id ?? null,
+    foremanHcpEmployeeId: fh,
+    foremanDisplayName: nameByHcp.get(fh) ?? fh,
     members,
   };
 }
@@ -1328,26 +1337,31 @@ export async function getCrewById(crewId: string, organizationId: string): Promi
 export async function createCrew(params: {
   organizationId: string;
   name: string;
-  foremanUserId: string;
-  memberUserIds: string[];
+  foremanHcpEmployeeId: string;
+  memberHcpEmployeeIds: string[];
 }): Promise<{ id: string }> {
   const trimmed = params.name.trim();
   if (!trimmed) throw new Error("Crew name is required");
+  const foreman = params.foremanHcpEmployeeId.trim();
+  if (!foreman) throw new Error("Foreman is required");
+
+  const memberIds = params.memberHcpEmployeeIds.map((x) => x.trim()).filter(Boolean);
+  await assertValidCrewHcpIdsForOrganization(params.organizationId, [foreman, ...memberIds]);
+
   const res = await sql`
-    INSERT INTO crews (organization_id, name, foreman_user_id)
-    VALUES (${params.organizationId}::uuid, ${trimmed}, ${params.foremanUserId}::uuid)
+    INSERT INTO crews (organization_id, name, foreman_hcp_employee_id)
+    VALUES (${params.organizationId}::uuid, ${trimmed}, ${foreman})
     RETURNING id::text
   `;
   const id = (res.rows?.[0] as { id: string }).id;
-  const seen = new Set<string>();
-  for (const uid of params.memberUserIds) {
-    const u = uid?.trim();
-    if (!u || seen.has(u)) continue;
-    seen.add(u);
+  const seen = new Set<string>([foreman]);
+  for (const hid of memberIds) {
+    if (seen.has(hid)) continue;
+    seen.add(hid);
     await sql`
-      INSERT INTO crew_members (crew_id, user_id)
-      VALUES (${id}::uuid, ${u}::uuid)
-      ON CONFLICT (crew_id, user_id) DO NOTHING
+      INSERT INTO crew_members (crew_id, hcp_employee_id)
+      VALUES (${id}::uuid, ${hid})
+      ON CONFLICT (crew_id, hcp_employee_id) DO NOTHING
     `;
   }
   return { id };
@@ -1358,43 +1372,50 @@ export async function updateCrew(
   organizationId: string,
   params: {
     name?: string;
-    foremanUserId?: string;
-    memberUserIds?: string[];
+    foremanHcpEmployeeId?: string;
+    memberHcpEmployeeIds?: string[];
   }
 ): Promise<void> {
   if (
     params.name === undefined &&
-    params.foremanUserId === undefined &&
-    params.memberUserIds === undefined
+    params.foremanHcpEmployeeId === undefined &&
+    params.memberHcpEmployeeIds === undefined
   ) {
     return;
   }
-  const existing = await sql`
-    SELECT id::text FROM crews WHERE id = ${crewId}::uuid AND organization_id = ${organizationId}::uuid LIMIT 1
-  `;
-  if (!existing.rows?.[0]) throw new Error("Crew not found");
+  const existing = await getCrewById(crewId, organizationId);
+  if (!existing) throw new Error("Crew not found");
+
+  const nextForeman = params.foremanHcpEmployeeId?.trim() ?? existing.foremanHcpEmployeeId;
+  const nextMembers =
+    params.memberHcpEmployeeIds !== undefined
+      ? params.memberHcpEmployeeIds.map((x) => x.trim()).filter(Boolean)
+      : existing.members.map((m) => m.hcpEmployeeId);
+
+  if (params.foremanHcpEmployeeId !== undefined || params.memberHcpEmployeeIds !== undefined) {
+    await assertValidCrewHcpIdsForOrganization(organizationId, [nextForeman, ...nextMembers]);
+  }
 
   if (params.name !== undefined) {
     const t = params.name.trim();
     if (!t) throw new Error("Crew name is required");
     await sql`UPDATE crews SET name = ${t}, updated_at = NOW() WHERE id = ${crewId}::uuid`;
   }
-  if (params.foremanUserId !== undefined) {
+  if (params.foremanHcpEmployeeId !== undefined) {
     await sql`
-      UPDATE crews SET foreman_user_id = ${params.foremanUserId}::uuid, updated_at = NOW()
+      UPDATE crews SET foreman_hcp_employee_id = ${nextForeman}, updated_at = NOW()
       WHERE id = ${crewId}::uuid
     `;
   }
-  if (params.memberUserIds !== undefined) {
+  if (params.memberHcpEmployeeIds !== undefined) {
     await sql`DELETE FROM crew_members WHERE crew_id = ${crewId}::uuid`;
-    const seen = new Set<string>();
-    for (const uid of params.memberUserIds) {
-      const u = uid?.trim();
-      if (!u || seen.has(u)) continue;
-      seen.add(u);
+    const seen = new Set<string>([nextForeman]);
+    for (const hid of nextMembers) {
+      if (seen.has(hid)) continue;
+      seen.add(hid);
       await sql`
-        INSERT INTO crew_members (crew_id, user_id)
-        VALUES (${crewId}::uuid, ${u}::uuid)
+        INSERT INTO crew_members (crew_id, hcp_employee_id)
+        VALUES (${crewId}::uuid, ${hid})
       `;
     }
   }

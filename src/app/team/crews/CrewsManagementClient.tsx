@@ -1,18 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { CrewMemberRow, CrewWithMembersRow } from "@/lib/db/queries";
+import type { CrewWithMembersRow } from "@/lib/db/queries";
 
-interface OrgUser {
+interface HcpRosterEntry {
   id: string;
-  email: string;
-  role: string;
-  hcp_employee_id: string | null;
+  name: string;
 }
 
 export function CrewsManagementClient() {
   const [crews, setCrews] = useState<CrewWithMembersRow[]>([]);
-  const [users, setUsers] = useState<OrgUser[]>([]);
+  const [roster, setRoster] = useState<HcpRosterEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -20,24 +18,24 @@ export function CrewsManagementClient() {
   const [mode, setMode] = useState<"create" | "edit">("create");
   const [editCrewId, setEditCrewId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [foremanUserId, setForemanUserId] = useState("");
-  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
+  const [foremanHcpEmployeeId, setForemanHcpEmployeeId] = useState("");
+  const [selectedMemberHcpIds, setSelectedMemberHcpIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [cRes, uRes] = await Promise.all([fetch("/api/crews"), fetch("/api/users")]);
+      const [cRes, rRes] = await Promise.all([fetch("/api/crews"), fetch("/api/crews/hcp-roster")]);
       if (!cRes.ok) throw new Error("Failed to load crews");
-      if (!uRes.ok) throw new Error("Failed to load users");
+      if (!rRes.ok) throw new Error("Failed to load employee roster");
       const cData = (await cRes.json()) as { crews?: CrewWithMembersRow[] };
-      const uData = (await uRes.json()) as OrgUser[];
+      const rData = (await rRes.json()) as { employees?: HcpRosterEntry[] };
       setCrews(cData.crews ?? []);
-      setUsers(Array.isArray(uData) ? uData : []);
+      setRoster(Array.isArray(rData.employees) ? rData.employees : []);
     } catch {
       setError("Could not load data.");
       setCrews([]);
-      setUsers([]);
+      setRoster([]);
     } finally {
       setLoading(false);
     }
@@ -51,43 +49,47 @@ export function CrewsManagementClient() {
     setMode("create");
     setEditCrewId(null);
     setName("");
-    setForemanUserId("");
-    setSelectedMemberIds(new Set());
+    setForemanHcpEmployeeId("");
+    setSelectedMemberHcpIds(new Set());
   }
 
   function startEdit(crew: CrewWithMembersRow) {
     setMode("edit");
     setEditCrewId(crew.id);
     setName(crew.name);
-    setForemanUserId(crew.foremanUserId);
-    setSelectedMemberIds(new Set(crew.members.map((m) => m.userId)));
+    setForemanHcpEmployeeId(crew.foremanHcpEmployeeId);
+    setSelectedMemberHcpIds(new Set(crew.members.map((m) => m.hcpEmployeeId)));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function toggleMember(userId: string) {
-    setSelectedMemberIds((prev) => {
+  function toggleMember(hcpEmployeeId: string) {
+    setSelectedMemberHcpIds((prev) => {
       const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+      if (next.has(hcpEmployeeId)) next.delete(hcpEmployeeId);
+      else next.add(hcpEmployeeId);
       return next;
     });
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !foremanUserId) {
+    if (!name.trim() || !foremanHcpEmployeeId) {
       setError("Crew name and foreman are required.");
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      const memberUserIds = Array.from(selectedMemberIds);
+      const memberHcpEmployeeIds = Array.from(selectedMemberHcpIds);
       if (mode === "create") {
         const res = await fetch("/api/crews", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), foremanUserId, memberUserIds }),
+          body: JSON.stringify({
+            name: name.trim(),
+            foremanHcpEmployeeId,
+            memberHcpEmployeeIds,
+          }),
         });
         const data = (await res.json()) as { error?: string };
         if (!res.ok) throw new Error(data.error ?? "Create failed");
@@ -97,8 +99,8 @@ export function CrewsManagementClient() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: name.trim(),
-            foremanUserId,
-            memberUserIds,
+            foremanHcpEmployeeId,
+            memberHcpEmployeeIds,
           }),
         });
         const data = (await res.json()) as { error?: string };
@@ -127,12 +129,12 @@ export function CrewsManagementClient() {
     }
   }
 
-  function memberSummary(members: CrewMemberRow[]): string {
+  function memberSummary(members: CrewWithMembersRow["members"]): string {
     if (members.length === 0) return "No members selected";
-    return members.map((m) => m.email).join(", ");
+    return members.map((m) => m.displayName).join(", ");
   }
 
-  const sortedUsers = [...users].sort((a, b) => a.email.localeCompare(b.email));
+  const sortedRoster = [...roster].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="space-y-6">
@@ -141,9 +143,9 @@ export function CrewsManagementClient() {
           {mode === "create" ? "Create crew" : "Edit crew"}
         </h2>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          Name the crew, choose a foreman, and select users to include. KPIs on the home dashboard roll up paid revenue,
-          conversion, rev/hour, and avg ticket across everyone in the crew who has a linked Housecall Pro employee id
-          (including the foreman when linked).
+          Name the crew, choose a foreman, and select additional members from your synced Housecall Pro employees and
+          pros. They do not need an app login. KPIs on the home dashboard roll up paid revenue, conversion, rev/hour, and
+          avg ticket across the foreman and every selected member (by HCP employee id).
         </p>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
@@ -166,43 +168,47 @@ export function CrewsManagementClient() {
             </label>
             <select
               id="crew-foreman"
-              value={foremanUserId}
-              onChange={(e) => setForemanUserId(e.target.value)}
+              value={foremanHcpEmployeeId}
+              onChange={(e) => setForemanHcpEmployeeId(e.target.value)}
               required
               className="mt-1 w-full max-w-md rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
             >
-              <option value="">Select user…</option>
-              {sortedUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.email}
-                  {u.hcp_employee_id ? " (HCP linked)" : ""} — {u.role}
+              <option value="">Select employee…</option>
+              {sortedRoster.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
                 </option>
               ))}
             </select>
+            {sortedRoster.length === 0 && (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                No synced employees found. Connect Housecall Pro and run a sync so the roster appears here.
+              </p>
+            )}
           </div>
           <div>
             <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Crew members</span>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Check each user who belongs in this crew. Their linked technician IDs are combined for dashboard totals.
+              Check each person who belongs in this crew (in addition to the foreman). The foreman is always included
+              in rollups even if not checked here.
             </p>
             <div className="mt-2 max-h-48 overflow-y-auto rounded border border-zinc-200 p-2 dark:border-zinc-700">
-              {sortedUsers.length === 0 ? (
-                <p className="text-sm text-zinc-500">No users in organization.</p>
+              {sortedRoster.length === 0 ? (
+                <p className="text-sm text-zinc-500">No employees on roster.</p>
               ) : (
                 <ul className="space-y-1.5">
-                  {sortedUsers.map((u) => (
-                    <li key={u.id}>
+                  {sortedRoster.map((e) => (
+                    <li key={e.id}>
                       <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-800/80">
                         <input
                           type="checkbox"
-                          checked={selectedMemberIds.has(u.id)}
-                          onChange={() => toggleMember(u.id)}
+                          checked={selectedMemberHcpIds.has(e.id)}
+                          onChange={() => toggleMember(e.id)}
                           className="rounded border-zinc-300 dark:border-zinc-600"
                         />
-                        <span className="text-sm text-zinc-900 dark:text-zinc-100">{u.email}</span>
-                        <span className="text-xs text-zinc-500">{u.role}</span>
-                        {!u.hcp_employee_id && (
-                          <span className="text-xs text-amber-600 dark:text-amber-400">(no HCP id)</span>
+                        <span className="text-sm text-zinc-900 dark:text-zinc-100">{e.name}</span>
+                        {e.id === foremanHcpEmployeeId && (
+                          <span className="text-xs text-zinc-500">(also foreman)</span>
                         )}
                       </label>
                     </li>
@@ -250,7 +256,7 @@ export function CrewsManagementClient() {
                   <div>
                     <h3 className="font-medium text-zinc-900 dark:text-zinc-50">{c.name}</h3>
                     <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                      Foreman: <span className="font-medium">{c.foremanEmail}</span>
+                      Foreman: <span className="font-medium">{c.foremanDisplayName}</span>
                     </p>
                     <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                       Members: {memberSummary(c.members)}

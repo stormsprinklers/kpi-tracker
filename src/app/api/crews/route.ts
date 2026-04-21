@@ -1,15 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
-import { createCrew, getUsersByOrganizationId, listCrewsWithMembers } from "@/lib/db/queries";
-
-function userIdsBelongToOrg(orgId: string, ids: string[], allowed: { id: string }[]): boolean {
-  const set = new Set(allowed.map((u) => u.id));
-  for (const id of ids) {
-    if (!id?.trim() || !set.has(id.trim())) return false;
-  }
-  return true;
-}
+import { createCrew, listCrewsWithMembers } from "@/lib/db/queries";
 
 export async function GET() {
   const session = await auth();
@@ -40,42 +32,33 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     name?: string;
-    foremanUserId?: string;
-    memberUserIds?: string[];
+    foremanHcpEmployeeId?: string;
+    memberHcpEmployeeIds?: string[];
   };
   const name = body.name?.trim();
-  const foremanUserId = body.foremanUserId?.trim();
-  const memberUserIds = Array.isArray(body.memberUserIds) ? body.memberUserIds : [];
+  const foremanHcpEmployeeId = body.foremanHcpEmployeeId?.trim();
+  const memberHcpEmployeeIds = Array.isArray(body.memberHcpEmployeeIds) ? body.memberHcpEmployeeIds : [];
 
-  if (!name || !foremanUserId) {
+  if (!name || !foremanHcpEmployeeId) {
     return NextResponse.json(
-      { error: "Crew name and foreman are required" },
+      { error: "Crew name and foreman (employee) are required" },
       { status: 400 }
     );
   }
 
   try {
     await initSchema();
-    const orgId = session.user.organizationId;
-    const orgUsers = await getUsersByOrganizationId(orgId);
-    const allIds = [...new Set([foremanUserId, ...memberUserIds.map((x) => String(x).trim())])];
-    if (!userIdsBelongToOrg(orgId, allIds, orgUsers)) {
-      return NextResponse.json(
-        { error: "Foreman and all members must be users in your organization" },
-        { status: 400 }
-      );
-    }
-
     const { id } = await createCrew({
-      organizationId: orgId,
+      organizationId: session.user.organizationId,
       name,
-      foremanUserId,
-      memberUserIds: memberUserIds.map((x) => String(x).trim()).filter(Boolean),
+      foremanHcpEmployeeId,
+      memberHcpEmployeeIds: memberHcpEmployeeIds.map((x) => String(x).trim()).filter(Boolean),
     });
     return NextResponse.json({ id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to create crew";
     console.error("[crews POST]", err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = msg.includes("not a synced") || msg.includes("Connect Housecall") ? 400 : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
 }

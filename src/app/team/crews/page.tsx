@@ -17,7 +17,7 @@ export default async function TeamCrewsPage() {
         <div>
           <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Crews</h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Group users under a foreman. Named crews appear as combined totals on the home dashboard (Technician KPIs).
+            Group Housecall Pro employees and pros under a foreman (no app account required). Named crews appear as combined totals on the home dashboard (Technician KPIs).
           </p>
         </div>
         <CrewsManagementClient />

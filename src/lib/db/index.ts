@@ -503,7 +503,7 @@ export async function initSchema(): Promise<void> {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
-      foreman_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      foreman_hcp_employee_id TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -514,12 +514,54 @@ export async function initSchema(): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS crew_members (
       crew_id UUID NOT NULL REFERENCES crews(id) ON DELETE CASCADE,
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      PRIMARY KEY (crew_id, user_id)
+      hcp_employee_id TEXT NOT NULL,
+      PRIMARY KEY (crew_id, hcp_employee_id)
     )
   `;
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_crew_members_user_id ON crew_members (user_id)
+    CREATE INDEX IF NOT EXISTS idx_crew_members_hcp_employee_id ON crew_members (hcp_employee_id)
+  `;
+
+  /* Migrate legacy user-based crews → HCP ids (employees/pros synced from Housecall Pro). */
+  await sql`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'crews' AND column_name = 'foreman_user_id'
+      ) THEN
+        ALTER TABLE crews ADD COLUMN IF NOT EXISTS foreman_hcp_employee_id TEXT;
+        UPDATE crews c
+        SET foreman_hcp_employee_id = NULLIF(TRIM(u.hcp_employee_id), '')
+        FROM users u
+        WHERE u.id = c.foreman_user_id;
+        DELETE FROM crews WHERE foreman_hcp_employee_id IS NULL OR TRIM(foreman_hcp_employee_id) = '';
+        ALTER TABLE crews DROP CONSTRAINT IF EXISTS crews_foreman_user_id_fkey;
+        ALTER TABLE crews DROP COLUMN IF EXISTS foreman_user_id;
+        ALTER TABLE crews ALTER COLUMN foreman_hcp_employee_id SET NOT NULL;
+      END IF;
+    END $$
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'crew_members' AND column_name = 'user_id'
+      ) THEN
+        ALTER TABLE crew_members ADD COLUMN IF NOT EXISTS hcp_employee_id TEXT;
+        UPDATE crew_members cm
+        SET hcp_employee_id = NULLIF(TRIM(u.hcp_employee_id), '')
+        FROM users u
+        WHERE u.id = cm.user_id;
+        DELETE FROM crew_members WHERE hcp_employee_id IS NULL OR TRIM(hcp_employee_id) = '';
+        ALTER TABLE crew_members DROP CONSTRAINT IF EXISTS crew_members_user_id_fkey;
+        ALTER TABLE crew_members DROP CONSTRAINT IF EXISTS crew_members_pkey;
+        ALTER TABLE crew_members DROP COLUMN IF EXISTS user_id;
+        ALTER TABLE crew_members ALTER COLUMN hcp_employee_id SET NOT NULL;
+        ALTER TABLE crew_members ADD PRIMARY KEY (crew_id, hcp_employee_id);
+      END IF;
+    END $$
   `;
 
   // Time entries (timesheets) - employee time tracking, scoped by hcp_employee_id

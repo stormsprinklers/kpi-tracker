@@ -23,7 +23,8 @@ export interface TechnicianRevenue {
 export interface CrewRevenue {
   crewId: string;
   crewName: string;
-  foremanEmail: string;
+  /** Foreman display name from synced HCP roster (not tied to app login). */
+  foremanLabel: string;
   /** HCP employee ids included in this crew rollup */
   technicianIds: string[];
   totalRevenue: number;
@@ -335,8 +336,8 @@ function hasApprovedOption(estimate: Record<string, unknown>): boolean {
 }
 
 function collectHcpIdsForCrew(def: {
-  foremanHcpEmployeeId: string | null;
-  members: { hcpEmployeeId: string | null }[];
+  foremanHcpEmployeeId: string;
+  members: { hcpEmployeeId: string }[];
 }): string[] {
   const ids = new Set<string>();
   const add = (id: string | null | undefined) => {
@@ -657,7 +658,7 @@ export async function getTechnicianRevenue(
         return {
           crewId: def.id,
           crewName: def.name,
-          foremanEmail: def.foremanEmail,
+          foremanLabel: def.foremanDisplayName,
           technicianIds,
           ...agg,
         };

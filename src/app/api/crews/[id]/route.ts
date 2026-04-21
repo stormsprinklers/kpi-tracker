@@ -1,15 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
-import { deleteCrew, getUsersByOrganizationId, updateCrew } from "@/lib/db/queries";
-
-function userIdsBelongToOrg(ids: string[], allowed: { id: string }[]): boolean {
-  const set = new Set(allowed.map((u) => u.id));
-  for (const id of ids) {
-    if (!id?.trim() || !set.has(id.trim())) return false;
-  }
-  return true;
-}
+import { deleteCrew, updateCrew } from "@/lib/db/queries";
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -27,35 +19,21 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   const body = (await request.json()) as {
     name?: string;
-    foremanUserId?: string;
-    memberUserIds?: string[];
+    foremanHcpEmployeeId?: string;
+    memberHcpEmployeeIds?: string[];
   };
 
   try {
     await initSchema();
-    const orgId = session.user.organizationId;
-    const orgUsers = await getUsersByOrganizationId(orgId);
-
-    const idsToCheck: string[] = [];
-    if (body.foremanUserId) idsToCheck.push(body.foremanUserId.trim());
-    if (body.memberUserIds) idsToCheck.push(...body.memberUserIds.map((x) => String(x).trim()).filter(Boolean));
-    const unique = [...new Set(idsToCheck)];
-    if (unique.length > 0 && !userIdsBelongToOrg(unique, orgUsers)) {
-      return NextResponse.json(
-        { error: "Foreman and all members must be users in your organization" },
-        { status: 400 }
-      );
-    }
-
-    await updateCrew(crewId, orgId, {
+    await updateCrew(crewId, session.user.organizationId, {
       name: body.name,
-      foremanUserId: body.foremanUserId?.trim(),
-      memberUserIds: body.memberUserIds,
+      foremanHcpEmployeeId: body.foremanHcpEmployeeId?.trim(),
+      memberHcpEmployeeIds: body.memberHcpEmployeeIds,
     });
     return NextResponse.json({ success: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Update failed";
-    const status = msg === "Crew not found" ? 404 : 500;
+    const status = msg === "Crew not found" ? 404 : msg.includes("not a synced") || msg.includes("Connect Housecall") ? 400 : 500;
     console.error("[crews PATCH]", err);
     return NextResponse.json({ error: msg }, { status });
   }

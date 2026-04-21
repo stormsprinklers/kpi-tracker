@@ -17,7 +17,7 @@ interface TechnicianRevenue {
 interface CrewRevenue {
   crewId: string;
   crewName: string;
-  foremanEmail: string;
+  foremanLabel: string;
   technicianIds: string[];
   totalRevenue: number;
   conversionRate: number | null;
@@ -265,7 +265,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                         <td className="px-3 py-2 text-zinc-900 dark:text-zinc-50">
                           <span className="font-medium">{c.crewName}</span>
                           <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
-                            Foreman: {c.foremanEmail}
+                            Foreman: {c.foremanLabel}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
@@ -368,7 +368,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                         </p>
                         <h3 className="truncate font-medium text-zinc-900 dark:text-zinc-50">{crew.crewName}</h3>
                         <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                          Foreman: {crew.foremanEmail}
+                          Foreman: {crew.foremanLabel}
                         </p>
                       </div>
                     </div>
