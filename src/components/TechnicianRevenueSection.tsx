@@ -14,9 +14,21 @@ interface TechnicianRevenue {
   avgTicket: number | null;
 }
 
+interface CrewRevenue {
+  crewId: string;
+  crewName: string;
+  foremanEmail: string;
+  technicianIds: string[];
+  totalRevenue: number;
+  conversionRate: number | null;
+  revenuePerHour: number | null;
+  avgTicket: number | null;
+}
+
 interface TechnicianRevenueResult {
   technicians: TechnicianRevenue[];
   totalRevenue: number;
+  crews?: CrewRevenue[];
 }
 
 interface TechnicianCard {
@@ -206,53 +218,120 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
       {error && (
         <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
       )}
-      {!loading && !error && (!data || data.technicians.length === 0) && (
+      {!loading &&
+        !error &&
+        (!data || (data.technicians.length === 0 && (!data.crews || data.crews.length === 0))) && (
         <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
-          No technician KPI data for this period. Connect Housecall Pro and ensure jobs are marked paid or have paid invoices.
+          No technician or crew KPI data for this period. Connect Housecall Pro and ensure jobs are marked paid or have paid invoices.
         </p>
       )}
-      {!loading && !error && data && data.technicians.length > 0 && viewTab === "tables" && isAdmin && (
+      {!loading &&
+        !error &&
+        data &&
+        (data.technicians.length > 0 || (data.crews && data.crews.length > 0)) &&
+        viewTab === "tables" &&
+        isAdmin && (
         <>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[280px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Technician</th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    <MetricTooltip label="Revenue" tooltip="Total paid revenue from jobs assigned to this technician. Uses job paid amount minus outstanding, split across co-assigned techs." />
-                  </th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    <MetricTooltip label="Conversion Rate %" tooltip="Share of estimates with an approved option. Calculated as (approved estimates / total estimates) × 100 for this technician." />
-                  </th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. Total job revenue on days with time entries, divided by hours logged." />
-                  </th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                    <MetricTooltip label="Avg Ticket" tooltip="Average paid ticket for this technician. Calculated as total paid revenue divided by number of billable jobs." />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.technicians.map((t) => (
-                  <tr key={t.technicianId} className="border-b border-zinc-100 dark:border-zinc-800">
-                    <td className="py-2 text-zinc-900 dark:text-zinc-50">{t.technicianName}</td>
-                    <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
-                      {formatCurrency(t.totalRevenue)}
-                    </td>
-                    <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
-                      {t.conversionRate != null ? `${t.conversionRate.toFixed(1)}%` : "—"}
-                    </td>
-                    <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
-                      {t.revenuePerHour != null ? `${formatCurrency(t.revenuePerHour)}/hr` : "N/A"}
-                    </td>
-                    <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
-                      {t.avgTicket != null ? formatCurrency(t.avgTicket) : "—"}
-                    </td>
+          {data.crews && data.crews.length > 0 && (
+            <div className="mt-4">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-400">
+                Crews
+              </h3>
+              <div className="overflow-x-auto rounded-lg border border-amber-200/80 dark:border-amber-900/50">
+                <table className="w-full min-w-[280px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-amber-200/80 bg-amber-50/90 dark:border-amber-900/40 dark:bg-amber-950/40">
+                      <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300">Crew</th>
+                      <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                        <MetricTooltip label="Revenue" tooltip="Combined paid revenue for all technicians in this crew (same rules as individual KPIs)." />
+                      </th>
+                      <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                        <MetricTooltip label="Conversion Rate %" tooltip="Combined estimates attributed to crew members: approved / total × 100." />
+                      </th>
+                      <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                        <MetricTooltip label="Rev/Hr" tooltip="Combined revenue on days with time entries, divided by combined hours logged for crew members." />
+                      </th>
+                      <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                        <MetricTooltip label="Avg Ticket" tooltip="Crew total revenue divided by combined billable jobs for members." />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.crews.map((c) => (
+                      <tr
+                        key={c.crewId}
+                        className="border-b border-amber-100/90 bg-amber-50/40 last:border-0 dark:border-amber-900/30 dark:bg-amber-950/25"
+                      >
+                        <td className="px-3 py-2 text-zinc-900 dark:text-zinc-50">
+                          <span className="font-medium">{c.crewName}</span>
+                          <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+                            Foreman: {c.foremanEmail}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
+                          {formatCurrency(c.totalRevenue)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">
+                          {c.conversionRate != null ? `${c.conversionRate.toFixed(1)}%` : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">
+                          {c.revenuePerHour != null ? `${formatCurrency(c.revenuePerHour)}/hr` : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">
+                          {c.avgTicket != null ? formatCurrency(c.avgTicket) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {data.technicians.length > 0 && (
+            <div className="mt-6 overflow-x-auto">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Technicians
+              </h3>
+              <table className="w-full min-w-[280px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Technician</th>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                      <MetricTooltip label="Revenue" tooltip="Total paid revenue from jobs assigned to this technician. Uses job paid amount minus outstanding, split across co-assigned techs." />
+                    </th>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                      <MetricTooltip label="Conversion Rate %" tooltip="Share of estimates with an approved option. Calculated as (approved estimates / total estimates) × 100 for this technician." />
+                    </th>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                      <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. Total job revenue on days with time entries, divided by hours logged." />
+                    </th>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
+                      <MetricTooltip label="Avg Ticket" tooltip="Average paid ticket for this technician. Calculated as total paid revenue divided by number of billable jobs." />
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.technicians.map((t) => (
+                    <tr key={t.technicianId} className="border-b border-zinc-100 dark:border-zinc-800">
+                      <td className="py-2 text-zinc-900 dark:text-zinc-50">{t.technicianName}</td>
+                      <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
+                        {formatCurrency(t.totalRevenue)}
+                      </td>
+                      <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
+                        {t.conversionRate != null ? `${t.conversionRate.toFixed(1)}%` : "—"}
+                      </td>
+                      <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
+                        {t.revenuePerHour != null ? `${formatCurrency(t.revenuePerHour)}/hr` : "N/A"}
+                      </td>
+                      <td className="py-2 text-right text-zinc-700 dark:text-zinc-300">
+                        {t.avgTicket != null ? formatCurrency(t.avgTicket) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
             <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
               <MetricTooltip label="Total" tooltip="Sum of revenue across all technicians in the period." />:{" "}
@@ -263,8 +342,75 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
           </div>
         </>
       )}
-      {!loading && !error && cards.length > 0 && (viewTab === "cards" || !isAdmin) && (
+      {!loading &&
+        !error &&
+        (cards.length > 0 || (data?.crews && data.crews.length > 0)) &&
+        (viewTab === "cards" || !isAdmin) && (
         <>
+          {data?.crews && data.crews.length > 0 && (
+            <div className="mt-4">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-400">
+                Crews
+              </h3>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {data.crews.map((crew) => (
+                  <div
+                    key={crew.crewId}
+                    className="flex flex-col rounded-xl border-2 border-amber-200/90 bg-amber-50/40 p-4 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-amber-200/80 text-lg font-semibold text-amber-950 dark:bg-amber-900/50 dark:text-amber-100">
+                        {getInitials(crew.crewName)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium uppercase tracking-wide text-amber-900/80 dark:text-amber-300/90">
+                          Crew
+                        </p>
+                        <h3 className="truncate font-medium text-zinc-900 dark:text-zinc-50">{crew.crewName}</h3>
+                        <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                          Foreman: {crew.foremanEmail}
+                        </p>
+                      </div>
+                    </div>
+                    <dl className="mt-4 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <dt className="text-zinc-500 dark:text-zinc-400">
+                          <MetricTooltip label="Rev/Hr" tooltip="Combined crew revenue per hour (days with time entries)." />
+                        </dt>
+                        <dd className="font-medium text-zinc-900 dark:text-zinc-50">
+                          {crew.revenuePerHour != null ? `${formatCurrency(crew.revenuePerHour)}/hr` : "—"}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-zinc-500 dark:text-zinc-400">
+                          <MetricTooltip label="Total Revenue" tooltip="Combined paid revenue for crew members in the period." />
+                        </dt>
+                        <dd className="font-medium text-zinc-900 dark:text-zinc-50">
+                          {formatCurrency(crew.totalRevenue)}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-zinc-500 dark:text-zinc-400">
+                          <MetricTooltip label="Conversion Rate" tooltip="Combined estimate conversion for crew members." />
+                        </dt>
+                        <dd className="font-medium text-zinc-900 dark:text-zinc-50">
+                          {crew.conversionRate != null ? `${crew.conversionRate.toFixed(1)}%` : "—"}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-zinc-500 dark:text-zinc-400">
+                          <MetricTooltip label="Avg Ticket" tooltip="Crew revenue divided by combined billable jobs." />
+                        </dt>
+                        <dd className="font-medium text-zinc-900 dark:text-zinc-50">
+                          {crew.avgTicket != null ? formatCurrency(crew.avgTicket) : "—"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {cards.map((card) => (
               <div

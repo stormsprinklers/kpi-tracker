@@ -498,6 +498,30 @@ export async function initSchema(): Promise<void> {
     WHERE accepted_at IS NULL
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS crews (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      foreman_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_crews_organization_id ON crews (organization_id)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS crew_members (
+      crew_id UUID NOT NULL REFERENCES crews(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      PRIMARY KEY (crew_id, user_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_crew_members_user_id ON crew_members (user_id)
+  `;
+
   // Time entries (timesheets) - employee time tracking, scoped by hcp_employee_id
   await sql`
     CREATE TABLE IF NOT EXISTS time_entries (

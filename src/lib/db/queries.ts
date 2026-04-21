@@ -318,6 +318,95 @@ export async function getEmployeesAndProsForCsrSelector(
   return list;
 }
 
+const SIMPLE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export type EmployeeInviteCandidate = {
+  hcpEmployeeId: string;
+  displayName: string;
+  /** Lowercase normalized email when valid; null if missing or invalid */
+  email: string | null;
+  source: "employee" | "pro";
+  /** No usable email on the synced HCP record */
+  missingEmail: boolean;
+  /** Matches an existing org user by email or linked HCP employee id */
+  alreadyInOrg: boolean;
+};
+
+/**
+ * Employees and pros synced from Housecall Pro for this org, with emails from their HCP profile.
+ * Used to suggest who can receive an invite (excludes people already in the org).
+ */
+export async function getEmployeeInviteCandidates(organizationId: string): Promise<EmployeeInviteCandidate[]> {
+  const org = await getOrganizationById(organizationId);
+  const companyId = org?.hcp_company_id?.trim();
+  if (!companyId) return [];
+
+  const users = await getUsersByOrganizationId(organizationId);
+  const userEmails = new Set(users.map((u) => u.email.trim().toLowerCase()));
+  const userHcpIds = new Set(
+    users.map((u) => u.hcp_employee_id?.trim()).filter((id): id is string => !!id && id.length > 0)
+  );
+
+  const candidates: EmployeeInviteCandidate[] = [];
+  const seenHcp = new Set<string>();
+
+  function pushRow(
+    row: { hcp_id: string; raw: Record<string, unknown> },
+    source: "employee" | "pro"
+  ) {
+    const hcpEmployeeId = String(row.hcp_id ?? "").trim();
+    if (!hcpEmployeeId || seenHcp.has(hcpEmployeeId)) return;
+    seenHcp.add(hcpEmployeeId);
+
+    const raw = row.raw ?? {};
+    const rawEmail = String(raw.email ?? raw.email_address ?? raw.emailAddress ?? "").trim();
+    const normalized = rawEmail.toLowerCase();
+    const hasValidEmail = normalized.length > 0 && SIMPLE_EMAIL_RE.test(normalized);
+    const email = hasValidEmail ? normalized : null;
+
+    const first = String(raw.first_name ?? raw.firstName ?? "").trim();
+    const last = String(raw.last_name ?? raw.lastName ?? "").trim();
+    const displayName =
+      [first, last].filter(Boolean).join(" ").trim() ||
+      rawEmail ||
+      hcpEmployeeId;
+
+    const missingEmail = !hasValidEmail;
+    const alreadyInOrg =
+      (hasValidEmail && userEmails.has(normalized)) || userHcpIds.has(hcpEmployeeId);
+
+    candidates.push({
+      hcpEmployeeId,
+      displayName,
+      email,
+      source,
+      missingEmail,
+      alreadyInOrg,
+    });
+  }
+
+  const empResult = await sql`
+    SELECT hcp_id, raw FROM employees
+    WHERE company_id = ${companyId}
+    ORDER BY COALESCE(raw->>'first_name', raw->>'last_name', raw->>'email', '') ASC
+  `;
+  for (const row of empResult.rows ?? []) {
+    pushRow(row as { hcp_id: string; raw: Record<string, unknown> }, "employee");
+  }
+
+  const prosResult = await sql`
+    SELECT hcp_id, raw FROM pros
+    WHERE company_id = ${companyId}
+    ORDER BY COALESCE(raw->>'first_name', raw->>'last_name', raw->>'email', '') ASC
+  `;
+  for (const row of prosResult.rows ?? []) {
+    pushRow(row as { hcp_id: string; raw: Record<string, unknown> }, "pro");
+  }
+
+  candidates.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }));
+  return candidates;
+}
+
 // Auth queries
 export async function getOrganizationsCount(): Promise<number> {
   const result = await sql`SELECT COUNT(*)::int as count FROM organizations`;
@@ -1135,6 +1224,191 @@ export async function deleteOrganizationInvitation(id: string) {
   await sql`DELETE FROM organization_invitations WHERE id = ${id}::uuid`;
 }
 
+// Crews (foreman + members → dashboard KPI rollups by HCP employee id)
+export type CrewMemberRow = {
+  userId: string;
+  email: string;
+  hcpEmployeeId: string | null;
+};
+
+export type CrewWithMembersRow = {
+  id: string;
+  name: string;
+  foremanUserId: string;
+  foremanEmail: string;
+  foremanHcpEmployeeId: string | null;
+  members: CrewMemberRow[];
+};
+
+export async function listCrewsWithMembers(organizationId: string): Promise<CrewWithMembersRow[]> {
+  const crewRows = await sql`
+    SELECT c.id::text, c.name, c.foreman_user_id::text,
+      fu.email AS foreman_email,
+      fu.hcp_employee_id AS foreman_hcp_employee_id
+    FROM crews c
+    INNER JOIN users fu ON fu.id = c.foreman_user_id
+    WHERE c.organization_id = ${organizationId}::uuid
+    ORDER BY c.name ASC
+  `;
+  const crews = (crewRows.rows ?? []) as {
+    id: string;
+    name: string;
+    foreman_user_id: string;
+    foreman_email: string;
+    foreman_hcp_employee_id: string | null;
+  }[];
+  if (crews.length === 0) return [];
+
+  const out: CrewWithMembersRow[] = [];
+  for (const c of crews) {
+    const memRes = await sql`
+      SELECT u.id::text, u.email, u.hcp_employee_id
+      FROM crew_members cm
+      INNER JOIN users u ON u.id = cm.user_id
+      WHERE cm.crew_id = ${c.id}::uuid
+      ORDER BY u.email ASC
+    `;
+    const members: CrewMemberRow[] = (memRes.rows ?? []).map((m) => {
+      const r = m as { id: string; email: string; hcp_employee_id: string | null };
+      return { userId: r.id, email: r.email, hcpEmployeeId: r.hcp_employee_id ?? null };
+    });
+    out.push({
+      id: c.id,
+      name: c.name,
+      foremanUserId: c.foreman_user_id,
+      foremanEmail: c.foreman_email,
+      foremanHcpEmployeeId: c.foreman_hcp_employee_id ?? null,
+      members,
+    });
+  }
+  return out;
+}
+
+export async function getCrewById(crewId: string, organizationId: string): Promise<CrewWithMembersRow | null> {
+  const check = await sql`
+    SELECT c.id::text, c.name, c.foreman_user_id::text,
+      fu.email AS foreman_email,
+      fu.hcp_employee_id AS foreman_hcp_employee_id
+    FROM crews c
+    INNER JOIN users fu ON fu.id = c.foreman_user_id
+    WHERE c.id = ${crewId}::uuid AND c.organization_id = ${organizationId}::uuid
+    LIMIT 1
+  `;
+  const row = check.rows?.[0] as
+    | {
+        id: string;
+        name: string;
+        foreman_user_id: string;
+        foreman_email: string;
+        foreman_hcp_employee_id: string | null;
+      }
+    | undefined;
+  if (!row) return null;
+  const memRes = await sql`
+    SELECT u.id::text, u.email, u.hcp_employee_id
+    FROM crew_members cm
+    INNER JOIN users u ON u.id = cm.user_id
+    WHERE cm.crew_id = ${row.id}::uuid
+    ORDER BY u.email ASC
+  `;
+  const members: CrewMemberRow[] = (memRes.rows ?? []).map((m) => {
+    const r = m as { id: string; email: string; hcp_employee_id: string | null };
+    return { userId: r.id, email: r.email, hcpEmployeeId: r.hcp_employee_id ?? null };
+  });
+  return {
+    id: row.id,
+    name: row.name,
+    foremanUserId: row.foreman_user_id,
+    foremanEmail: row.foreman_email,
+    foremanHcpEmployeeId: row.foreman_hcp_employee_id ?? null,
+    members,
+  };
+}
+
+export async function createCrew(params: {
+  organizationId: string;
+  name: string;
+  foremanUserId: string;
+  memberUserIds: string[];
+}): Promise<{ id: string }> {
+  const trimmed = params.name.trim();
+  if (!trimmed) throw new Error("Crew name is required");
+  const res = await sql`
+    INSERT INTO crews (organization_id, name, foreman_user_id)
+    VALUES (${params.organizationId}::uuid, ${trimmed}, ${params.foremanUserId}::uuid)
+    RETURNING id::text
+  `;
+  const id = (res.rows?.[0] as { id: string }).id;
+  const seen = new Set<string>();
+  for (const uid of params.memberUserIds) {
+    const u = uid?.trim();
+    if (!u || seen.has(u)) continue;
+    seen.add(u);
+    await sql`
+      INSERT INTO crew_members (crew_id, user_id)
+      VALUES (${id}::uuid, ${u}::uuid)
+      ON CONFLICT (crew_id, user_id) DO NOTHING
+    `;
+  }
+  return { id };
+}
+
+export async function updateCrew(
+  crewId: string,
+  organizationId: string,
+  params: {
+    name?: string;
+    foremanUserId?: string;
+    memberUserIds?: string[];
+  }
+): Promise<void> {
+  if (
+    params.name === undefined &&
+    params.foremanUserId === undefined &&
+    params.memberUserIds === undefined
+  ) {
+    return;
+  }
+  const existing = await sql`
+    SELECT id::text FROM crews WHERE id = ${crewId}::uuid AND organization_id = ${organizationId}::uuid LIMIT 1
+  `;
+  if (!existing.rows?.[0]) throw new Error("Crew not found");
+
+  if (params.name !== undefined) {
+    const t = params.name.trim();
+    if (!t) throw new Error("Crew name is required");
+    await sql`UPDATE crews SET name = ${t}, updated_at = NOW() WHERE id = ${crewId}::uuid`;
+  }
+  if (params.foremanUserId !== undefined) {
+    await sql`
+      UPDATE crews SET foreman_user_id = ${params.foremanUserId}::uuid, updated_at = NOW()
+      WHERE id = ${crewId}::uuid
+    `;
+  }
+  if (params.memberUserIds !== undefined) {
+    await sql`DELETE FROM crew_members WHERE crew_id = ${crewId}::uuid`;
+    const seen = new Set<string>();
+    for (const uid of params.memberUserIds) {
+      const u = uid?.trim();
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      await sql`
+        INSERT INTO crew_members (crew_id, user_id)
+        VALUES (${crewId}::uuid, ${u}::uuid)
+      `;
+    }
+  }
+  await sql`UPDATE crews SET updated_at = NOW() WHERE id = ${crewId}::uuid`;
+}
+
+export async function deleteCrew(crewId: string, organizationId: string): Promise<boolean> {
+  const res = await sql`
+    DELETE FROM crews WHERE id = ${crewId}::uuid AND organization_id = ${organizationId}::uuid
+    RETURNING id
+  `;
+  return (res.rows?.length ?? 0) > 0;
+}
+
 // Time entries (timesheets)
 export interface TimeEntry {
   id: string;
@@ -1837,6 +2111,20 @@ export async function assignGoogleBusinessReview(params: {
     hcp_employee_ids: ids,
     source: "manual",
   });
+}
+
+/** Apply many manual review assignments in order (e.g. admin “save all” on Reviews page). */
+export async function bulkAssignGoogleBusinessReviews(
+  organizationId: string,
+  items: { review_id: string; hcp_employee_id: string | null }[]
+): Promise<void> {
+  for (const item of items) {
+    await assignGoogleBusinessReview({
+      organization_id: organizationId,
+      review_id: item.review_id,
+      assigned_hcp_employee_id: item.hcp_employee_id?.trim() ? item.hcp_employee_id.trim() : null,
+    });
+  }
 }
 
 export async function replaceGoogleBusinessReviewAssignmentRows(params: {

@@ -7,6 +7,7 @@ import {
   getTimeEntriesByOrganization,
   getJobRevenueAssignments,
   getOrganizationById,
+  listCrewsWithMembers,
 } from "../db/queries";
 import { extractJobHcpId } from "../sync/extractors";
 
@@ -19,9 +20,23 @@ export interface TechnicianRevenue {
   avgTicket: number | null;
 }
 
+export interface CrewRevenue {
+  crewId: string;
+  crewName: string;
+  foremanEmail: string;
+  /** HCP employee ids included in this crew rollup */
+  technicianIds: string[];
+  totalRevenue: number;
+  conversionRate: number | null;
+  revenuePerHour: number | null;
+  avgTicket: number | null;
+}
+
 export interface TechnicianRevenueResult {
   technicians: TechnicianRevenue[];
   totalRevenue: number;
+  /** Present when the org has at least one configured crew */
+  crews?: CrewRevenue[];
 }
 
 export interface TechnicianRevenueFilters {
@@ -319,6 +334,75 @@ function hasApprovedOption(estimate: Record<string, unknown>): boolean {
   });
 }
 
+function collectHcpIdsForCrew(def: {
+  foremanHcpEmployeeId: string | null;
+  members: { hcpEmployeeId: string | null }[];
+}): string[] {
+  const ids = new Set<string>();
+  const add = (id: string | null | undefined) => {
+    const t = id?.trim();
+    if (t) ids.add(t);
+  };
+  add(def.foremanHcpEmployeeId);
+  for (const m of def.members) add(m.hcpEmployeeId);
+  return Array.from(ids);
+}
+
+function aggregateCrewMetrics(
+  hcpIds: string[],
+  revenueByTech: Map<string, number>,
+  billableJobsByTech: Map<string, number>,
+  conversionByTech: Map<string, { total: number; approved: number }>,
+  hoursByTechAndDate: Map<string, Map<string, number>>,
+  revenueByTechAndDate: Map<string, Map<string, number>>
+): Pick<CrewRevenue, "totalRevenue" | "conversionRate" | "revenuePerHour" | "avgTicket"> {
+  let totalRevenue = 0;
+  let totalJobs = 0;
+  let convTotal = 0;
+  let convApproved = 0;
+  for (const id of hcpIds) {
+    totalRevenue += revenueByTech.get(id) ?? 0;
+    totalJobs += billableJobsByTech.get(id) ?? 0;
+    const c = conversionByTech.get(id);
+    if (c) {
+      convTotal += c.total;
+      convApproved += c.approved;
+    }
+  }
+
+  const mergedHoursByDate = new Map<string, number>();
+  const mergedRevByDate = new Map<string, number>();
+  for (const id of hcpIds) {
+    const hd = hoursByTechAndDate.get(id);
+    const rd = revenueByTechAndDate.get(id);
+    if (hd) {
+      for (const [d, h] of hd) {
+        mergedHoursByDate.set(d, (mergedHoursByDate.get(d) ?? 0) + h);
+      }
+    }
+    if (rd) {
+      for (const [d, r] of rd) {
+        mergedRevByDate.set(d, (mergedRevByDate.get(d) ?? 0) + r);
+      }
+    }
+  }
+
+  let revenuePerHour: number | null = null;
+  if (mergedHoursByDate.size > 0) {
+    let totalHours = 0;
+    let totalRevenueOnDaysWithHours = 0;
+    for (const [dateStr, hours] of mergedHoursByDate) {
+      totalHours += hours;
+      totalRevenueOnDaysWithHours += mergedRevByDate.get(dateStr) ?? 0;
+    }
+    revenuePerHour = totalHours > 0 ? totalRevenueOnDaysWithHours / totalHours : null;
+  }
+
+  const conversionRate = convTotal > 0 ? (convApproved / convTotal) * 100 : null;
+  const avgTicket = totalJobs > 0 ? totalRevenue / totalJobs : null;
+  return { totalRevenue, conversionRate, revenuePerHour, avgTicket };
+}
+
 export async function getTechnicianRevenue(
   organizationId: string,
   filters?: TechnicianRevenueFilters
@@ -556,5 +640,32 @@ export async function getTechnicianRevenue(
 
   const totalRevenue = totalRevenueAllJobs;
 
-  return { technicians, totalRevenue };
+  let crews: CrewRevenue[] | undefined;
+  try {
+    const crewDefs = await listCrewsWithMembers(organizationId);
+    if (crewDefs.length > 0) {
+      crews = crewDefs.map((def) => {
+        const technicianIds = collectHcpIdsForCrew(def);
+        const agg = aggregateCrewMetrics(
+          technicianIds,
+          revenueByTech,
+          billableJobsByTech,
+          conversionByTech,
+          hoursByTechAndDate,
+          revenueByTechAndDate
+        );
+        return {
+          crewId: def.id,
+          crewName: def.name,
+          foremanEmail: def.foremanEmail,
+          technicianIds,
+          ...agg,
+        };
+      });
+    }
+  } catch {
+    crews = undefined;
+  }
+
+  return { technicians, totalRevenue, crews };
 }

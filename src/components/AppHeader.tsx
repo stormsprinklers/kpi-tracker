@@ -131,6 +131,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   if (!isEmployee) {
     if (can("performance_pay")) teamItems.push({ label: "Reviews", href: "/team/reviews" });
     if (can("users")) teamItems.push({ label: "Users", href: "/team/users" });
+    if (can("users")) teamItems.push({ label: "Crews", href: "/team/crews" });
   }
 
   const companyItems: { label: string; href?: string; onClick?: () => void }[] = [];

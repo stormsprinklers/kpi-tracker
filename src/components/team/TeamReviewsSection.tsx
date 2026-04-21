@@ -48,7 +48,7 @@ export function TeamReviewsSection() {
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [savingAssignments, setSavingAssignments] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -270,33 +270,29 @@ export function TeamReviewsSection() {
     }
   };
 
-  const assignReview = async (reviewId: string) => {
-    const hcpEmployeeId = (selectedByReview[reviewId] ?? "").trim() || null;
-    setAssigningId(reviewId);
+  const saveAllReviewAssignments = async () => {
+    if (reviews.length === 0) return;
+    setSavingAssignments(true);
     setError(null);
+    setSuccess(null);
     try {
-      const res = await fetch(`/api/team/reviews/${encodeURIComponent(reviewId)}/assign`, {
-        method: "PATCH",
+      const items = reviews.map((r) => ({
+        reviewId: r.review_id,
+        hcpEmployeeId: (selectedByReview[r.review_id] ?? "").trim() || null,
+      }));
+      const res = await fetch("/api/team/reviews/bulk-assign", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hcpEmployeeId }),
+        body: JSON.stringify({ items }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Failed to assign review");
-      setReviews((prev) =>
-        prev.map((r) =>
-          r.review_id === reviewId
-            ? {
-                ...r,
-                assigned_hcp_employee_id: hcpEmployeeId,
-                assigned_hcp_employee_ids: hcpEmployeeId ? [hcpEmployeeId] : [],
-              }
-            : r
-        )
-      );
+      const data = (await res.json().catch(() => ({}))) as { error?: string; saved?: number };
+      if (!res.ok) throw new Error(data.error ?? "Failed to save assignments");
+      setSuccess(`Saved ${data.saved ?? items.length} review assignment(s).`);
+      await fetchData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to assign review");
+      setError(e instanceof Error ? e.message : "Failed to save assignments");
     } finally {
-      setAssigningId(null);
+      setSavingAssignments(false);
     }
   };
 
@@ -442,7 +438,7 @@ export function TeamReviewsSection() {
           </p>
         ) : (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[680px] text-left text-sm">
+            <table className="w-full min-w-[560px] text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 dark:border-zinc-700">
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Reviewer</th>
@@ -450,9 +446,8 @@ export function TeamReviewsSection() {
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Date</th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Comment</th>
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">
-                    Assigned technician(s)
+                    Assigned technician
                   </th>
-                  <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -486,8 +481,9 @@ export function TeamReviewsSection() {
                         return (
                           <div className="flex flex-col gap-1">
                             {assignedLabels.length > 1 && (
-                              <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                                {assignedLabels.join(", ")}
+                              <span className="text-xs text-amber-800 dark:text-amber-300">
+                                Currently multiple technicians ({assignedLabels.join(", ")}). Choose one
+                                below to replace all, or Unassigned to clear.
                               </span>
                             )}
                             <select
@@ -498,11 +494,9 @@ export function TeamReviewsSection() {
                                   [r.review_id]: e.target.value,
                                 }))
                               }
-                              className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                              className="w-full max-w-[260px] rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
                             >
-                              <option value="">
-                                {ids.length > 1 ? "Multiple — choose one to replace all" : "Unassigned"}
-                              </option>
+                              <option value="">Unassigned (clear assignment)</option>
                               {candidates.map((c) => (
                                 <option key={c.id} value={c.id}>
                                   {c.name}
@@ -513,27 +507,31 @@ export function TeamReviewsSection() {
                         );
                       })()}
                     </td>
-                    <td className="py-2">
-                      <button
-                        type="button"
-                        onClick={() => assignReview(r.review_id)}
-                        disabled={assigningId === r.review_id}
-                        className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                      >
-                        {assigningId === r.review_id ? "Saving..." : "Save"}
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+              <button
+                type="button"
+                onClick={() => void saveAllReviewAssignments()}
+                disabled={savingAssignments}
+                className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {savingAssignments ? "Saving…" : "Save all review assignments"}
+              </button>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                Updates every row above in one step. Use &quot;Unassigned&quot; to remove a mistaken assignment.
+              </span>
+            </div>
           </div>
         )}
         {reviews.length > 0 && (
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
             Unassigned reviews are auto-matched from recent jobs (reviewer vs customer name, then names
-            mentioned in the text) on each sync and hourly. Manual selection replaces all auto assignments
-            for that review. Assigned counts feed the Technician KPI review metric.
+            mentioned in the text) on each sync and hourly. Saving applies your dropdown choices for all
+            reviews at once; choosing a technician replaces all auto assignments for that review. Assigned
+            counts feed the Technician KPI review metric.
           </p>
         )}
       </section>

@@ -98,6 +98,9 @@ export default auth((req) => {
       if (pathname.startsWith("/team/users") && !perms["users"]) {
         return NextResponse.redirect(new URL("/", req.nextUrl));
       }
+      if (pathname.startsWith("/team/crews") && !perms["users"]) {
+        return NextResponse.redirect(new URL("/", req.nextUrl));
+      }
     } else {
       const investorBlockedPaths = ["/settings", "/debug", "/timesheets", "/team", "/billing"];
       if (
