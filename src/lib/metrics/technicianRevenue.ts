@@ -25,11 +25,12 @@ export interface CrewRevenue {
   crewName: string;
   /** Foreman display name from synced HCP roster (not tied to app login). */
   foremanLabel: string;
+  foremanHcpEmployeeId: string;
   /** HCP employee ids included in this crew rollup */
   technicianIds: string[];
   totalRevenue: number;
-  conversionRate: number | null;
-  revenuePerHour: number | null;
+  totalManHours: number;
+  jobsCompleted: number;
   avgTicket: number | null;
 }
 
@@ -353,55 +354,27 @@ function aggregateCrewMetrics(
   hcpIds: string[],
   revenueByTech: Map<string, number>,
   billableJobsByTech: Map<string, number>,
-  conversionByTech: Map<string, { total: number; approved: number }>,
-  hoursByTechAndDate: Map<string, Map<string, number>>,
-  revenueByTechAndDate: Map<string, Map<string, number>>
-): Pick<CrewRevenue, "totalRevenue" | "conversionRate" | "revenuePerHour" | "avgTicket"> {
+  hoursByTechAndDate: Map<string, Map<string, number>>
+): Pick<CrewRevenue, "totalRevenue" | "totalManHours" | "jobsCompleted" | "avgTicket"> {
   let totalRevenue = 0;
-  let totalJobs = 0;
-  let convTotal = 0;
-  let convApproved = 0;
+  let jobsCompleted = 0;
   for (const id of hcpIds) {
     totalRevenue += revenueByTech.get(id) ?? 0;
-    totalJobs += billableJobsByTech.get(id) ?? 0;
-    const c = conversionByTech.get(id);
-    if (c) {
-      convTotal += c.total;
-      convApproved += c.approved;
-    }
+    jobsCompleted += billableJobsByTech.get(id) ?? 0;
   }
 
-  const mergedHoursByDate = new Map<string, number>();
-  const mergedRevByDate = new Map<string, number>();
+  let totalManHours = 0;
   for (const id of hcpIds) {
     const hd = hoursByTechAndDate.get(id);
-    const rd = revenueByTechAndDate.get(id);
     if (hd) {
-      for (const [d, h] of hd) {
-        mergedHoursByDate.set(d, (mergedHoursByDate.get(d) ?? 0) + h);
-      }
-    }
-    if (rd) {
-      for (const [d, r] of rd) {
-        mergedRevByDate.set(d, (mergedRevByDate.get(d) ?? 0) + r);
+      for (const [, h] of hd) {
+        totalManHours += h;
       }
     }
   }
 
-  let revenuePerHour: number | null = null;
-  if (mergedHoursByDate.size > 0) {
-    let totalHours = 0;
-    let totalRevenueOnDaysWithHours = 0;
-    for (const [dateStr, hours] of mergedHoursByDate) {
-      totalHours += hours;
-      totalRevenueOnDaysWithHours += mergedRevByDate.get(dateStr) ?? 0;
-    }
-    revenuePerHour = totalHours > 0 ? totalRevenueOnDaysWithHours / totalHours : null;
-  }
-
-  const conversionRate = convTotal > 0 ? (convApproved / convTotal) * 100 : null;
-  const avgTicket = totalJobs > 0 ? totalRevenue / totalJobs : null;
-  return { totalRevenue, conversionRate, revenuePerHour, avgTicket };
+  const avgTicket = jobsCompleted > 0 ? totalRevenue / jobsCompleted : null;
+  return { totalRevenue, totalManHours, jobsCompleted, avgTicket };
 }
 
 export async function getTechnicianRevenue(
@@ -608,7 +581,21 @@ export async function getTechnicianRevenue(
     }
   }
 
+  let crewDefs: Awaited<ReturnType<typeof listCrewsWithMembers>> = [];
+  try {
+    crewDefs = await listCrewsWithMembers(organizationId);
+  } catch {
+    crewDefs = [];
+  }
+  const crewMemberIds = new Set<string>();
+  for (const def of crewDefs) {
+    for (const id of collectHcpIdsForCrew(def)) {
+      crewMemberIds.add(id);
+    }
+  }
+
   const technicians: TechnicianRevenue[] = Array.from(revenueByTech.entries())
+    .filter(([id]) => !crewMemberIds.has(id))
     .filter(([id]) => !activeInCurrentYearOnly || activeInCurrentYear.has(id))
     .map(([id, totalRevenue]) => {
       const conv = conversionByTech.get(id);
@@ -642,30 +629,24 @@ export async function getTechnicianRevenue(
   const totalRevenue = totalRevenueAllJobs;
 
   let crews: CrewRevenue[] | undefined;
-  try {
-    const crewDefs = await listCrewsWithMembers(organizationId);
-    if (crewDefs.length > 0) {
-      crews = crewDefs.map((def) => {
-        const technicianIds = collectHcpIdsForCrew(def);
-        const agg = aggregateCrewMetrics(
-          technicianIds,
-          revenueByTech,
-          billableJobsByTech,
-          conversionByTech,
-          hoursByTechAndDate,
-          revenueByTechAndDate
-        );
-        return {
-          crewId: def.id,
-          crewName: def.name,
-          foremanLabel: def.foremanDisplayName,
-          technicianIds,
-          ...agg,
-        };
-      });
-    }
-  } catch {
-    crews = undefined;
+  if (crewDefs.length > 0) {
+    crews = crewDefs.map((def) => {
+      const technicianIds = collectHcpIdsForCrew(def);
+      const agg = aggregateCrewMetrics(
+        technicianIds,
+        revenueByTech,
+        billableJobsByTech,
+        hoursByTechAndDate
+      );
+      return {
+        crewId: def.id,
+        crewName: def.name,
+        foremanLabel: def.foremanDisplayName,
+        foremanHcpEmployeeId: def.foremanHcpEmployeeId,
+        technicianIds,
+        ...agg,
+      };
+    });
   }
 
   return { technicians, totalRevenue, crews };

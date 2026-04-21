@@ -977,6 +977,15 @@ export async function initSchema(): Promise<void> {
     )
   `;
   await sql`
+    CREATE TABLE IF NOT EXISTS marketing_channel_visibility (
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      channel_slug TEXT NOT NULL REFERENCES marketing_channels(slug),
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (organization_id, channel_slug)
+    )
+  `;
+  await sql`
     INSERT INTO marketing_channels (slug, display_name, kind, spend_applicable, sort_order) VALUES
       ('unassigned', 'Unassigned', 'direct', false, 0),
       ('google_lsa', 'Google LSA', 'paid', true, 10),

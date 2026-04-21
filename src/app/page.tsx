@@ -16,15 +16,14 @@ export default async function Home() {
   }
   const org = await getOrganizationById(session.user.organizationId);
   const connected = !!org?.hcp_access_token;
-  const isEmployeeWithLink =
-    session.user.role === "employee" && !!session.user.hcpEmployeeId;
+  const isEmployee = session.user.role === "employee";
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
       <main className="flex flex-1 flex-col gap-6 p-6">
         <DashboardAutoSync enabled={connected} />
-        {isEmployeeWithLink && (
-          <EmployeeDashboardBanner hcpEmployeeId={session.user.hcpEmployeeId!} />
+        {isEmployee && (
+          <EmployeeDashboardBanner />
         )}
         <DashboardHomeClient connected={connected} />
       </main>

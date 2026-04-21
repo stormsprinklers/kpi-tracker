@@ -24,6 +24,38 @@ export async function getMarketingChannels(): Promise<
   }>;
 }
 
+export async function getMarketingAdChannelVisibility(
+  organizationId: string
+): Promise<Array<{ slug: string; label: string; enabled: boolean }>> {
+  const result = await sql`
+    SELECT
+      mc.slug,
+      mc.display_name AS label,
+      COALESCE(mcv.enabled, true) AS enabled
+    FROM marketing_channels mc
+    LEFT JOIN marketing_channel_visibility mcv
+      ON mcv.channel_slug = mc.slug
+      AND mcv.organization_id = ${organizationId}::uuid
+    WHERE mc.spend_applicable = true
+    ORDER BY mc.sort_order ASC, mc.display_name ASC
+  `;
+  return (result.rows ?? []) as Array<{ slug: string; label: string; enabled: boolean }>;
+}
+
+export async function setMarketingAdChannelVisibility(
+  organizationId: string,
+  channelSlug: string,
+  enabled: boolean
+): Promise<void> {
+  await sql`
+    INSERT INTO marketing_channel_visibility (organization_id, channel_slug, enabled, updated_at)
+    VALUES (${organizationId}::uuid, ${channelSlug}, ${enabled}, NOW())
+    ON CONFLICT (organization_id, channel_slug) DO UPDATE SET
+      enabled = EXCLUDED.enabled,
+      updated_at = NOW()
+  `;
+}
+
 export async function getMarketingSourceRules(organizationId: string): Promise<MarketingSourceRuleRow[]> {
   const result = await sql`
     SELECT pattern, channel_slug, priority

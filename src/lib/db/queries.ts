@@ -1042,7 +1042,7 @@ export function getDefaultPermissionsForRole(
     };
   }
   if (role === "employee") {
-    const base = { ...allFalse, dashboard: true, timesheets: true, can_edit: true };
+    const base = { ...allFalse, dashboard: true, timesheets: false, can_edit: true };
     if (isCsr) {
       base.call_insights = true;
     }

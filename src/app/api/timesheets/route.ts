@@ -1,41 +1,24 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import {
-  getTimeEntriesByEmployee,
   getTimeEntriesByOrganization,
   createTimeEntry,
 } from "@/lib/db/queries";
 import { initSchema } from "@/lib/db";
 
-/** GET /api/timesheets - List time entries. Employee: own entries. Admin: org-wide; omit dates for all-time (wide default range). */
+/** GET /api/timesheets - Admin only (org-wide; omit dates for all-time range). */
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const isAdmin = session.user.role === "admin";
+  if (session.user.role !== "admin") {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get("start_date") ?? undefined;
   const endDate = searchParams.get("end_date") ?? undefined;
-
-  if (!isAdmin) {
-    const hcpEmployeeId = session.user.hcpEmployeeId ?? null;
-    if (!hcpEmployeeId) {
-      return NextResponse.json(
-        { error: "Your account is not linked to an HCP employee. Contact your admin." },
-        { status: 403 }
-      );
-    }
-    await initSchema();
-    const entries = await getTimeEntriesByEmployee(
-      session.user.organizationId,
-      hcpEmployeeId,
-      startDate,
-      endDate
-    );
-    return NextResponse.json(entries);
-  }
 
   await initSchema();
   const entries = await getTimeEntriesByOrganization(
@@ -46,14 +29,16 @@ export async function GET(request: Request) {
   return NextResponse.json(entries);
 }
 
-/** POST /api/timesheets - Create a time entry. Employee: own. Admin: hcp_employee_id in body required. */
+/** POST /api/timesheets - Admin only. hcp_employee_id in body is required. */
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const isAdmin = session.user.role === "admin";
+  if (session.user.role !== "admin") {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
   const body = (await request.json()) as {
     hcp_employee_id?: string | null;
     entry_date?: string;
@@ -64,15 +49,11 @@ export async function POST(request: Request) {
     notes?: string | null;
   };
 
-  const hcpEmployeeId = isAdmin
-    ? body.hcp_employee_id?.trim() || null
-    : session.user.hcpEmployeeId ?? null;
+  const hcpEmployeeId = body.hcp_employee_id?.trim() || null;
 
   if (!hcpEmployeeId) {
     return NextResponse.json(
-      isAdmin
-        ? { error: "hcp_employee_id is required in request body for admin" }
-        : { error: "Your account is not linked to an HCP employee. Contact your admin." },
+      { error: "hcp_employee_id is required in request body for admin" },
       { status: 403 }
     );
   }

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
+  getMarketingAdChannelVisibility,
   getMarketingOrgSettings,
+  setMarketingAdChannelVisibility,
   upsertMarketingOrgSettings,
 } from "@/lib/db/marketingQueries";
 
@@ -18,10 +20,14 @@ export async function GET() {
   }
 
   await initSchema();
-  const row = await getMarketingOrgSettings(session.user.organizationId);
+  const [row, adChannels] = await Promise.all([
+    getMarketingOrgSettings(session.user.organizationId),
+    getMarketingAdChannelVisibility(session.user.organizationId),
+  ]);
   return NextResponse.json({
     searchConsoleSiteUrl: row?.search_console_site_url ?? "",
     ga4PropertyId: row?.ga4_property_id ?? "",
+    adChannels,
   });
 }
 
@@ -37,6 +43,7 @@ export async function PATCH(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     searchConsoleSiteUrl?: string | null;
     ga4PropertyId?: string | null;
+    adChannelEnabled?: Record<string, boolean>;
   };
 
   await initSchema();
@@ -52,10 +59,26 @@ export async function PATCH(request: Request) {
         ? body.ga4PropertyId?.trim() || null
         : (existing?.ga4_property_id ?? null),
   });
+  if (body.adChannelEnabled && typeof body.adChannelEnabled === "object") {
+    const allowed = await getMarketingAdChannelVisibility(session.user.organizationId);
+    const allowedSet = new Set(allowed.map((c) => c.slug));
+    for (const [slug, enabled] of Object.entries(body.adChannelEnabled)) {
+      if (!allowedSet.has(slug)) continue;
+      await setMarketingAdChannelVisibility(
+        session.user.organizationId,
+        slug,
+        enabled === true
+      );
+    }
+  }
 
-  const row = await getMarketingOrgSettings(session.user.organizationId);
+  const [row, adChannels] = await Promise.all([
+    getMarketingOrgSettings(session.user.organizationId),
+    getMarketingAdChannelVisibility(session.user.organizationId),
+  ]);
   return NextResponse.json({
     searchConsoleSiteUrl: row?.search_console_site_url ?? "",
     ga4PropertyId: row?.ga4_property_id ?? "",
+    adChannels,
   });
 }

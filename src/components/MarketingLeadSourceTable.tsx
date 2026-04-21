@@ -41,8 +41,9 @@ export function MarketingLeadSourceTable({
         Performance by lead source
       </h2>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        HCP jobs are attributed from lead source text and UTMs. Paid spend/CPL need LSA (or future Ads)
-        sync. Free channels show N/A for spend and substitute GBP / Search Console metrics where available.
+        HCP jobs are attributed from lead source text and UTMs. Paid spend/CPL need LSA sync
+        (or temporary manual LSA upload, or future Ads integrations). Free channels show N/A for spend
+        and substitute GBP / Search Console metrics where available.
       </p>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
@@ -92,8 +93,8 @@ export function MarketingLeadSourceTable({
                       <span>{c.label}</span>
                       {isAdmin && c.slug === "google_lsa" && (
                         <span className="text-xs text-zinc-500">
-                          Admin: POST /api/marketing/integrations/lsa with refresh token; set
-                          GOOGLE_LSA_MANAGER_CUSTOMER_ID
+                          Admin: connect OAuth via /api/marketing/integrations/lsa or use temporary manual
+                          LSA CSV + spend upload in Marketing Insights.
                         </span>
                       )}
                     </div>

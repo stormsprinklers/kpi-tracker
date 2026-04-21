@@ -62,6 +62,9 @@ export function MarketingInsightsClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [manualLsaSpend, setManualLsaSpend] = useState("");
+  const [manualLsaCsv, setManualLsaCsv] = useState<File | null>(null);
+  const [manualLsaBusy, setManualLsaBusy] = useState(false);
 
   const { start, end } = rangeForPreset(preset, customStart, customEnd);
 
@@ -110,6 +113,37 @@ export function MarketingInsightsClient() {
     }
   };
 
+  const uploadManualLsa = async () => {
+    if (!manualLsaCsv) {
+      setSyncMsg("Manual LSA: choose a CSV export file first.");
+      return;
+    }
+    setManualLsaBusy(true);
+    setSyncMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("startDate", start);
+      fd.append("endDate", end);
+      fd.append("totalSpend", manualLsaSpend.trim() || "0");
+      fd.append("leadsCsv", manualLsaCsv);
+      const res = await fetch("/api/marketing/sync/lsa-manual", {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
+      if (!res.ok) {
+        setSyncMsg(`Manual LSA: ${data.error ?? res.statusText}`);
+        return;
+      }
+      setSyncMsg(data.message ?? "Manual LSA data saved.");
+      await load();
+    } catch (e) {
+      setSyncMsg(`Manual LSA: ${e instanceof Error ? e.message : "failed"}`);
+    } finally {
+      setManualLsaBusy(false);
+    }
+  };
+
   return (
     <>
       <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
@@ -155,28 +189,58 @@ export function MarketingInsightsClient() {
           )}
         </div>
         {isAdmin && (
-          <div className="flex w-full flex-wrap gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:border-t-0 sm:pt-0">
-            <button
-              type="button"
-              onClick={() => postSync("/api/marketing/sync/lsa", "LSA")}
-              className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              Sync LSA spend/leads
-            </button>
-            <button
-              type="button"
-              onClick={() => postSync("/api/marketing/sync/gbp-performance", "GBP performance")}
-              className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              Sync GBP metrics
-            </button>
-            <button
-              type="button"
-              onClick={() => postSync("/api/marketing/sync/search-console", "Search Console")}
-              className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              Search Console (placeholder)
-            </button>
+          <div className="flex w-full flex-col gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:border-t-0 sm:pt-0">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => postSync("/api/marketing/sync/lsa", "LSA")}
+                className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Sync LSA spend/leads
+              </button>
+              <button
+                type="button"
+                onClick={() => postSync("/api/marketing/sync/gbp-performance", "GBP performance")}
+                className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Sync GBP metrics
+              </button>
+              <button
+                type="button"
+                onClick={() => postSync("/api/marketing/sync/search-console", "Search Console")}
+                className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Search Console (placeholder)
+              </button>
+            </div>
+            <div className="flex flex-wrap items-end gap-2 rounded border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/40">
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                Temporary manual LSA input:
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={manualLsaSpend}
+                onChange={(e) => setManualLsaSpend(e.target.value)}
+                placeholder="Total ad spend (USD)"
+                className="w-44 rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+              />
+              <input
+                type="file"
+                accept=".csv,text/csv,text/tab-separated-values,.tsv"
+                onChange={(e) => setManualLsaCsv(e.target.files?.[0] ?? null)}
+                className="max-w-[260px] text-xs text-zinc-600 dark:text-zinc-300"
+              />
+              <button
+                type="button"
+                onClick={uploadManualLsa}
+                disabled={manualLsaBusy}
+                className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                {manualLsaBusy ? "Uploading…" : "Upload manual LSA CSV"}
+              </button>
+            </div>
           </div>
         )}
         {syncMsg && (

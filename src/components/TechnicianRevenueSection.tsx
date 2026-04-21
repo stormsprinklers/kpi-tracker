@@ -18,10 +18,11 @@ interface CrewRevenue {
   crewId: string;
   crewName: string;
   foremanLabel: string;
+  foremanHcpEmployeeId: string;
   technicianIds: string[];
   totalRevenue: number;
-  conversionRate: number | null;
-  revenuePerHour: number | null;
+  totalManHours: number;
+  jobsCompleted: number;
   avgTicket: number | null;
 }
 
@@ -80,6 +81,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
   const [viewTab, setViewTab] = useState<"cards" | "tables">("cards");
   const [data, setData] = useState<TechnicianRevenueResult | null>(null);
   const [cards, setCards] = useState<TechnicianCard[]>([]);
+  const [photoByTechId, setPhotoByTechId] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
@@ -99,15 +101,28 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
       setData(result);
 
       const technicianIds = result.technicians.map((t) => t.technicianId);
+      const foremanIds = (result.crews ?? [])
+        .map((c) => c.foremanHcpEmployeeId)
+        .filter(Boolean);
+      const photoIds = Array.from(new Set([...technicianIds, ...foremanIds]));
       const photosRes =
-        technicianIds.length > 0
-          ? await fetch(`/api/technicians/photos?ids=${technicianIds.join(",")}`)
+        photoIds.length > 0
+          ? await fetch(`/api/technicians/photos?ids=${photoIds.join(",")}`)
           : null;
       const photosData = photosRes?.ok ? await photosRes.json() : {};
       const photos: Record<string, string> = photosData.photos ?? {};
+      setPhotoByTechId(photos);
+      const reviewParams = new URLSearchParams();
+      if (technicianIds.length > 0) {
+        reviewParams.set("ids", technicianIds.join(","));
+      }
+      if (!dateRange.isAllTime && dateRange.startDate && dateRange.endDate) {
+        reviewParams.set("startDate", dateRange.startDate);
+        reviewParams.set("endDate", dateRange.endDate);
+      }
       const reviewsRes =
         technicianIds.length > 0
-          ? await fetch(`/api/team/reviews/counts?ids=${technicianIds.join(",")}`)
+          ? await fetch(`/api/team/reviews/counts?${reviewParams.toString()}`)
           : null;
       const reviewsData = reviewsRes?.ok ? await reviewsRes.json() : {};
       const reviewCounts: Record<string, number> = reviewsData.counts ?? {};
@@ -246,10 +261,10 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                         <MetricTooltip label="Revenue" tooltip="Combined paid revenue for all technicians in this crew (same rules as individual KPIs)." />
                       </th>
                       <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                        <MetricTooltip label="Conversion Rate %" tooltip="Combined estimates attributed to crew members: approved / total × 100." />
+                        <MetricTooltip label="Man Hours" tooltip="Total logged hours across all crew members in the selected period." />
                       </th>
                       <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                        <MetricTooltip label="Rev/Hr" tooltip="Combined revenue on days with time entries, divided by combined hours logged for crew members." />
+                        <MetricTooltip label="Jobs Completed" tooltip="Total paid/completed jobs attributed to crew members in the selected period." />
                       </th>
                       <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                         <MetricTooltip label="Avg Ticket" tooltip="Crew total revenue divided by combined billable jobs for members." />
@@ -272,10 +287,10 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                           {formatCurrency(c.totalRevenue)}
                         </td>
                         <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">
-                          {c.conversionRate != null ? `${c.conversionRate.toFixed(1)}%` : "—"}
+                          {c.totalManHours.toFixed(2)}
                         </td>
                         <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">
-                          {c.revenuePerHour != null ? `${formatCurrency(c.revenuePerHour)}/hr` : "—"}
+                          {c.jobsCompleted}
                         </td>
                         <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300">
                           {c.avgTicket != null ? formatCurrency(c.avgTicket) : "—"}
@@ -359,9 +374,17 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                     className="flex flex-col rounded-xl border-2 border-amber-200/90 bg-amber-50/40 p-4 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-amber-200/80 text-lg font-semibold text-amber-950 dark:bg-amber-900/50 dark:text-amber-100">
-                        {getInitials(crew.crewName)}
-                      </div>
+                      {photoByTechId[crew.foremanHcpEmployeeId] ? (
+                        <img
+                          src={photoByTechId[crew.foremanHcpEmployeeId]}
+                          alt={crew.foremanLabel}
+                          className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-amber-200 dark:ring-amber-800"
+                        />
+                      ) : (
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-amber-200/80 text-lg font-semibold text-amber-950 dark:bg-amber-900/50 dark:text-amber-100">
+                          {getInitials(crew.foremanLabel)}
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium uppercase tracking-wide text-amber-900/80 dark:text-amber-300/90">
                           Crew
@@ -375,14 +398,6 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                     <dl className="mt-4 space-y-2 text-sm">
                       <div className="flex justify-between">
                         <dt className="text-zinc-500 dark:text-zinc-400">
-                          <MetricTooltip label="Rev/Hr" tooltip="Combined crew revenue per hour (days with time entries)." />
-                        </dt>
-                        <dd className="font-medium text-zinc-900 dark:text-zinc-50">
-                          {crew.revenuePerHour != null ? `${formatCurrency(crew.revenuePerHour)}/hr` : "—"}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between">
-                        <dt className="text-zinc-500 dark:text-zinc-400">
                           <MetricTooltip label="Total Revenue" tooltip="Combined paid revenue for crew members in the period." />
                         </dt>
                         <dd className="font-medium text-zinc-900 dark:text-zinc-50">
@@ -391,10 +406,18 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                       </div>
                       <div className="flex justify-between">
                         <dt className="text-zinc-500 dark:text-zinc-400">
-                          <MetricTooltip label="Conversion Rate" tooltip="Combined estimate conversion for crew members." />
+                          <MetricTooltip label="Total Man Hours" tooltip="Total logged hours across all crew members in the selected period." />
                         </dt>
                         <dd className="font-medium text-zinc-900 dark:text-zinc-50">
-                          {crew.conversionRate != null ? `${crew.conversionRate.toFixed(1)}%` : "—"}
+                          {crew.totalManHours.toFixed(2)}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-zinc-500 dark:text-zinc-400">
+                          <MetricTooltip label="Jobs Completed" tooltip="Total paid/completed jobs attributed to crew members in the selected period." />
+                        </dt>
+                        <dd className="font-medium text-zinc-900 dark:text-zinc-50">
+                          {crew.jobsCompleted}
                         </dd>
                       </div>
                       <div className="flex justify-between">

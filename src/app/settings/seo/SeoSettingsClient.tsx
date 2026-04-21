@@ -14,6 +14,12 @@ interface ServiceArea {
   location_values: string[];
 }
 
+interface AdChannelVisibility {
+  slug: string;
+  label: string;
+  enabled: boolean;
+}
+
 const MAX_KEYWORDS = 10;
 const MAX_LOCATIONS = 50;
 
@@ -49,6 +55,7 @@ export function SeoSettingsClient() {
   const [newKeyword, setNewKeyword] = useState("");
   const [searchConsoleSiteUrl, setSearchConsoleSiteUrl] = useState("");
   const [ga4PropertyId, setGa4PropertyId] = useState("");
+  const [adChannels, setAdChannels] = useState<AdChannelVisibility[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -89,6 +96,16 @@ export function SeoSettingsClient() {
         if (locationsRes.ok) {
           const locs = (await locationsRes.json()) as LocationOption[];
           setLocationOptions(locs);
+        }
+        if (mktRes.ok) {
+          const mkt = (await mktRes.json()) as {
+            searchConsoleSiteUrl?: string;
+            ga4PropertyId?: string;
+            adChannels?: AdChannelVisibility[];
+          };
+          setSearchConsoleSiteUrl(mkt.searchConsoleSiteUrl ?? "");
+          setGa4PropertyId(mkt.ga4PropertyId ?? "");
+          setAdChannels(Array.isArray(mkt.adChannels) ? mkt.adChannels : []);
         }
       } catch {
         setError("Failed to load settings");
@@ -225,12 +242,21 @@ export function SeoSettingsClient() {
         body: JSON.stringify({
           searchConsoleSiteUrl: searchConsoleSiteUrl.trim() || null,
           ga4PropertyId: ga4PropertyId.trim() || null,
+          adChannelEnabled: Object.fromEntries(
+            adChannels.map((c) => [c.slug, c.enabled])
+          ),
         }),
       });
       if (!mktPatch.ok) {
         const md = (await mktPatch.json().catch(() => ({}))) as { error?: string };
         setError(md.error ?? "SEO saved but marketing analytics settings failed");
         return;
+      }
+      const mktUpdated = (await mktPatch.json().catch(() => ({}))) as {
+        adChannels?: AdChannelVisibility[];
+      };
+      if (Array.isArray(mktUpdated.adChannels)) {
+        setAdChannels(mktUpdated.adChannels);
       }
       if (keywords.length > 0 && locations.length > 0 && website.trim()) {
         fetch("/api/marketing/seo?force_refresh=1").catch(() => {});
@@ -563,6 +589,31 @@ export function SeoSettingsClient() {
           placeholder="properties/123456789"
           className="mt-1 block w-full max-w-md rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
         />
+        <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+          <h3 className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            Ad channels shown in reporting
+          </h3>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            Disable paid channels that your company does not use. This hides them from Marketing reporting.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            {adChannels.map((ch) => (
+              <label key={ch.slug} className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={ch.enabled}
+                  onChange={(e) =>
+                    setAdChannels((prev) =>
+                      prev.map((p) => (p.slug === ch.slug ? { ...p, enabled: e.target.checked } : p))
+                    )
+                  }
+                  className="rounded border-zinc-300 dark:border-zinc-600"
+                />
+                {ch.label}
+              </label>
+            ))}
+          </div>
+        </div>
       </section>
 
       {error && (

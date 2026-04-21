@@ -1,6 +1,7 @@
 import { initSchema } from "@/lib/db";
 import {
   getMarketingChannels,
+  getMarketingAdChannelVisibility,
   getMarketingSourceRules,
   getJobsWithHcpIdForOrg,
   upsertJobAttribution,
@@ -337,11 +338,16 @@ export async function buildMarketingOverviewResponse(
 
   const spendSnapshots = await getMarketingSpendSnapshots(organizationId, rangeStart, rangeEnd);
   const spendByDay = accumulateProratedSpendByDay(spendSnapshots, rangeStart, rangeEnd);
+  const adChannelVisibility = await getMarketingAdChannelVisibility(organizationId);
+  const enabledPaidChannels = new Set(
+    adChannelVisibility.filter((c) => c.enabled).map((c) => c.slug)
+  );
   let totalSpend = 0;
   let totalPlatformLeads = 0;
   const spendByChannel = new Map<string, { spend: number; leads: number }>();
   for (const [, chMap] of spendByDay) {
     for (const [slug, v] of chMap) {
+      if (!enabledPaidChannels.has(slug)) continue;
       totalSpend += v.spend;
       totalPlatformLeads += v.leads;
       const cur = spendByChannel.get(slug) ?? { spend: 0, leads: 0 };
@@ -375,7 +381,8 @@ export async function buildMarketingOverviewResponse(
       (c) =>
         c.slug !== "unassigned" &&
         c.slug !== "website" &&
-        c.slug !== "referrals"
+        c.slug !== "referrals" &&
+        (!c.spend_applicable || enabledPaidChannels.has(c.slug))
     )
     .map((c) => c.slug);
 

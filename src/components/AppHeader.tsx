@@ -122,7 +122,6 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
     if (usePermissions && p) return p[key] === true;
     const isAdmin = session?.user?.role === "admin";
     const isInvestor = session?.user?.role === "investor";
-    const hasHcpEmployeeId = !!session?.user?.hcpEmployeeId;
     if (isAdmin) {
       if (key === "settings" || key === "can_edit") return true;
       return true;
@@ -132,7 +131,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
       if (key === "can_edit") return false;
       return true;
     }
-    if (key === "timesheets") return hasHcpEmployeeId;
+    if (key === "timesheets") return false;
     if (key === "performance_pay" || key === "users" || key === "settings" || key === "billing") return false;
     if (key === "call_insights") return true;
     if (key === "time_insights" || key === "profit" || key === "marketing") return true;
@@ -152,8 +151,8 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
       ];
 
   const teamItems: { label: string; href: string }[] = [];
-  if (can("timesheets")) teamItems.push({ label: "Timesheets", href: "/timesheets" });
   if (!isEmployee) {
+    if (can("timesheets")) teamItems.push({ label: "Timesheets", href: "/timesheets" });
     if (can("performance_pay")) teamItems.push({ label: "Reviews", href: "/team/reviews" });
     if (can("users")) teamItems.push({ label: "Users", href: "/team/users" });
     if (can("users")) teamItems.push({ label: "Crews", href: "/team/crews" });
@@ -209,9 +208,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
             <NotificationBell />
             <HeaderNightShiftToggle />
             <a href="/" className={navLinkClass}>Dashboard</a>
-            {isEmployee ? (
-              <a href="/timesheets" className={navLinkClass}>Timesheets</a>
-            ) : (
+            {!isEmployee && (
               <>
                 {insightsItems.length > 0 && (
                   <NavDropdown label="Insights" items={insightsItems} navLinkClass={navLinkClass} />
@@ -347,16 +344,6 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
               >
                 Dashboard
               </a>
-              {isEmployee && (
-                <a
-                  href="/timesheets"
-                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  onClick={closeMobile}
-                >
-                  Timesheets
-                </a>
-              )}
-
               {/* Insights section - not for employees */}
               {!isEmployee && (
               <div className="mt-1">
