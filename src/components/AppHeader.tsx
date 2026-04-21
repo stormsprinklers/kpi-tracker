@@ -104,12 +104,19 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   const p = session?.user?.permissions;
   const usePermissions = !!p;
 
+  const publicHeaderPaths = new Set([
+    "/",
+    "/privacy",
+    "/terms",
+    "/signup",
+    "/forgot-password",
+    "/reset-password",
+    "/join",
+  ]);
   const showPublicNav =
     !sessionPending &&
     !session?.user &&
-    pathname !== "/" &&
-    pathname !== "/login" &&
-    pathname !== "/setup";
+    publicHeaderPaths.has(pathname);
 
   const can = (key: keyof NonNullable<typeof p>) => {
     if (usePermissions && p) return p[key] === true;

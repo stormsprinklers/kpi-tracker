@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/auth";
 
-const protectedPaths = [
+const privatePagePrefixes = [
   "/debug",
   "/settings",
   "/timesheets",
@@ -12,51 +12,75 @@ const protectedPaths = [
   "/team",
   "/insights",
 ];
-const authPaths = ["/login", "/setup", "/signup", "/forgot-password", "/reset-password", "/join"];
+
+const publicPagePaths = [
+  "/",
+  "/login",
+  "/setup",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/join",
+  "/privacy",
+  "/terms",
+];
+
+const publicApiPrefixes = [
+  "/api/auth",
+  "/api/webhooks",
+  "/api/public",
+  "/api/cron",
+  "/api/users/invite/accept",
+  "/api/users/invite/preview",
+];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   const session = req.auth;
 
-  // Allow API auth routes, webhooks (no session), and static assets
+  // Allow static assets
   if (
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/_next") ||
     pathname.includes(".")
   ) {
     return NextResponse.next();
   }
 
-  // Protect /api/debug - require auth, return 401 JSON for API routes
-  if (pathname.startsWith("/api/debug")) {
+  // API access: default private unless explicitly public.
+  if (pathname.startsWith("/api")) {
+    const isPublicApi = publicApiPrefixes.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`)
+    );
+    if (isPublicApi) {
+      return NextResponse.next();
+    }
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    if (session.user.role === "investor") {
+    if (pathname.startsWith("/api/debug") && session.user.role === "investor") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     return NextResponse.next();
   }
 
-  // Allow login, setup, signup, forgot-password, reset-password without auth
-  if (authPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+  // Public pages stay accessible without a login.
+  if (publicPagePaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
 
-  // Protect dashboard, debug, settings
-  if (protectedPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    if (!session?.user) {
-      const loginUrl = new URL("/login", req.nextUrl);
-      loginUrl.searchParams.set("callbackUrl", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
+  // Non-public app pages require login.
+  if (!session?.user) {
+    const loginUrl = new URL("/login", req.nextUrl);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
 
-    // Standalone Call insights UI lives under Attribution; keep /call-insights for CSR drill-down links only.
-    if (pathname === "/call-insights" || pathname === "/call-insights/") {
-      return NextResponse.redirect(new URL("/insights/attribution", req.nextUrl));
-    }
+  // Standalone Call insights UI lives under Attribution; keep /call-insights for CSR drill-down links only.
+  if (pathname === "/call-insights" || pathname === "/call-insights/") {
+    return NextResponse.redirect(new URL("/insights/attribution", req.nextUrl));
+  }
 
+  if (privatePagePrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     const perms = (session.user as { permissions?: Record<string, boolean> }).permissions;
     if (perms) {
       const pathPermMap: { prefix: string; perm: string }[] = [
@@ -110,7 +134,6 @@ export default auth((req) => {
         return NextResponse.redirect(new URL("/", req.nextUrl));
       }
     }
-    return NextResponse.next();
   }
 
   return NextResponse.next();
