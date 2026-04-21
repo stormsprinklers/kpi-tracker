@@ -16,9 +16,20 @@ interface AppHeaderProps {
 const navLinkClass =
   "rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800";
 
+function NavLoadingSkeleton() {
+  return (
+    <div className="flex flex-wrap items-center gap-2" aria-busy aria-label="Loading navigation">
+      <div className="h-8 w-20 animate-pulse rounded border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800" />
+      <div className="h-8 w-24 animate-pulse rounded border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800" />
+      <div className="h-8 w-28 animate-pulse rounded border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800" />
+    </div>
+  );
+}
+
 export function AppHeader({ title = "Home Services Analytics", subtitle = "Analytics and insights for home services", extra }: AppHeaderProps) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const pathname = usePathname();
+  const sessionPending = status === "loading";
   const [logoUrl, setLogoUrl] = useState<string | null>(session?.user?.organizationLogoUrl ?? null);
   const [employeeProfile, setEmployeeProfile] = useState<{ displayName: string | null; photoUrl: string | null } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -63,7 +74,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
 
   if (pathname === "/login" || pathname === "/setup") return null;
 
-  const isLanding = pathname === "/" && !session?.user;
+  const isLanding = pathname === "/" && !session?.user && !sessionPending;
 
   if (isLanding) {
     return (
@@ -92,6 +103,13 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
 
   const p = session?.user?.permissions;
   const usePermissions = !!p;
+
+  const showPublicNav =
+    !sessionPending &&
+    !session?.user &&
+    pathname !== "/" &&
+    pathname !== "/login" &&
+    pathname !== "/setup";
 
   const can = (key: keyof NonNullable<typeof p>) => {
     if (usePermissions && p) return p[key] === true;
@@ -168,7 +186,18 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
       {/* Desktop nav - hidden on mobile */}
       <div className="hidden md:flex md:flex-wrap md:items-center md:gap-2">
         {extra}
-        {session?.user && (
+        {sessionPending && <NavLoadingSkeleton />}
+        {!sessionPending && showPublicNav && (
+          <>
+            <a href="/" className={navLinkClass}>
+              Home
+            </a>
+            <a href="/login" className={navLinkClass}>
+              Log in
+            </a>
+          </>
+        )}
+        {!sessionPending && session?.user && (
           <>
             <NotificationBell />
             <HeaderNightShiftToggle />
@@ -230,7 +259,12 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
       </div>
 
       {/* Mobile hamburger and menu */}
-      {session?.user && (
+      {sessionPending && (
+        <div className="flex items-center gap-1 md:hidden">
+          <NavLoadingSkeleton />
+        </div>
+      )}
+      {!sessionPending && session?.user && (
         <div className="flex items-center gap-1 md:hidden">
           <HeaderNightShiftToggle />
           <span
@@ -259,6 +293,16 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
               </svg>
             )}
           </button>
+        </div>
+      )}
+      {!sessionPending && showPublicNav && (
+        <div className="flex flex-wrap items-center justify-end gap-2 md:hidden">
+          <a href="/" className={navLinkClass}>
+            Home
+          </a>
+          <a href="/login" className={navLinkClass}>
+            Log in
+          </a>
         </div>
       )}
 
