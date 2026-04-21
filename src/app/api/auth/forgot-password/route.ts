@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { createHash, randomBytes } from "crypto";
 import { initSchema } from "@/lib/db";
 import { getUserByEmail, createPasswordResetToken, deletePasswordResetTokensForUser } from "@/lib/db/queries";
+import {
+  buildPasswordResetEmailHtml,
+  buildPasswordResetEmailPlainText,
+} from "@/lib/email/passwordResetEmailTemplate";
+import { resolveAppBaseUrl } from "@/lib/email/resolveAppBaseUrl";
+import { sendTransactionalEmail } from "@/lib/email/sendGrid";
 
 export async function POST(request: Request) {
   try {
@@ -13,7 +19,9 @@ export async function POST(request: Request) {
     }
 
     const user = await getUserByEmail(email);
-    if (user?.organization_id) {
+    const hasPassword = Boolean(user?.password_hash?.trim());
+
+    if (user && hasPassword) {
       const token = randomBytes(32).toString("hex");
       const tokenHash = createHash("sha256").update(token).digest("hex");
       const expiresAt = new Date();
@@ -22,9 +30,30 @@ export async function POST(request: Request) {
       await deletePasswordResetTokensForUser(user.id);
       await createPasswordResetToken(user.id, tokenHash, expiresAt);
 
-      const baseUrl = process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-      const resetUrl = `${baseUrl}/reset-password?token=${token}`;
-      console.log("[forgot-password] Reset link (stub - integrate Resend/SendGrid later):", resetUrl);
+      const base = resolveAppBaseUrl();
+      const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+
+      const html = buildPasswordResetEmailHtml({ appBaseUrl: base, resetUrl });
+      const text = buildPasswordResetEmailPlainText({ appBaseUrl: base, resetUrl });
+
+      const send = await sendTransactionalEmail({
+        to: [email],
+        subject: "Reset your Home Services Analytics password",
+        html,
+        text,
+      });
+
+      if (!send.ok) {
+        console.error("[forgot-password] SendGrid:", send.error);
+        await deletePasswordResetTokensForUser(user.id);
+        return NextResponse.json(
+          {
+            error:
+              "We could not send the reset email. Check SendGrid configuration (SENDGRID_API_KEY) and your app URL (NEXT_PUBLIC_APP_URL or NEXTAUTH_URL), then try again.",
+          },
+          { status: 502 }
+        );
+      }
     }
 
     return NextResponse.json({
@@ -33,9 +62,6 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     console.error("Forgot password error:", err);
-    return NextResponse.json(
-      { error: "Request failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Request failed" }, { status: 500 });
   }
 }
