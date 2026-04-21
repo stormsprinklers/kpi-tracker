@@ -34,6 +34,11 @@ export function yesterdayYmdInOrgZone(now: Date, timeZone: string): string {
   return subtractCalendarDays(today, 1);
 }
 
+/** Current calendar day in the org time zone. */
+export function todayYmdInOrgZone(now: Date, timeZone: string): string {
+  return ymdInTimeZone(now, timeZone);
+}
+
 /** Inclusive 7-day window ending on endYmd. */
 export function rolling7DaysEnding(endYmd: string): { startDate: string; endDate: string } {
   return { startDate: subtractCalendarDays(endYmd, 6), endDate: endYmd };

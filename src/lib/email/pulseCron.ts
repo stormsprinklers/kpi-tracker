@@ -1,5 +1,5 @@
 import { getOrganizationById, markPulseDailySent, markPulseWeeklySent } from "@/lib/db/queries";
-import { rolling7DaysEnding, yesterdayYmdInOrgZone } from "@/lib/email/pulseDateRange";
+import { rolling7DaysEnding, todayYmdInOrgZone } from "@/lib/email/pulseDateRange";
 import { resolvePulseRecipientEmails } from "@/lib/email/pulseRecipients";
 import { buildPulseDailySnapshot, buildPulseWeeklySnapshot } from "@/lib/email/pulseSnapshots";
 import { generateDailyPulseAi, generateWeeklyPulseAi } from "@/lib/ai/openaiPulse";
@@ -32,7 +32,7 @@ export async function sendDailyPulseForOrganization(
   if (!org) return { organizationId, status: "error", detail: "Organization not found" };
 
   const tz = org.pulse_timezone || "America/Denver";
-  const ymd = yesterdayYmdInOrgZone(now, tz);
+  const ymd = todayYmdInOrgZone(now, tz);
   if (org.pulse_last_daily_ymd === ymd) {
     return { organizationId, status: "skipped", detail: `Already sent for ${ymd}` };
   }
@@ -83,7 +83,7 @@ export async function sendWeeklyPulseForOrganization(
   if (!org) return { organizationId, status: "error", detail: "Organization not found" };
 
   const tz = org.pulse_timezone || "America/Denver";
-  const endYmd = yesterdayYmdInOrgZone(now, tz);
+  const endYmd = todayYmdInOrgZone(now, tz);
   if (org.pulse_last_weekly_end_ymd === endYmd) {
     return { organizationId, status: "skipped", detail: `Already sent for week ending ${endYmd}` };
   }
@@ -141,7 +141,7 @@ export async function sendDailyPulseTestForOrganization(
   if (!org) return { organizationId, status: "error", detail: "Organization not found" };
 
   const tz = org.pulse_timezone || "America/Denver";
-  const ymd = yesterdayYmdInOrgZone(now, tz);
+  const ymd = todayYmdInOrgZone(now, tz);
 
   const recipients = await resolvePulseRecipientEmails(organizationId, org, "daily");
   if (recipients.length === 0) {
@@ -191,7 +191,7 @@ export async function sendWeeklyPulseTestForOrganization(
   if (!org) return { organizationId, status: "error", detail: "Organization not found" };
 
   const tz = org.pulse_timezone || "America/Denver";
-  const endYmd = yesterdayYmdInOrgZone(now, tz);
+  const endYmd = todayYmdInOrgZone(now, tz);
 
   const recipients = await resolvePulseRecipientEmails(organizationId, org, "weekly");
   if (recipients.length === 0) {
