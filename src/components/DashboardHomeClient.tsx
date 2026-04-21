@@ -67,7 +67,11 @@ export function DashboardHomeClient({ connected }: { connected: boolean }) {
         <p className="text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
       </div>
 
-      <KeyMetricsSection connected={connected} dateRange={dateRange} />
+      <KeyMetricsSection
+        connected={connected}
+        dateRange={dateRange}
+        payPeriodCalendar={payPeriodCalendar}
+      />
       {connected && <TechnicianRevenueSection dateRange={dateRange} />}
       {connected && <CsrKpisSection dateRange={dateRange} />}
     </>

@@ -1,6 +1,8 @@
 import {
   DEFAULT_PAY_PERIOD_CALENDAR,
+  getCalendarDateInTimeZone,
   getPayPeriodRangeForOffset,
+  formatYmd,
   type PayPeriodCalendarSettings,
 } from "./payPeriod";
 
@@ -15,6 +17,7 @@ export type DashboardDatePreset =
   | "30d"
   | "thisMonth"
   | "lastMonth"
+  | "ytd"
   | "custom";
 
 export const DASHBOARD_PRESET_LABELS: Record<DashboardDatePreset, string> = {
@@ -25,6 +28,7 @@ export const DASHBOARD_PRESET_LABELS: Record<DashboardDatePreset, string> = {
   "30d": "Last 30 days",
   thisMonth: "This month",
   lastMonth: "Last month",
+  ytd: "Year to date",
   all: "All time",
   custom: "Custom range",
 };
@@ -38,6 +42,7 @@ export const DASHBOARD_PRESET_ORDER: DashboardDatePreset[] = [
   "30d",
   "thisMonth",
   "lastMonth",
+  "ytd",
   "all",
   "custom",
 ];
@@ -48,6 +53,25 @@ export interface DashboardDateRange {
   startDate?: string;
   endDate?: string;
   rangeLabel: string;
+}
+
+/**
+ * When the selected window extends past “today” in the org’s pay-period time zone (e.g. this
+ * biweekly pay period), metrics should only query through today so period-over-period deltas
+ * compare the same elapsed length (day 2 vs day 2), not partial current vs full prior period.
+ */
+export function clampDashboardRangeEndToTodayInOrgTz(
+  dateRange: DashboardDateRange,
+  payPeriodCalendar: PayPeriodCalendarSettings
+): DashboardDateRange {
+  if (dateRange.isAllTime || !dateRange.startDate || !dateRange.endDate) return dateRange;
+  const cal = getCalendarDateInTimeZone(new Date(), payPeriodCalendar.payPeriodTimezone);
+  const todayYmd = formatYmd(cal.y, cal.m, cal.d);
+  const end = dateRange.endDate <= todayYmd ? dateRange.endDate : todayYmd;
+  if (end < dateRange.startDate) {
+    return { ...dateRange, endDate: dateRange.startDate };
+  }
+  return { ...dateRange, endDate: end };
 }
 
 /**
@@ -150,6 +174,17 @@ export function getDashboardDateRange(
       startDate: start.toISOString().slice(0, 10),
       endDate: endLast.toISOString().slice(0, 10),
       rangeLabel: DASHBOARD_PRESET_LABELS.lastMonth,
+    };
+  }
+  if (preset === "ytd") {
+    const cal = getCalendarDateInTimeZone(new Date(), payPeriodCalendar.payPeriodTimezone);
+    const endYmd = formatYmd(cal.y, cal.m, cal.d);
+    const startYmd = `${cal.y}-01-01`;
+    return {
+      isAllTime: false,
+      startDate: startYmd,
+      endDate: endYmd,
+      rangeLabel: DASHBOARD_PRESET_LABELS.ytd,
     };
   }
 

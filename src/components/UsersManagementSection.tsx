@@ -18,6 +18,12 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
   const [addError, setAddError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
 
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "employee" | "investor">("employee");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+
   function fetchUsers() {
     fetch("/api/users")
       .then((res) => res.json())
@@ -28,6 +34,33 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  async function handleInviteUser(e: React.FormEvent) {
+    e.preventDefault();
+    setInviteError(null);
+    setInviteSuccess(null);
+    setInviteLoading(true);
+    try {
+      const res = await fetch("/api/users/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+      });
+      const data = (await res.json()) as { error?: string; message?: string };
+      if (!res.ok) {
+        setInviteError(data.error ?? "Failed to send invitation");
+        setInviteLoading(false);
+        return;
+      }
+      setInviteSuccess(data.message ?? "Invitation sent.");
+      setInviteEmail("");
+      setInviteRole("employee");
+    } catch {
+      setInviteError("Something went wrong");
+    } finally {
+      setInviteLoading(false);
+    }
+  }
 
   async function handleAddUser(e: React.FormEvent) {
     e.preventDefault();
@@ -81,6 +114,7 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
         Add, remove, and manage users. Change user info here.
       </p>
+
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -128,7 +162,63 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
           </tbody>
         </table>
       </div>
-      <form onSubmit={handleAddUser} className="mt-4 flex flex-wrap gap-3">
+
+      <div className="mt-6 rounded-lg border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+        <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Invite by email</h3>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Sends an invitation from Home Services Analytics (same sender as pulse emails). They choose a password to join your organization.
+        </p>
+        <form onSubmit={handleInviteUser} className="mt-3 flex flex-wrap items-end gap-3">
+          <div className="flex min-w-[200px] flex-1 flex-col gap-1">
+            <label htmlFor="invite-email" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Email
+            </label>
+            <input
+              id="invite-email"
+              type="email"
+              placeholder="colleague@company.com"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              required
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="invite-role" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              Role
+            </label>
+            <select
+              id="invite-role"
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value as "admin" | "employee" | "investor")}
+              className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+            >
+              <option value="employee">Employee</option>
+              <option value="admin">Admin</option>
+              <option value="investor">Investor</option>
+            </select>
+          </div>
+          <button
+            type="submit"
+            disabled={inviteLoading}
+            className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            {inviteLoading ? "Sending…" : "Send invitation"}
+          </button>
+        </form>
+        {inviteError && (
+          <p className="mt-2 text-sm text-red-600 dark:text-red-400">{inviteError}</p>
+        )}
+        {inviteSuccess && (
+          <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">{inviteSuccess}</p>
+        )}
+      </div>
+
+      <h3 className="mt-8 text-sm font-medium text-zinc-800 dark:text-zinc-200">Add with password</h3>
+      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        Creates the account immediately. Share the password with the user outside the app.
+      </p>
+      <form onSubmit={handleAddUser} className="mt-3 flex flex-wrap gap-3">
         <input
           type="email"
           placeholder="Email"

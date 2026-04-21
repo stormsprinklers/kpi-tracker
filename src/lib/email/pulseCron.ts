@@ -10,12 +10,7 @@ import {
   metricsRowsFromWeekly,
 } from "@/lib/email/pulseEmailTemplate";
 import { sendTransactionalEmail } from "@/lib/email/sendGrid";
-
-function appBaseUrl(): string {
-  const u = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (u) return u.replace(/\/$/, "");
-  return "https://homeservicesanalytics.com";
-}
+import { resolveAppBaseUrl } from "@/lib/email/resolveAppBaseUrl";
 
 function formatYmdLong(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -51,7 +46,7 @@ export async function sendDailyPulseForOrganization(
     const snapshot = await buildPulseDailySnapshot(organizationId, ymd);
     const ai = await generateDailyPulseAi(snapshot);
     const periodLabel = `${formatYmdLong(ymd)} (org calendar day)`;
-    const base = appBaseUrl();
+    const base = resolveAppBaseUrl();
     const input = {
       variant: "daily" as const,
       orgName: org.name,
@@ -104,7 +99,7 @@ export async function sendWeeklyPulseForOrganization(
     const snapshot = await buildPulseWeeklySnapshot(organizationId, startDate, endDate);
     const ai = await generateWeeklyPulseAi(snapshot);
     const periodLabel = `${formatYmdLong(startDate)} – ${formatYmdLong(endDate)} (rolling 7 days, org time zone calendar)`;
-    const base = appBaseUrl();
+    const base = resolveAppBaseUrl();
     const input = {
       variant: "weekly" as const,
       orgName: org.name,
@@ -157,7 +152,7 @@ export async function sendDailyPulseTestForOrganization(
     const snapshot = await buildPulseDailySnapshot(organizationId, ymd);
     const ai = await generateDailyPulseAi(snapshot);
     const periodLabel = `${formatYmdLong(ymd)} (org calendar day)`;
-    const base = appBaseUrl();
+    const base = resolveAppBaseUrl();
     const input = {
       variant: "daily" as const,
       orgName: org.name,
@@ -209,7 +204,7 @@ export async function sendWeeklyPulseTestForOrganization(
     const snapshot = await buildPulseWeeklySnapshot(organizationId, startDate, endDate);
     const ai = await generateWeeklyPulseAi(snapshot);
     const periodLabel = `${formatYmdLong(startDate)} – ${formatYmdLong(endDate)} (rolling 7 days, org time zone calendar)`;
-    const base = appBaseUrl();
+    const base = resolveAppBaseUrl();
     const input = {
       variant: "weekly" as const,
       orgName: org.name,

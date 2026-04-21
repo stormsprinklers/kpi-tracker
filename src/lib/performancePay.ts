@@ -14,6 +14,7 @@ import { getCsrKpiList } from "./metrics/csrKpis";
 import { getOrganizationById } from "./db/queries";
 import {
   DEFAULT_PAY_PERIOD_CALENDAR,
+  addDaysToYmd,
   getBiweeklyPeriodBounds,
   type PayPeriodCalendarSettings,
 } from "./payPeriod";
@@ -36,9 +37,9 @@ export type BonusType =
 
 /** Extra columns for payroll / HR export (Time Insights, etc.). */
 export interface PayrollExportDetail {
-  /** Straight-time bucket from timesheets using 40h per Mon–Sun workweek. */
+  /** Straight-time bucket: up to 40h per consecutive 7-day block within the pay range (anchored at period start). */
   regularHours: number;
-  /** Hours beyond 40 in any workweek (same split as regular). */
+  /** Hours beyond 40 in each 7-day block of the pay range (same window as regular). */
   overtimeHours: number;
   /** Configured base hourly rate (not blended with bonuses or commission). Null when plan is not hourly-based. */
   baseHourlyRate: number | null;
@@ -185,16 +186,42 @@ function hourlyPayWithWeeklyOvertime(
   return Math.round(total * 100) / 100;
 }
 
-/** Mon–Sun workweek hours → period totals for payroll display (40h straight per week). */
-function regularOvertimeHoursFromWeeks(hoursByWeek: Map<string, number>): {
-  regularHours: number;
-  overtimeHours: number;
-} {
+/** Every calendar day from start through end inclusive (YYYY-MM-DD). */
+function eachCalendarDayInclusive(startYmd: string, endYmd: string): string[] {
+  if (startYmd > endYmd) return [];
+  const out: string[] = [];
+  let cur = startYmd;
+  let guard = 0;
+  while (guard++ < 400) {
+    out.push(cur);
+    if (cur === endYmd) break;
+    cur = addDaysToYmd(cur, 1);
+  }
+  return out;
+}
+
+/**
+ * Regular / OT split for a pay **window** (e.g. biweekly range): 7-day chunks starting at `periodStartYmd`,
+ * each capped at 40h straight. Avoids calendar Mon–Sun buckets where a 14-day span can touch three weeks and
+ * over-count “regular” (e.g. 40+40+7 = 87).
+ */
+function regularOvertimeHoursForPayWindow(
+  periodStartYmd: string,
+  periodEndYmd: string,
+  hoursByDay: Map<string, number>
+): { regularHours: number; overtimeHours: number } {
+  const days = eachCalendarDayInclusive(periodStartYmd, periodEndYmd);
   let regular = 0;
   let overtime = 0;
-  for (const weekHours of hoursByWeek.values()) {
-    regular += Math.min(weekHours, WEEKLY_OT_THRESHOLD_HOURS);
-    overtime += Math.max(0, weekHours - WEEKLY_OT_THRESHOLD_HOURS);
+  const CHUNK = 7;
+  for (let i = 0; i < days.length; i += CHUNK) {
+    let chunkHours = 0;
+    for (let j = 0; j < CHUNK && i + j < days.length; j++) {
+      const ymd = days[i + j]!;
+      chunkHours += hoursByDay.get(ymd) ?? 0;
+    }
+    regular += Math.min(chunkHours, WEEKLY_OT_THRESHOLD_HOURS);
+    overtime += Math.max(0, chunkHours - WEEKLY_OT_THRESHOLD_HOURS);
   }
   return {
     regularHours: Math.round(regular * 100) / 100,
@@ -222,7 +249,7 @@ function buildPayrollGuide(
         "Plan: hourly. App multiplies all logged hours by the configured rate (no 1.5× weekly OT in Performance Pay for this plan)."
       );
       lines.push(
-        "Regular vs. OT hours use a 40h cap per Mon–Sun week from timesheets for your payroll worksheets."
+        "Regular vs. OT: up to 40h per 7-day block within this date range (starting at range start), from timesheets."
       );
       break;
     case "hourly_commission_tiers":
@@ -237,7 +264,7 @@ function buildPayrollGuide(
         );
       }
       lines.push(
-        "Regular vs. OT hours use 40h/week from timesheets; the hourly leg does not apply a 1.5× OT multiplier in the app."
+        "Regular vs. OT: 40h per 7-day block within this date range; the hourly leg does not apply a 1.5× OT multiplier in the app."
       );
       break;
     case "hourly_to_commission": {
@@ -253,7 +280,7 @@ function buildPayrollGuide(
           `Commission wins: ${ctx.commissionRatePct ?? "—"}% × revenue = $${cp.toFixed(2)} (hourly incl. OT would be $${hp.toFixed(2)}).`
         );
         lines.push(
-          "Weekly OT premium applies only on the hourly path; it is not used when commission is higher."
+          "Weekly OT premium (1.5× on hours over 40 in a Mon–Sun workweek) applies only on the hourly path; it is not used when commission is higher."
         );
       } else {
         lines.push(
@@ -273,7 +300,7 @@ function buildPayrollGuide(
         `Plan: hourly metric tiers (${ctx.metricLabel ?? "metric"}). Applied rate is the highest tier at or below this period’s value.`
       );
       lines.push(
-        "Regular vs. OT hours are for reference; pay uses total hours × tier rate (no weekly OT premium in app)."
+        "Regular vs. OT in this table use 40h per 7-day block in the selected range; pay uses total hours × tier rate (no OT premium in app)."
       );
       break;
     case "csr_hourly_booking_rate":
@@ -379,12 +406,15 @@ export async function calculateExpectedPay(
   }
 
   const hoursByEmployee = new Map<string, number>();
-  /** empId -> (week Monday YMD -> hours in that week) */
+  /** empId -> (week Monday YMD -> hours in that week) — used for hourly OT pay math (FLSA-style workweek). */
   const hoursByEmployeeWeek = new Map<string, Map<string, number>>();
+  /** empId -> (entry_date YMD -> hours that day) — used for reg/OT display within the selected pay range. */
+  const hoursByEmployeeDay = new Map<string, Map<string, number>>();
   for (const e of timeEntries) {
     const h = hoursFromTimeEntry(e);
     if (h <= 0) continue;
     const empId = e.hcp_employee_id;
+    const day = e.entry_date;
     hoursByEmployee.set(empId, (hoursByEmployee.get(empId) ?? 0) + h);
     const weekKey = mondayWeekKeyFromEntryDate(e.entry_date);
     let byWeek = hoursByEmployeeWeek.get(empId);
@@ -393,6 +423,12 @@ export async function calculateExpectedPay(
       hoursByEmployeeWeek.set(empId, byWeek);
     }
     byWeek.set(weekKey, (byWeek.get(weekKey) ?? 0) + h);
+    let byDay = hoursByEmployeeDay.get(empId);
+    if (!byDay) {
+      byDay = new Map<string, number>();
+      hoursByEmployeeDay.set(empId, byDay);
+    }
+    byDay.set(day, (byDay.get(day) ?? 0) + h);
   }
 
   if (includeTimesheetEmployeesWithoutPayConfig && !filterEmployeeId) {
@@ -457,8 +493,12 @@ export async function calculateExpectedPay(
       if (!includeTimesheetEmployeesWithoutPayConfig) continue;
 
       const hours = hoursByEmployee.get(empId) ?? 0;
-      const byWeekForPayroll = hoursByEmployeeWeek.get(empId) ?? new Map<string, number>();
-      const { regularHours, overtimeHours } = regularOvertimeHoursFromWeeks(byWeekForPayroll);
+      const byDayForPayroll = hoursByEmployeeDay.get(empId) ?? new Map<string, number>();
+      const { regularHours, overtimeHours } = regularOvertimeHoursForPayWindow(
+        startDate,
+        endDate,
+        byDayForPayroll
+      );
       const tech = techByEmployee.get(empId);
       const revenue = tech?.totalRevenue ?? 0;
       const reviews = reviewCounts[empId.trim()] ?? reviewCounts[empId] ?? 0;
@@ -518,8 +558,12 @@ export async function calculateExpectedPay(
 
     let basePay = 0;
     const breakdown: Record<string, number> = {};
-    const byWeekForPayroll = hoursByEmployeeWeek.get(empId) ?? new Map<string, number>();
-    const { regularHours, overtimeHours } = regularOvertimeHoursFromWeeks(byWeekForPayroll);
+    const byDayForPayroll = hoursByEmployeeDay.get(empId) ?? new Map<string, number>();
+    const { regularHours, overtimeHours } = regularOvertimeHoursForPayWindow(
+      startDate,
+      endDate,
+      byDayForPayroll
+    );
 
     let payrollBaseHourlyRate: number | null = null;
     let payrollAppliedHourlyRate: number | null = null;

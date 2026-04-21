@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { DashboardDateRange } from "@/lib/dashboardDateRange";
+import {
+  clampDashboardRangeEndToTodayInOrgTz,
+  type DashboardDateRange,
+} from "@/lib/dashboardDateRange";
+import type { PayPeriodCalendarSettings } from "@/lib/payPeriod";
 import { MetricTooltip } from "./MetricTooltip";
 
 interface KeyMetrics {
@@ -81,9 +85,11 @@ function deltaToneClass(tone: MetricDeltaTone): string {
 export function KeyMetricsSection({
   connected,
   dateRange,
+  payPeriodCalendar,
 }: {
   connected: boolean;
   dateRange: DashboardDateRange;
+  payPeriodCalendar: PayPeriodCalendarSettings;
 }) {
   const [metrics, setMetrics] = useState<KeyMetrics | null>(null);
   const [previousMetrics, setPreviousMetrics] = useState<KeyMetrics | null>(null);
@@ -95,9 +101,10 @@ export function KeyMetricsSection({
     setLoading(true);
     setError(null);
     try {
-      const prevRange = previousDateRange(dateRange);
+      const metricsRange = clampDashboardRangeEndToTodayInOrgTz(dateRange, payPeriodCalendar);
+      const prevRange = previousDateRange(metricsRange);
       const [currentRes, previousRes] = await Promise.all([
-        fetch(keyMetricsUrl(dateRange)),
+        fetch(keyMetricsUrl(metricsRange)),
         prevRange ? fetch(keyMetricsUrl(prevRange)) : Promise.resolve(null),
       ]);
 
@@ -116,7 +123,7 @@ export function KeyMetricsSection({
     } finally {
       setLoading(false);
     }
-  }, [connected, dateRange]);
+  }, [connected, dateRange, payPeriodCalendar]);
 
   useEffect(() => {
     fetchMetrics();

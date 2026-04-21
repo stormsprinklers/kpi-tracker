@@ -12,7 +12,7 @@ const protectedPaths = [
   "/team",
   "/insights",
 ];
-const authPaths = ["/login", "/setup", "/signup", "/forgot-password", "/reset-password"];
+const authPaths = ["/login", "/setup", "/signup", "/forgot-password", "/reset-password", "/join"];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;

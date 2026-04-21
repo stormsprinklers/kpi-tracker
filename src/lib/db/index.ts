@@ -474,6 +474,30 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens (user_id)
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS organization_invitations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      email TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('admin', 'employee', 'investor')),
+      invited_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      accepted_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_organization_invitations_token_pending
+    ON organization_invitations (token_hash)
+    WHERE accepted_at IS NULL
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_organization_invitations_org_email_pending
+    ON organization_invitations (organization_id, email)
+    WHERE accepted_at IS NULL
+  `;
+
   // Time entries (timesheets) - employee time tracking, scoped by hcp_employee_id
   await sql`
     CREATE TABLE IF NOT EXISTS time_entries (

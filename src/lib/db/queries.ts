@@ -1056,6 +1056,85 @@ export async function updateUserPassword(userId: string, passwordHash: string) {
   `;
 }
 
+// Organization invitations (admin email invite → join org)
+export async function getOrganizationUserByEmail(organizationId: string, email: string) {
+  const result = await sql`
+    SELECT id::text FROM users
+    WHERE organization_id = ${organizationId}::uuid AND LOWER(TRIM(email)) = LOWER(TRIM(${email}))
+    LIMIT 1
+  `;
+  return result.rows?.[0] as { id: string } | undefined;
+}
+
+export async function deletePendingInvitationsForOrgEmail(organizationId: string, email: string) {
+  await sql`
+    DELETE FROM organization_invitations
+    WHERE organization_id = ${organizationId}::uuid
+      AND LOWER(TRIM(email)) = LOWER(TRIM(${email}))
+      AND accepted_at IS NULL
+  `;
+}
+
+export async function createOrganizationInvitation(params: {
+  organization_id: string;
+  email: string;
+  token_hash: string;
+  role: "admin" | "employee" | "investor";
+  invited_by_user_id: string;
+  expires_at: Date;
+}) {
+  const result = await sql`
+    INSERT INTO organization_invitations (
+      organization_id, email, token_hash, role, invited_by_user_id, expires_at
+    )
+    VALUES (
+      ${params.organization_id}::uuid,
+      ${params.email},
+      ${params.token_hash},
+      ${params.role},
+      ${params.invited_by_user_id}::uuid,
+      ${params.expires_at.toISOString()}
+    )
+    RETURNING id::text
+  `;
+  return result.rows?.[0] as { id: string };
+}
+
+export type OrganizationInvitationRow = {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: string;
+  expires_at: string;
+  org_name: string | null;
+};
+
+export async function findValidOrganizationInvitation(
+  tokenHash: string
+): Promise<OrganizationInvitationRow | undefined> {
+  const result = await sql`
+    SELECT
+      oi.id::text,
+      oi.organization_id::text,
+      oi.email,
+      oi.role,
+      oi.expires_at::text,
+      o.name AS org_name
+    FROM organization_invitations oi
+    LEFT JOIN organizations o ON o.id = oi.organization_id
+    WHERE oi.token_hash = ${tokenHash}
+      AND oi.accepted_at IS NULL
+      AND oi.expires_at > NOW()
+    LIMIT 1
+  `;
+  const row = result.rows?.[0];
+  return row ? (row as OrganizationInvitationRow) : undefined;
+}
+
+export async function deleteOrganizationInvitation(id: string) {
+  await sql`DELETE FROM organization_invitations WHERE id = ${id}::uuid`;
+}
+
 // Time entries (timesheets)
 export interface TimeEntry {
   id: string;
