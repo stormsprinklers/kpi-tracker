@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_IVR_PROMPT_TEMPLATE } from "@/lib/twilio/ivrSayText";
+import { useSession } from "next-auth/react";
 
 type Source = {
   id: string;
@@ -111,6 +112,8 @@ function normalizeWebsite(input: string): string {
 }
 
 export function AttributionSetupWizardClient() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
   const [step, setStep] = useState(0);
   const [install, setInstall] = useState<InstallResponse | null>(null);
   const [newPublishableKey, setNewPublishableKey] = useState<string | null>(null);
@@ -121,6 +124,12 @@ export function AttributionSetupWizardClient() {
   const [savingOrigins, setSavingOrigins] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lsaManualStartDate, setLsaManualStartDate] = useState("");
+  const [lsaManualEndDate, setLsaManualEndDate] = useState("");
+  const [lsaManualSpend, setLsaManualSpend] = useState("");
+  const [lsaManualCsv, setLsaManualCsv] = useState<File | null>(null);
+  const [lsaManualBusy, setLsaManualBusy] = useState(false);
+  const [lsaManualMsg, setLsaManualMsg] = useState<string | null>(null);
   const [activePhones, setActivePhones] = useState<ActivePhone[]>([]);
   const [twilioCalls, setTwilioCalls] = useState<TwilioCallRow[]>([]);
   const [defaultForwardInput, setDefaultForwardInput] = useState("");
@@ -292,6 +301,15 @@ export function AttributionSetupWizardClient() {
     });
   }, []);
 
+  useEffect(() => {
+    if (lsaManualStartDate && lsaManualEndDate) return;
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 13);
+    if (!lsaManualStartDate) setLsaManualStartDate(start.toISOString().slice(0, 10));
+    if (!lsaManualEndDate) setLsaManualEndDate(end.toISOString().slice(0, 10));
+  }, [lsaManualStartDate, lsaManualEndDate]);
+
   const websiteBase = useMemo(() => normalizeWebsite(install?.website ?? ""), [install?.website]);
   const snippet = useMemo(() => {
     const appUrl =
@@ -394,6 +412,39 @@ document.addEventListener("DOMContentLoaded", function () {
       await navigator.clipboard.writeText(text);
     } catch {
       setError("Could not copy to clipboard.");
+    }
+  }
+
+  async function uploadManualLsaCsv() {
+    if (!isAdmin) return;
+    if (!lsaManualStartDate || !lsaManualEndDate) {
+      setError("LSA manual upload: start and end date are required.");
+      return;
+    }
+    if (!lsaManualCsv) {
+      setError("LSA manual upload: choose a CSV export first.");
+      return;
+    }
+    setLsaManualBusy(true);
+    setError(null);
+    setLsaManualMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("startDate", lsaManualStartDate);
+      fd.append("endDate", lsaManualEndDate);
+      fd.append("totalSpend", lsaManualSpend.trim() || "0");
+      fd.append("leadsCsv", lsaManualCsv);
+      const res = await fetch("/api/marketing/sync/lsa-manual", {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) throw new Error(data.error ?? "LSA manual upload failed");
+      setLsaManualMsg(data.message ?? "Manual LSA data saved.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "LSA manual upload failed");
+    } finally {
+      setLsaManualBusy(false);
     }
   }
 
@@ -754,6 +805,58 @@ document.addEventListener("DOMContentLoaded", function () {
         <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
           {error}
         </div>
+      ) : null}
+      {isAdmin ? (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            Temporary manual LSA input
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            Marketing setup is deprecated. Use this temporary Attribution setup control to enter
+            Google LSA spend and upload the Google leads export CSV for a selected date range.
+          </p>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <input
+              type="date"
+              value={lsaManualStartDate}
+              onChange={(e) => setLsaManualStartDate(e.target.value)}
+              className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <span className="text-xs text-zinc-500">to</span>
+            <input
+              type="date"
+              value={lsaManualEndDate}
+              onChange={(e) => setLsaManualEndDate(e.target.value)}
+              className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={lsaManualSpend}
+              onChange={(e) => setLsaManualSpend(e.target.value)}
+              placeholder="Total ad spend (USD)"
+              className="w-44 rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <input
+              type="file"
+              accept=".csv,text/csv,text/tab-separated-values,.tsv"
+              onChange={(e) => setLsaManualCsv(e.target.files?.[0] ?? null)}
+              className="max-w-[260px] text-xs text-zinc-600 dark:text-zinc-300"
+            />
+            <button
+              type="button"
+              onClick={uploadManualLsaCsv}
+              disabled={lsaManualBusy}
+              className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {lsaManualBusy ? "Uploading…" : "Upload manual LSA CSV"}
+            </button>
+          </div>
+          {lsaManualMsg ? (
+            <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">{lsaManualMsg}</p>
+          ) : null}
+        </section>
       ) : null}
 
       <section

@@ -42,7 +42,7 @@ export function MarketingLeadSourceTable({
       </h2>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
         HCP jobs are attributed from lead source text and UTMs. Paid spend/CPL need LSA sync
-        (or temporary manual LSA upload, or future Ads integrations). Free channels show N/A for spend
+        (or temporary manual LSA upload in Attribution setup, or future Ads integrations). Free channels show N/A for spend
         and substitute GBP / Search Console metrics where available.
       </p>
       <div className="mt-4 overflow-x-auto">
@@ -94,7 +94,7 @@ export function MarketingLeadSourceTable({
                       {isAdmin && c.slug === "google_lsa" && (
                         <span className="text-xs text-zinc-500">
                           Admin: connect OAuth via /api/marketing/integrations/lsa or use temporary manual
-                          LSA CSV + spend upload in Marketing Insights.
+                          LSA CSV + spend upload in Attribution setup.
                         </span>
                       )}
                     </div>

@@ -53,7 +53,7 @@ export function PerformancePayWizard({
 
   const [scopeType, setScopeType] = useState<"role" | "employee">("role");
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
 
   const [structureType, setStructureType] = useState<StructureType>("pure_hourly");
   const [selectedBonuses, setSelectedBonuses] = useState<string[]>([]);
@@ -95,12 +95,13 @@ export function PerformancePayWizard({
     );
   }
 
-  const scopeId = scopeType === "role" ? selectedRoleId : selectedEmployeeId;
-  const canProceedStep1 = !!scopeId;
+  const canProceedStep1 =
+    scopeType === "role" ? !!selectedRoleId : selectedEmployeeIds.length > 0;
   const canProceedStep2 = true;
 
   async function handleSave(addAnother: boolean) {
-    if (!scopeId) return;
+    if (scopeType === "role" && !selectedRoleId) return;
+    if (scopeType === "employee" && selectedEmployeeIds.length === 0) return;
     setSaveError(null);
     setSaveLoading(true);
     try {
@@ -110,7 +111,8 @@ export function PerformancePayWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scope_type: scopeType,
-          scope_id: scopeId,
+          scope_id: scopeType === "role" ? selectedRoleId : undefined,
+          scope_ids: scopeType === "employee" ? selectedEmployeeIds : undefined,
           structure_type: structureType,
           config_json: config,
           bonuses_json: bonusesJson,
@@ -123,7 +125,7 @@ export function PerformancePayWizard({
         setStep(1);
         setScopeType("role");
         setSelectedRoleId(null);
-        setSelectedEmployeeId(null);
+        setSelectedEmployeeIds([]);
         setStructureType("pure_hourly");
         setSelectedBonuses([]);
         setConfig({});
@@ -168,7 +170,7 @@ export function PerformancePayWizard({
                 checked={scopeType === "role"}
                 onChange={() => {
                   setScopeType("role");
-                  setSelectedEmployeeId(null);
+                  setSelectedEmployeeIds([]);
                 }}
               />
               <span className="text-sm text-zinc-700 dark:text-zinc-300">Apply to a role</span>
@@ -201,22 +203,49 @@ export function PerformancePayWizard({
                   setSelectedRoleId(null);
                 }}
               />
-              <span className="text-sm text-zinc-700 dark:text-zinc-300">Individual employee</span>
+              <span className="text-sm text-zinc-700 dark:text-zinc-300">Individual employees</span>
             </label>
             {scopeType === "employee" && (
-              <div className="ml-6">
-                <select
-                  value={selectedEmployeeId ?? ""}
-                  onChange={(e) => setSelectedEmployeeId(e.target.value || null)}
-                  className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                >
-                  <option value="">Select employee…</option>
+              <div className="ml-6 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEmployeeIds(setup.employees.map((emp) => emp.id))}
+                    className="rounded border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEmployeeIds([])}
+                    className="rounded border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Clear
+                  </button>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {selectedEmployeeIds.length} selected
+                  </span>
+                </div>
+                <div className="max-h-56 space-y-1 overflow-y-auto rounded border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/50">
                   {setup.employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name}
-                    </option>
+                    <label key={emp.id} className="flex items-center gap-2 rounded px-1 py-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedEmployeeIds.includes(emp.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedEmployeeIds((prev) =>
+                              prev.includes(emp.id) ? prev : [...prev, emp.id]
+                            );
+                            return;
+                          }
+                          setSelectedEmployeeIds((prev) => prev.filter((id) => id !== emp.id));
+                        }}
+                      />
+                      <span className="text-sm text-zinc-700 dark:text-zinc-300">{emp.name}</span>
+                    </label>
                   ))}
-                </select>
+                </div>
               </div>
             )}
           </div>
