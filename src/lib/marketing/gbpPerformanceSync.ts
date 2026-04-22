@@ -41,6 +41,13 @@ export async function syncGbpPerformanceMetricsForOrganization(
   ok: boolean;
   error?: string;
   daysWritten?: number;
+  totals?: {
+    viewsMaps: number;
+    viewsSearch: number;
+    actionsWebsite: number;
+    actionsPhone: number;
+    actionsDirections: number;
+  };
   queriesDirect?: number | null;
   queriesIndirect?: number | null;
   daily?: Array<{
@@ -85,6 +92,42 @@ export async function syncGbpPerformanceMetricsForOrganization(
 
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
+      const accountId = profile.account_id?.trim() ?? "";
+      if (accountId) {
+        const legacy = await fetchLegacyInsightsTotals({
+          accessToken,
+          accountId,
+          locationId,
+          rangeStart,
+          rangeEnd,
+        });
+        if (legacy.anyValue) {
+          await setMarketingSyncSuccess({
+            organizationId,
+            integration: "gbp_performance",
+            cursorJson: {
+              locationId,
+              fallback: "reportInsights",
+              rangeStart,
+              rangeEnd,
+            },
+          });
+          return {
+            ok: true,
+            daysWritten: 0,
+            daily: [],
+            queriesDirect: legacy.queriesDirect,
+            queriesIndirect: legacy.queriesIndirect,
+            totals: {
+              viewsMaps: legacy.viewsMaps ?? 0,
+              viewsSearch: legacy.viewsSearch ?? 0,
+              actionsWebsite: legacy.actionsWebsite ?? 0,
+              actionsPhone: legacy.actionsPhone ?? 0,
+              actionsDirections: legacy.actionsDirections ?? 0,
+            },
+          };
+        }
+      }
       const msg =
         (json.error as { message?: string } | undefined)?.message ??
         (json.message as string | undefined) ??
@@ -215,17 +258,35 @@ export async function syncGbpPerformanceMetricsForOrganization(
 
     let queriesDirect: number | null = null;
     let queriesIndirect: number | null = null;
+    let fallbackTotals:
+      | {
+          viewsMaps: number;
+          viewsSearch: number;
+          actionsWebsite: number;
+          actionsPhone: number;
+          actionsDirections: number;
+        }
+      | undefined;
     const accountId = profile.account_id?.trim() ?? "";
     if (accountId) {
-      const queryInsights = await fetchLegacyQueryInsights({
+      const legacy = await fetchLegacyInsightsTotals({
         accessToken,
         accountId,
         locationId,
         rangeStart,
         rangeEnd,
       });
-      queriesDirect = queryInsights.queriesDirect;
-      queriesIndirect = queryInsights.queriesIndirect;
+      queriesDirect = legacy.queriesDirect;
+      queriesIndirect = legacy.queriesIndirect;
+      if (legacy.anyValue) {
+        fallbackTotals = {
+          viewsMaps: legacy.viewsMaps ?? 0,
+          viewsSearch: legacy.viewsSearch ?? 0,
+          actionsWebsite: legacy.actionsWebsite ?? 0,
+          actionsPhone: legacy.actionsPhone ?? 0,
+          actionsDirections: legacy.actionsDirections ?? 0,
+        };
+      }
     }
 
     await setMarketingSyncSuccess({
@@ -234,7 +295,14 @@ export async function syncGbpPerformanceMetricsForOrganization(
       cursorJson: { locationId, daysWritten, rangeStart, rangeEnd },
     });
 
-    return { ok: true, daysWritten, daily, queriesDirect, queriesIndirect };
+    return {
+      ok: true,
+      daysWritten,
+      daily,
+      queriesDirect,
+      queriesIndirect,
+      totals: fallbackTotals,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await setMarketingSyncError({
@@ -246,13 +314,22 @@ export async function syncGbpPerformanceMetricsForOrganization(
   }
 }
 
-async function fetchLegacyQueryInsights(params: {
+async function fetchLegacyInsightsTotals(params: {
   accessToken: string;
   accountId: string;
   locationId: string;
   rangeStart: string;
   rangeEnd: string;
-}): Promise<{ queriesDirect: number | null; queriesIndirect: number | null }> {
+}): Promise<{
+  queriesDirect: number | null;
+  queriesIndirect: number | null;
+  viewsMaps: number | null;
+  viewsSearch: number | null;
+  actionsWebsite: number | null;
+  actionsPhone: number | null;
+  actionsDirections: number | null;
+  anyValue: boolean;
+}> {
   const url = `https://mybusiness.googleapis.com/v4/accounts/${encodeURIComponent(
     params.accountId
   )}/locations:reportInsights`;
@@ -262,6 +339,11 @@ async function fetchLegacyQueryInsights(params: {
       metricRequests: [
         { metric: "QUERIES_DIRECT", options: "AGGREGATED_TOTAL" },
         { metric: "QUERIES_INDIRECT", options: "AGGREGATED_TOTAL" },
+        { metric: "VIEWS_MAPS", options: "AGGREGATED_TOTAL" },
+        { metric: "VIEWS_SEARCH", options: "AGGREGATED_TOTAL" },
+        { metric: "ACTIONS_WEBSITE", options: "AGGREGATED_TOTAL" },
+        { metric: "ACTIONS_PHONE", options: "AGGREGATED_TOTAL" },
+        { metric: "ACTIONS_DRIVING_DIRECTIONS", options: "AGGREGATED_TOTAL" },
       ],
       timeRange: {
         startTime: `${params.rangeStart.slice(0, 10)}T00:00:00Z`,
@@ -281,7 +363,16 @@ async function fetchLegacyQueryInsights(params: {
   });
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    return { queriesDirect: null, queriesIndirect: null };
+    return {
+      queriesDirect: null,
+      queriesIndirect: null,
+      viewsMaps: null,
+      viewsSearch: null,
+      actionsWebsite: null,
+      actionsPhone: null,
+      actionsDirections: null,
+      anyValue: false,
+    };
   }
 
   const metrics = ((json.locationMetrics as unknown[] | undefined) ?? [])[0] as
@@ -291,6 +382,11 @@ async function fetchLegacyQueryInsights(params: {
 
   let queriesDirect: number | null = null;
   let queriesIndirect: number | null = null;
+  let viewsMaps: number | null = null;
+  let viewsSearch: number | null = null;
+  let actionsWebsite: number | null = null;
+  let actionsPhone: number | null = null;
+  let actionsDirections: number | null = null;
   for (const mv of metricValues) {
     const row = mv as {
       metric?: string;
@@ -301,8 +397,29 @@ async function fetchLegacyQueryInsights(params: {
     const parsed = parseMetricNumber(row);
     if (metric === "QUERIES_DIRECT") queriesDirect = parsed;
     if (metric === "QUERIES_INDIRECT") queriesIndirect = parsed;
+    if (metric === "VIEWS_MAPS") viewsMaps = parsed;
+    if (metric === "VIEWS_SEARCH") viewsSearch = parsed;
+    if (metric === "ACTIONS_WEBSITE") actionsWebsite = parsed;
+    if (metric === "ACTIONS_PHONE") actionsPhone = parsed;
+    if (metric === "ACTIONS_DRIVING_DIRECTIONS") actionsDirections = parsed;
   }
-  return { queriesDirect, queriesIndirect };
+  return {
+    queriesDirect,
+    queriesIndirect,
+    viewsMaps,
+    viewsSearch,
+    actionsWebsite,
+    actionsPhone,
+    actionsDirections,
+    anyValue:
+      queriesDirect != null ||
+      queriesIndirect != null ||
+      viewsMaps != null ||
+      viewsSearch != null ||
+      actionsWebsite != null ||
+      actionsPhone != null ||
+      actionsDirections != null,
+  };
 }
 
 function parseMetricNumber(row: {

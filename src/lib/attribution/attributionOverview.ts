@@ -95,6 +95,15 @@ export async function buildAttributionOverviewResponse(
         actions_directions: number;
       }>
     | null = null;
+  let liveGbpTotals:
+    | {
+        viewsMaps: number;
+        viewsSearch: number;
+        actionsWebsite: number;
+        actionsPhone: number;
+        actionsDirections: number;
+      }
+    | null = null;
   let liveQueriesDirect: number | null = null;
   let liveQueriesIndirect: number | null = null;
   try {
@@ -107,6 +116,7 @@ export async function buildAttributionOverviewResponse(
       liveGbpDaily = synced.daily;
       liveQueriesDirect = synced.queriesDirect ?? null;
       liveQueriesIndirect = synced.queriesIndirect ?? null;
+      liveGbpTotals = synced.totals ?? null;
     }
   } catch {
     // Keep attribution page resilient if live GBP call fails.
@@ -188,6 +198,7 @@ export async function buildAttributionOverviewResponse(
       actionsDirections: 0,
     }
   );
+  const effectiveGbpTotals = liveGbpTotals ?? gbpTotals;
 
   return {
     startDate,
@@ -222,11 +233,11 @@ export async function buildAttributionOverviewResponse(
       metrics: {
         queriesDirect: liveQueriesDirect,
         queriesIndirect: liveQueriesIndirect,
-        viewsMaps: gbpTotals.viewsMaps,
-        viewsSearch: gbpTotals.viewsSearch,
-        actionsWebsite: gbpTotals.actionsWebsite,
-        actionsPhone: gbpTotals.actionsPhone,
-        actionsDirections: gbpTotals.actionsDirections,
+        viewsMaps: effectiveGbpTotals.viewsMaps,
+        viewsSearch: effectiveGbpTotals.viewsSearch,
+        actionsWebsite: effectiveGbpTotals.actionsWebsite,
+        actionsPhone: effectiveGbpTotals.actionsPhone,
+        actionsDirections: effectiveGbpTotals.actionsDirections,
       },
       daily: gbpDaily.map((row) => ({
         date: row.metric_date,
