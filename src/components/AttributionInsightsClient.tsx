@@ -97,6 +97,24 @@ type AttributionOverviewApi = {
   recentSessions: AttributionSession[];
 };
 
+type MetricDeltaTone = "positive" | "negative" | "neutral";
+
+type AttributionSeoData = {
+  configured: boolean;
+  locations?: { value: string; name: string }[];
+  local?: Array<{
+    keyword: string;
+    locationValue: string;
+    rank: number | null;
+  }>;
+  organic?: Array<{
+    keyword: string;
+    locationValue: string;
+    rank: number | null;
+    url: string | null;
+  }>;
+};
+
 function formatMoney(n: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -114,6 +132,51 @@ function formatPct(v: number | null): string {
 function formatInt(v: number | null | undefined): string {
   if (v == null) return "—";
   return new Intl.NumberFormat("en-US").format(v);
+}
+
+function toUtcDate(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+}
+
+function ymdFromUtcDate(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    d.getUTCDate()
+  ).padStart(2, "0")}`;
+}
+
+function previousDateBounds(startYmd: string, endYmd: string): { startDate: string; endDate: string } | null {
+  const start = toUtcDate(startYmd);
+  const end = toUtcDate(endYmd);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const days = Math.floor((end.getTime() - start.getTime()) / dayMs) + 1;
+  if (days <= 0) return null;
+  const prevEnd = new Date(start.getTime() - dayMs);
+  const prevStart = new Date(prevEnd.getTime() - (days - 1) * dayMs);
+  return {
+    startDate: ymdFromUtcDate(prevStart),
+    endDate: ymdFromUtcDate(prevEnd),
+  };
+}
+
+function percentChange(current: number | null | undefined, previous: number | null | undefined): number | null {
+  if (current == null || previous == null) return null;
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
+  if (previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function formatDelta(delta: number | null): { text: string; tone: MetricDeltaTone } | null {
+  if (delta == null || Number.isNaN(delta)) return null;
+  if (delta > 0) return { text: `▲ ${delta.toFixed(2)}%`, tone: "positive" };
+  if (delta < 0) return { text: `▼ ${Math.abs(delta).toFixed(2)}%`, tone: "negative" };
+  return { text: "0.00%", tone: "neutral" };
+}
+
+function deltaToneClass(tone: MetricDeltaTone): string {
+  if (tone === "positive") return "text-emerald-600 dark:text-emerald-400";
+  if (tone === "negative") return "text-red-600 dark:text-red-400";
+  return "text-zinc-500 dark:text-zinc-400";
 }
 
 function formatSessionPath(url: string | null): string {
@@ -272,6 +335,8 @@ export function AttributionInsightsClient() {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [data, setData] = useState<AttributionOverviewApi | null>(null);
+  const [previousData, setPreviousData] = useState<AttributionOverviewApi | null>(null);
+  const [seoData, setSeoData] = useState<AttributionSeoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionLogOpen, setSessionLogOpen] = useState(false);
@@ -292,14 +357,27 @@ export function AttributionInsightsClient() {
     setError(null);
     try {
       const qs = new URLSearchParams({ startDate: apiStart, endDate: apiEnd });
-      const res = await fetch(`/api/attribution/overview?${qs}`);
+      const prev = previousDateBounds(apiStart, apiEnd);
+      const prevQs = prev
+        ? new URLSearchParams({ startDate: prev.startDate, endDate: prev.endDate })
+        : null;
+      const [res, prevRes] = await Promise.all([
+        fetch(`/api/attribution/overview?${qs}`),
+        prevQs ? fetch(`/api/attribution/overview?${prevQs}`) : Promise.resolve(null),
+      ]);
       if (!res.ok) {
         const d = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(d.error ?? "Failed to load attribution overview");
       }
       setData((await res.json()) as AttributionOverviewApi);
+      if (prevRes && prevRes.ok) {
+        setPreviousData((await prevRes.json()) as AttributionOverviewApi);
+      } else {
+        setPreviousData(null);
+      }
     } catch (e) {
       setData(null);
+      setPreviousData(null);
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
@@ -310,10 +388,31 @@ export function AttributionInsightsClient() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/marketing/seo");
+        if (!res.ok) return;
+        const json = (await res.json()) as AttributionSeoData;
+        if (!cancelled) setSeoData(json);
+      } catch {
+        if (!cancelled) setSeoData(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const kpis = data?.kpis;
   const websiteByDay = data?.websiteTraffic.daily ?? [];
   const websiteForms = data?.webSourceBreakdown.reduce((s, row) => s + row.form_submits, 0) ?? 0;
   const websiteBookings = data?.webSourceBreakdown.reduce((s, row) => s + row.web_bookings, 0) ?? 0;
+  const prevWebsiteForms =
+    previousData?.webSourceBreakdown.reduce((s, row) => s + row.form_submits, 0) ?? null;
+  const prevWebsiteBookings =
+    previousData?.webSourceBreakdown.reduce((s, row) => s + row.web_bookings, 0) ?? null;
 
   const gbpByDay = data?.gbpInsights.daily ?? [];
   const shouldFillDailySeries = useMemo(() => {
@@ -368,6 +467,60 @@ export function AttributionInsightsClient() {
   const gbpActionsPhone = gbpMetrics?.actionsPhone ?? 0;
   const gbpHasData =
     gbpViewsMaps + gbpViewsSearch + gbpActionsWebsite + gbpActionsPhone > 0;
+  const prevGbpMetrics = previousData?.gbpInsights.metrics;
+  const selectedKeywordLocationRows = useMemo(() => {
+    const local = seoData?.local ?? [];
+    const organic = seoData?.organic ?? [];
+    const locations = seoData?.locations ?? [];
+    const locationNameByValue = new Map(locations.map((l) => [l.value, l.name]));
+    const map = new Map<
+      string,
+      { keyword: string; locationValue: string; locationLabel: string; localRank: number | null; organicRank: number | null }
+    >();
+
+    for (const row of local) {
+      const key = `${row.keyword}__${row.locationValue}`;
+      const existing = map.get(key);
+      const locationLabel = locationNameByValue.get(row.locationValue) ?? row.locationValue;
+      if (!existing) {
+        map.set(key, {
+          keyword: row.keyword,
+          locationValue: row.locationValue,
+          locationLabel,
+          localRank: row.rank,
+          organicRank: null,
+        });
+      } else {
+        existing.localRank = row.rank;
+      }
+    }
+
+    for (const row of organic) {
+      const key = `${row.keyword}__${row.locationValue}`;
+      const existing = map.get(key);
+      const locationLabel = locationNameByValue.get(row.locationValue) ?? row.locationValue;
+      if (!existing) {
+        map.set(key, {
+          keyword: row.keyword,
+          locationValue: row.locationValue,
+          locationLabel,
+          localRank: null,
+          organicRank: row.rank,
+        });
+      } else {
+        existing.organicRank = row.rank;
+      }
+    }
+
+    return [...map.values()]
+      .sort((a, b) => {
+        const rankA = a.localRank ?? a.organicRank ?? Number.POSITIVE_INFINITY;
+        const rankB = b.localRank ?? b.organicRank ?? Number.POSITIVE_INFINITY;
+        if (rankA !== rankB) return rankA - rankB;
+        return `${a.keyword} ${a.locationLabel}`.localeCompare(`${b.keyword} ${b.locationLabel}`);
+      })
+      .slice(0, 12);
+  }, [seoData]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -437,6 +590,10 @@ export function AttributionInsightsClient() {
               tooltip="Definition: distinct visitors with attribution events. Source/config: requires attribution snippet installed in Attribution setup."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(kpis?.siteSessions)}</p>
+            {(() => {
+              const d = formatDelta(percentChange(kpis?.siteSessions, previousData?.kpis.siteSessions));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -444,6 +601,10 @@ export function AttributionInsightsClient() {
               tooltip="Definition: website phone taps plus tracked Twilio calls. Source/config: configure tracking numbers and call forwarding in Attribution setup."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(kpis?.calls)}</p>
+            {(() => {
+              const d = formatDelta(percentChange(kpis?.calls, previousData?.kpis.calls));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -451,6 +612,10 @@ export function AttributionInsightsClient() {
               tooltip="Definition: form completion events captured by the attribution script. Source/config: configure submit event tracking on your web forms."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(websiteForms)}</p>
+            {(() => {
+              const d = formatDelta(percentChange(websiteForms, prevWebsiteForms));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -458,6 +623,10 @@ export function AttributionInsightsClient() {
               tooltip="Definition: booking events and booking-success URL hits. Source/config: confirm success-page detection in Attribution setup."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(websiteBookings)}</p>
+            {(() => {
+              const d = formatDelta(percentChange(websiteBookings, prevWebsiteBookings));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
         </div>
 
@@ -521,6 +690,47 @@ export function AttributionInsightsClient() {
                 ))}
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+          <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Selected keyword/location combinations (max 12)
+          </h4>
+          {selectedKeywordLocationRows.length === 0 ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              No keyword/location ranking data available yet. Configure SEO selections and refresh rankings in Marketing & SEO settings.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Keyword</th>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Location</th>
+                    <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">GBP local rank</th>
+                    <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">Organic rank</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedKeywordLocationRows.map((row) => (
+                    <tr
+                      key={`${row.keyword}-${row.locationValue}`}
+                      className="border-b border-zinc-100 dark:border-zinc-800"
+                    >
+                      <td className="py-2 text-zinc-900 dark:text-zinc-100">{row.keyword}</td>
+                      <td className="py-2 text-zinc-700 dark:text-zinc-300">{row.locationLabel}</td>
+                      <td className="py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                        {row.localRank ?? "—"}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                        {row.organicRank ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
@@ -639,6 +849,12 @@ export function AttributionInsightsClient() {
               tooltip="Definition: booked jobs divided by attributed jobs. Source/config: Housecall Pro jobs + attribution rules in setup."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatPct(kpis?.avgBookingRatePercent ?? null)}</p>
+            {(() => {
+              const d = formatDelta(
+                percentChange(kpis?.avgBookingRatePercent ?? null, previousData?.kpis.avgBookingRatePercent ?? null)
+              );
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -646,6 +862,15 @@ export function AttributionInsightsClient() {
               tooltip="Definition: paid jobs divided by attributed jobs. Source/config: requires synced HCP paid amount data."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatPct(kpis?.avgConversionRatePercent ?? null)}</p>
+            {(() => {
+              const d = formatDelta(
+                percentChange(
+                  kpis?.avgConversionRatePercent ?? null,
+                  previousData?.kpis.avgConversionRatePercent ?? null
+                )
+              );
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -655,6 +880,10 @@ export function AttributionInsightsClient() {
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
               {loading ? "…" : kpis?.avgJobValue != null ? formatMoney(kpis.avgJobValue) : "—"}
             </p>
+            {(() => {
+              const d = formatDelta(percentChange(kpis?.avgJobValue ?? null, previousData?.kpis.avgJobValue ?? null));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
         </div>
         <MarketingLeadSourceTable overview={data?.marketingOverview ?? null} loading={loading} isAdmin={isAdmin} />
@@ -683,6 +912,12 @@ export function AttributionInsightsClient() {
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
               {data?.gbpInsights.metrics.queriesDirect == null ? "Coming soon" : formatInt(data.gbpInsights.metrics.queriesDirect)}
             </p>
+            {(() => {
+              const d = formatDelta(
+                percentChange(data?.gbpInsights.metrics.queriesDirect ?? null, prevGbpMetrics?.queriesDirect ?? null)
+              );
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -692,6 +927,15 @@ export function AttributionInsightsClient() {
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
               {data?.gbpInsights.metrics.queriesIndirect == null ? "Coming soon" : formatInt(data.gbpInsights.metrics.queriesIndirect)}
             </p>
+            {(() => {
+              const d = formatDelta(
+                percentChange(
+                  data?.gbpInsights.metrics.queriesIndirect ?? null,
+                  prevGbpMetrics?.queriesIndirect ?? null
+                )
+              );
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -699,6 +943,10 @@ export function AttributionInsightsClient() {
               tooltip="Definition: profile views from Google Maps. Source/config: connect GBP + performance sync in Attribution setup."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(gbpViewsMaps)}</p>
+            {(() => {
+              const d = formatDelta(percentChange(gbpViewsMaps, prevGbpMetrics?.viewsMaps ?? null));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -706,6 +954,10 @@ export function AttributionInsightsClient() {
               tooltip="Definition: profile views from Google Search results. Source/config: connect GBP + performance sync."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(gbpViewsSearch)}</p>
+            {(() => {
+              const d = formatDelta(percentChange(gbpViewsSearch, prevGbpMetrics?.viewsSearch ?? null));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -713,6 +965,10 @@ export function AttributionInsightsClient() {
               tooltip="Definition: website clicks from your GBP listing. Source/config: GBP performance sync."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(gbpActionsWebsite)}</p>
+            {(() => {
+              const d = formatDelta(percentChange(gbpActionsWebsite, prevGbpMetrics?.actionsWebsite ?? null));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
@@ -720,6 +976,10 @@ export function AttributionInsightsClient() {
               tooltip="Definition: phone call clicks from GBP. Source/config: GBP performance sync."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(gbpActionsPhone)}</p>
+            {(() => {
+              const d = formatDelta(percentChange(gbpActionsPhone, prevGbpMetrics?.actionsPhone ?? null));
+              return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+            })()}
           </div>
         </div>
         {!loading && !gbpHasData ? (

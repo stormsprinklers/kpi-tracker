@@ -123,9 +123,26 @@ export async function syncGbpPerformanceMetricsForOrganization(
 
     for (const series of seriesList) {
       const s = series as Record<string, unknown>;
-      const metric = String(s.dailyMetric ?? s.daily_metric ?? "");
-      const tsRaw = s.timeSeries ?? s.time_series;
-      const tsObj = tsRaw && typeof tsRaw === "object" ? (tsRaw as Record<string, unknown>) : null;
+      const seriesNodeRaw =
+        s.dailyMetricTimeSeries ??
+        s.daily_metric_time_series ??
+        s.timeSeries ??
+        s.time_series ??
+        null;
+      const seriesNode =
+        seriesNodeRaw && typeof seriesNodeRaw === "object"
+          ? (seriesNodeRaw as Record<string, unknown>)
+          : null;
+      const metric = String(
+        s.dailyMetric ??
+          s.daily_metric ??
+          seriesNode?.dailyMetric ??
+          seriesNode?.daily_metric ??
+          ""
+      );
+      const tsRaw = seriesNode?.timeSeries ?? seriesNode?.time_series ?? seriesNode;
+      const tsObj =
+        tsRaw && typeof tsRaw === "object" ? (tsRaw as Record<string, unknown>) : null;
       const ts = (tsObj?.datedValues ?? tsObj?.dated_values) as unknown[] | undefined;
       if (!Array.isArray(ts)) continue;
 
@@ -240,7 +257,7 @@ async function fetchLegacyQueryInsights(params: {
     params.accountId
   )}/locations:reportInsights`;
   const body = {
-    locationNames: [`locations/${params.locationId}`],
+    locationNames: [`accounts/${params.accountId}/locations/${params.locationId}`],
     basicRequest: {
       metricRequests: [
         { metric: "QUERIES_DIRECT", options: "AGGREGATED_TOTAL" },

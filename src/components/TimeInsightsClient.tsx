@@ -29,10 +29,58 @@ interface CrewApiRow {
   members: { hcpEmployeeId: string }[];
 }
 
+type MetricDeltaTone = "positive" | "negative" | "neutral";
+
+function toUtcDate(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+}
+
+function ymdFromUtcDate(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    d.getUTCDate()
+  ).padStart(2, "0")}`;
+}
+
+function previousDateRange(startYmd: string, endYmd: string): { startDate: string; endDate: string } | null {
+  const start = toUtcDate(startYmd);
+  const end = toUtcDate(endYmd);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const days = Math.floor((end.getTime() - start.getTime()) / dayMs) + 1;
+  if (days <= 0) return null;
+  const prevEnd = new Date(start.getTime() - dayMs);
+  const prevStart = new Date(prevEnd.getTime() - (days - 1) * dayMs);
+  return {
+    startDate: ymdFromUtcDate(prevStart),
+    endDate: ymdFromUtcDate(prevEnd),
+  };
+}
+
+function percentChange(current: number | null | undefined, previous: number | null | undefined): number | null {
+  if (current == null || previous == null) return null;
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
+  if (previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function formatDelta(delta: number | null): { text: string; tone: MetricDeltaTone } | null {
+  if (delta == null || Number.isNaN(delta)) return null;
+  if (delta > 0) return { text: `▲ ${delta.toFixed(2)}%`, tone: "positive" };
+  if (delta < 0) return { text: `▼ ${Math.abs(delta).toFixed(2)}%`, tone: "negative" };
+  return { text: "0.00%", tone: "neutral" };
+}
+
+function deltaToneClass(tone: MetricDeltaTone): string {
+  if (tone === "positive") return "text-emerald-600 dark:text-emerald-400";
+  if (tone === "negative") return "text-red-600 dark:text-red-400";
+  return "text-zinc-500 dark:text-zinc-400";
+}
+
 export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const payCal = usePayPeriodCalendar();
   const [periodOffset, setPeriodOffset] = useState(0);
   const [data, setData] = useState<TimeInsightsResult | null>(null);
+  const [previousData, setPreviousData] = useState<TimeInsightsResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [crewNameByEmployeeId, setCrewNameByEmployeeId] = useState<Record<string, string>>({});
@@ -44,17 +92,32 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams();
-    params.set("startDate", range.startDate);
-    params.set("endDate", range.endDate);
-    const url = `/api/metrics/time-insights?${params.toString()}`;
+    const currentParams = new URLSearchParams();
+    currentParams.set("startDate", range.startDate);
+    currentParams.set("endDate", range.endDate);
+    const prev = previousDateRange(range.startDate, range.endDate);
+    const prevParams = new URLSearchParams();
+    if (prev) {
+      prevParams.set("startDate", prev.startDate);
+      prevParams.set("endDate", prev.endDate);
+    }
     try {
-      const res = await fetch(url);
+      const [res, prevRes] = await Promise.all([
+        fetch(`/api/metrics/time-insights?${currentParams.toString()}`),
+        prev ? fetch(`/api/metrics/time-insights?${prevParams.toString()}`) : Promise.resolve(null),
+      ]);
       if (!res.ok) throw new Error("Failed to load time insights");
       const result: TimeInsightsResult = await res.json();
       setData(result);
+      if (prevRes && prevRes.ok) {
+        const prevResult: TimeInsightsResult = await prevRes.json();
+        setPreviousData(prevResult);
+      } else {
+        setPreviousData(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
+      setPreviousData(null);
     } finally {
       setLoading(false);
     }
@@ -158,6 +221,12 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                   {data.averageDriveTimeMinutes != null ? `${data.averageDriveTimeMinutes} min` : "—"}
                 </p>
+                {(() => {
+                  const d = formatDelta(
+                    percentChange(data.averageDriveTimeMinutes, previousData?.averageDriveTimeMinutes)
+                  );
+                  return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+                })()}
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Average Drive Time"
@@ -169,6 +238,12 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                   {data.averageLaborTimeMinutes != null ? `${data.averageLaborTimeMinutes} min` : "—"}
                 </p>
+                {(() => {
+                  const d = formatDelta(
+                    percentChange(data.averageLaborTimeMinutes, previousData?.averageLaborTimeMinutes)
+                  );
+                  return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+                })()}
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Average Labor Time"
@@ -180,6 +255,12 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
                   {data.averageRevenuePerJob != null ? `$${data.averageRevenuePerJob.toFixed(2)}` : "—"}
                 </p>
+                {(() => {
+                  const d = formatDelta(
+                    percentChange(data.averageRevenuePerJob, previousData?.averageRevenuePerJob)
+                  );
+                  return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+                })()}
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Average Revenue per Job"
@@ -193,6 +274,15 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
                     ? `$${data.averageRevenuePerOnJobHour.toFixed(2)}`
                     : "—"}
                 </p>
+                {(() => {
+                  const d = formatDelta(
+                    percentChange(
+                      data.averageRevenuePerOnJobHour,
+                      previousData?.averageRevenuePerOnJobHour
+                    )
+                  );
+                  return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+                })()}
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Avg RPH (on-the-job)"
@@ -206,6 +296,15 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
                     ? `$${data.averageRevenuePerLoggedHour.toFixed(2)}`
                     : "—"}
                 </p>
+                {(() => {
+                  const d = formatDelta(
+                    percentChange(
+                      data.averageRevenuePerLoggedHour,
+                      previousData?.averageRevenuePerLoggedHour
+                    )
+                  );
+                  return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+                })()}
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Avg RPH (overall)"
@@ -219,6 +318,12 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
                     ? `${data.laborPercentOfRevenue.toFixed(1)}%`
                     : "—"}
                 </p>
+                {(() => {
+                  const d = formatDelta(
+                    percentChange(data.laborPercentOfRevenue, previousData?.laborPercentOfRevenue)
+                  );
+                  return d ? <p className={`mt-0.5 text-[11px] ${deltaToneClass(d.tone)}`}>{d.text}</p> : null;
+                })()}
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Labor % of revenue"
