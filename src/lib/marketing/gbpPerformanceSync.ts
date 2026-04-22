@@ -37,7 +37,21 @@ export async function syncGbpPerformanceMetricsForOrganization(
   organizationId: string,
   rangeStart: string,
   rangeEnd: string
-): Promise<{ ok: boolean; error?: string; daysWritten?: number }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  daysWritten?: number;
+  queriesDirect?: number | null;
+  queriesIndirect?: number | null;
+  daily?: Array<{
+    metric_date: string;
+    views_maps: number;
+    views_search: number;
+    actions_website: number;
+    actions_phone: number;
+    actions_directions: number;
+  }>;
+}> {
   const profile = await getGoogleBusinessProfile(organizationId);
   const locationId = profile?.location_id?.trim();
   if (!locationId || !profile?.google_account_connected) {
@@ -171,13 +185,39 @@ export async function syncGbpPerformanceMetricsForOrganization(
       daysWritten++;
     }
 
+    const daily = [...byDate.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([metric_date, vals]) => ({
+        metric_date,
+        views_maps: vals.desktopMaps + vals.mobileMaps,
+        views_search: vals.desktopSearch + vals.mobileSearch,
+        actions_website: vals.web,
+        actions_phone: vals.calls,
+        actions_directions: vals.directions,
+      }));
+
+    let queriesDirect: number | null = null;
+    let queriesIndirect: number | null = null;
+    const accountId = profile.account_id?.trim() ?? "";
+    if (accountId) {
+      const queryInsights = await fetchLegacyQueryInsights({
+        accessToken,
+        accountId,
+        locationId,
+        rangeStart,
+        rangeEnd,
+      });
+      queriesDirect = queryInsights.queriesDirect;
+      queriesIndirect = queryInsights.queriesIndirect;
+    }
+
     await setMarketingSyncSuccess({
       organizationId,
       integration: "gbp_performance",
       cursorJson: { locationId, daysWritten, rangeStart, rangeEnd },
     });
 
-    return { ok: true, daysWritten };
+    return { ok: true, daysWritten, daily, queriesDirect, queriesIndirect };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await setMarketingSyncError({
@@ -187,4 +227,83 @@ export async function syncGbpPerformanceMetricsForOrganization(
     });
     return { ok: false, error: msg };
   }
+}
+
+async function fetchLegacyQueryInsights(params: {
+  accessToken: string;
+  accountId: string;
+  locationId: string;
+  rangeStart: string;
+  rangeEnd: string;
+}): Promise<{ queriesDirect: number | null; queriesIndirect: number | null }> {
+  const url = `https://mybusiness.googleapis.com/v4/accounts/${encodeURIComponent(
+    params.accountId
+  )}/locations:reportInsights`;
+  const body = {
+    locationNames: [`locations/${params.locationId}`],
+    basicRequest: {
+      metricRequests: [
+        { metric: "QUERIES_DIRECT", options: "AGGREGATED_TOTAL" },
+        { metric: "QUERIES_INDIRECT", options: "AGGREGATED_TOTAL" },
+      ],
+      timeRange: {
+        startTime: `${params.rangeStart.slice(0, 10)}T00:00:00Z`,
+        endTime: `${params.rangeEnd.slice(0, 10)}T23:59:59Z`,
+      },
+    },
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    return { queriesDirect: null, queriesIndirect: null };
+  }
+
+  const metrics = ((json.locationMetrics as unknown[] | undefined) ?? [])[0] as
+    | { metricValues?: unknown[] }
+    | undefined;
+  const metricValues = Array.isArray(metrics?.metricValues) ? metrics.metricValues : [];
+
+  let queriesDirect: number | null = null;
+  let queriesIndirect: number | null = null;
+  for (const mv of metricValues) {
+    const row = mv as {
+      metric?: string;
+      totalValue?: Record<string, unknown>;
+      dimensionalValues?: Array<{ value?: Record<string, unknown> }>;
+    };
+    const metric = (row.metric ?? "").toString();
+    const parsed = parseMetricNumber(row);
+    if (metric === "QUERIES_DIRECT") queriesDirect = parsed;
+    if (metric === "QUERIES_INDIRECT") queriesIndirect = parsed;
+  }
+  return { queriesDirect, queriesIndirect };
+}
+
+function parseMetricNumber(row: {
+  totalValue?: Record<string, unknown>;
+  dimensionalValues?: Array<{ value?: Record<string, unknown> }>;
+}): number | null {
+  const total = row.totalValue ?? {};
+  const candidates: unknown[] = [
+    total.value,
+    total.int64Value,
+    total.doubleValue,
+    row.dimensionalValues?.[0]?.value?.value,
+    row.dimensionalValues?.[0]?.value?.int64Value,
+    row.dimensionalValues?.[0]?.value?.doubleValue,
+  ];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
 }

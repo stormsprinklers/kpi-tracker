@@ -128,6 +128,17 @@ function formatSessionPath(url: string | null): string {
   }
 }
 
+function enumerateYmdRange(startYmd: string, endYmd: string): string[] {
+  const out: string[] = [];
+  const start = new Date(`${startYmd}T00:00:00Z`);
+  const end = new Date(`${endYmd}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return out;
+  for (let t = start.getTime(); t <= end.getTime(); t += 24 * 60 * 60 * 1000) {
+    out.push(new Date(t).toISOString().slice(0, 10));
+  }
+  return out;
+}
+
 function attributionEventTypeLabel(eventType: string, pageUrl: string | null): string {
   if (eventType === "page_view" && isLikelyBookingCompletionUrl(pageUrl)) return "Booking complete";
   switch (eventType) {
@@ -150,14 +161,15 @@ function attributionEventTypeLabel(eventType: string, pageUrl: string | null): s
 
 function TrendChart({ values, labels }: { values: number[]; labels: string[] }) {
   const width = 680;
-  const height = 170;
+  const height = 190;
   const padX = 18;
   const padY = 12;
+  const padBottom = 26;
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
   const range = Math.max(max - min, 1);
   const xSpan = Math.max(width - padX * 2, 1);
-  const ySpan = Math.max(height - padY * 2, 1);
+  const ySpan = Math.max(height - padY - padBottom, 1);
 
   const pts = values.map((v, i) => {
     const x = padX + (i / Math.max(values.length - 1, 1)) * xSpan;
@@ -177,17 +189,29 @@ function TrendChart({ values, labels }: { values: number[]; labels: string[] }) 
   }
 
   const tickStep = Math.max(1, Math.ceil(labels.length / 6));
+  const ticks = labels
+    .map((label, idx) => ({ label, idx }))
+    .filter((x) => x.idx % tickStep === 0 || x.idx === labels.length - 1);
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-700 dark:bg-zinc-900/50">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
         <path d={area} className="text-sky-200/70 dark:text-sky-900/40" fill="currentColor" />
         <path d={line} className="text-sky-600 dark:text-sky-400" stroke="currentColor" strokeWidth={2.5} fill="none" />
+        {ticks.map((t) => {
+          const x = padX + (t.idx / Math.max(labels.length - 1, 1)) * xSpan;
+          return (
+            <text
+              key={`${t.label}-${t.idx}`}
+              x={x}
+              y={height - 6}
+              textAnchor="middle"
+              className="fill-zinc-500 text-[10px] dark:fill-zinc-400"
+            >
+              {t.label.slice(5)}
+            </text>
+          );
+        })}
       </svg>
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-        {labels.map((label, idx) =>
-          idx % tickStep === 0 || idx === labels.length - 1 ? <span key={`${label}-${idx}`}>{label.slice(5)}</span> : null
-        )}
-      </div>
     </div>
   );
 }
@@ -288,20 +312,62 @@ export function AttributionInsightsClient() {
 
   const kpis = data?.kpis;
   const websiteByDay = data?.websiteTraffic.daily ?? [];
-  const websiteVisitorsPoints = websiteByDay.map((d) => d.visitors);
-  const websiteLabels = websiteByDay.map((d) => d.date);
   const websiteForms = data?.webSourceBreakdown.reduce((s, row) => s + row.form_submits, 0) ?? 0;
   const websiteBookings = data?.webSourceBreakdown.reduce((s, row) => s + row.web_bookings, 0) ?? 0;
 
   const gbpByDay = data?.gbpInsights.daily ?? [];
-  const gbpPoints = gbpByDay.map((d) => d.viewsMaps + d.viewsSearch);
-  const gbpLabels = gbpByDay.map((d) => d.date);
+  const shouldFillDailySeries = useMemo(() => {
+    const s = new Date(`${apiStart}T00:00:00Z`);
+    const e = new Date(`${apiEnd}T00:00:00Z`);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return false;
+    const days = Math.floor((e.getTime() - s.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    return days > 0 && days <= 120;
+  }, [apiStart, apiEnd]);
+  const fullRangeDates = useMemo(
+    () => (shouldFillDailySeries ? enumerateYmdRange(apiStart, apiEnd) : []),
+    [shouldFillDailySeries, apiStart, apiEnd]
+  );
+  const websiteChartSeries = useMemo(() => {
+    if (!shouldFillDailySeries) return websiteByDay;
+    const byDate = new Map(websiteByDay.map((d) => [d.date, d]));
+    return fullRangeDates.map((date) => ({
+      date,
+      visitors: byDate.get(date)?.visitors ?? 0,
+      pageViews: byDate.get(date)?.pageViews ?? 0,
+      forms: byDate.get(date)?.forms ?? 0,
+      phoneClicks: byDate.get(date)?.phoneClicks ?? 0,
+      bookings: byDate.get(date)?.bookings ?? 0,
+    }));
+  }, [websiteByDay, shouldFillDailySeries, fullRangeDates]);
+  const gbpChartSeries = useMemo(() => {
+    if (!shouldFillDailySeries) return gbpByDay;
+    const byDate = new Map(gbpByDay.map((d) => [d.date, d]));
+    return fullRangeDates.map((date) => ({
+      date,
+      viewsMaps: byDate.get(date)?.viewsMaps ?? 0,
+      viewsSearch: byDate.get(date)?.viewsSearch ?? 0,
+      actionsWebsite: byDate.get(date)?.actionsWebsite ?? 0,
+      actionsPhone: byDate.get(date)?.actionsPhone ?? 0,
+      actionsDirections: byDate.get(date)?.actionsDirections ?? 0,
+    }));
+  }, [gbpByDay, shouldFillDailySeries, fullRangeDates]);
+  const websiteVisitorsPoints = websiteChartSeries.map((d) => d.visitors);
+  const websiteLabels = websiteChartSeries.map((d) => d.date);
+  const gbpPoints = gbpChartSeries.map((d) => d.viewsMaps + d.viewsSearch);
+  const gbpLabels = gbpChartSeries.map((d) => d.date);
 
   const channelBySlug = useMemo(() => {
     const map = new Map<string, MarketingOverviewResponse["channels"][number]>();
     for (const c of data?.marketingOverview.channels ?? []) map.set(c.slug, c);
     return map;
   }, [data?.marketingOverview.channels]);
+  const gbpMetrics = data?.gbpInsights.metrics;
+  const gbpViewsMaps = gbpMetrics?.viewsMaps ?? 0;
+  const gbpViewsSearch = gbpMetrics?.viewsSearch ?? 0;
+  const gbpActionsWebsite = gbpMetrics?.actionsWebsite ?? 0;
+  const gbpActionsPhone = gbpMetrics?.actionsPhone ?? 0;
+  const gbpHasData =
+    gbpViewsMaps + gbpViewsSearch + gbpActionsWebsite + gbpActionsPhone > 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -615,7 +681,7 @@ export function AttributionInsightsClient() {
               tooltip="Definition: searches for your business by name/address. Source/config: GBP Performance API query metrics; ingestion pending."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-              {data?.gbpInsights.metrics.queriesDirect == null ? "Pending" : formatInt(data.gbpInsights.metrics.queriesDirect)}
+              {data?.gbpInsights.metrics.queriesDirect == null ? "Coming soon" : formatInt(data.gbpInsights.metrics.queriesDirect)}
             </p>
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
@@ -624,7 +690,7 @@ export function AttributionInsightsClient() {
               tooltip="Definition: category/service searches that surfaced your profile. Source/config: GBP Performance API query metrics; ingestion pending."
             />
             <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-              {data?.gbpInsights.metrics.queriesIndirect == null ? "Pending" : formatInt(data.gbpInsights.metrics.queriesIndirect)}
+              {data?.gbpInsights.metrics.queriesIndirect == null ? "Coming soon" : formatInt(data.gbpInsights.metrics.queriesIndirect)}
             </p>
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
@@ -632,30 +698,35 @@ export function AttributionInsightsClient() {
               label="VIEWS_MAPS"
               tooltip="Definition: profile views from Google Maps. Source/config: connect GBP + performance sync in Attribution setup."
             />
-            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(data?.gbpInsights.metrics.viewsMaps)}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(gbpViewsMaps)}</p>
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
               label="VIEWS_SEARCH"
               tooltip="Definition: profile views from Google Search results. Source/config: connect GBP + performance sync."
             />
-            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(data?.gbpInsights.metrics.viewsSearch)}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(gbpViewsSearch)}</p>
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
               label="ACTIONS_WEBSITE"
               tooltip="Definition: website clicks from your GBP listing. Source/config: GBP performance sync."
             />
-            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(data?.gbpInsights.metrics.actionsWebsite)}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(gbpActionsWebsite)}</p>
           </div>
           <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
             <MetricTooltip
               label="ACTIONS_PHONE"
               tooltip="Definition: phone call clicks from GBP. Source/config: GBP performance sync."
             />
-            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(data?.gbpInsights.metrics.actionsPhone)}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{loading ? "…" : formatInt(gbpActionsPhone)}</p>
           </div>
         </div>
+        {!loading && !gbpHasData ? (
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            No GBP performance metrics were found for this date range yet. Try a wider range or run GBP Performance sync in Attribution setup.
+          </p>
+        ) : null}
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[2fr_1fr]">
           <div>

@@ -11,6 +11,7 @@ import {
 import type { MarketingOverviewResponse } from "@/lib/marketing/types";
 import { buildMarketingOverviewResponse } from "@/lib/metrics/marketingOverview";
 import { getGbpMetricsDailyInRange } from "@/lib/db/marketingQueries";
+import { syncGbpPerformanceMetricsForOrganization } from "@/lib/marketing/gbpPerformanceSync";
 import {
   buildRecentWebAttributionSessions,
   type RecentWebAttributionSession,
@@ -84,6 +85,32 @@ export async function buildAttributionOverviewResponse(
   endDate: string
 ): Promise<AttributionOverviewResponse> {
   await initSchema();
+  let liveGbpDaily:
+    | Array<{
+        metric_date: string;
+        views_maps: number;
+        views_search: number;
+        actions_website: number;
+        actions_phone: number;
+        actions_directions: number;
+      }>
+    | null = null;
+  let liveQueriesDirect: number | null = null;
+  let liveQueriesIndirect: number | null = null;
+  try {
+    const synced = await syncGbpPerformanceMetricsForOrganization(
+      organizationId,
+      startDate,
+      endDate
+    );
+    if (synced.ok && Array.isArray(synced.daily)) {
+      liveGbpDaily = synced.daily;
+      liveQueriesDirect = synced.queriesDirect ?? null;
+      liveQueriesIndirect = synced.queriesIndirect ?? null;
+    }
+  } catch {
+    // Keep attribution page resilient if live GBP call fails.
+  }
 
   const [
     marketingOverview,
@@ -93,7 +120,7 @@ export async function buildAttributionOverviewResponse(
     twilioTotal,
     topPages,
     webDaily,
-    gbpDaily,
+    dbGbpDaily,
     sessionRows,
   ] = await Promise.all([
     buildMarketingOverviewResponse(organizationId, startDate, endDate),
@@ -111,6 +138,7 @@ export async function buildAttributionOverviewResponse(
       endDate,
     }),
   ]);
+  const gbpDaily = liveGbpDaily ?? dbGbpDaily;
 
   let sumAttributed = 0;
   let sumBooked = 0;
@@ -192,9 +220,8 @@ export async function buildAttributionOverviewResponse(
     },
     gbpInsights: {
       metrics: {
-        // Reserved for future GBP query metrics ingestion.
-        queriesDirect: null,
-        queriesIndirect: null,
+        queriesDirect: liveQueriesDirect,
+        queriesIndirect: liveQueriesIndirect,
         viewsMaps: gbpTotals.viewsMaps,
         viewsSearch: gbpTotals.viewsSearch,
         actionsWebsite: gbpTotals.actionsWebsite,
