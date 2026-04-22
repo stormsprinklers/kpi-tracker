@@ -1,6 +1,5 @@
 "use client";
 
-import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -23,8 +22,15 @@ function JoinForm() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [phoneE164, setPhoneE164] = useState("");
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [maskedEmail, setMaskedEmail] = useState("");
+  const [maskedPhone, setMaskedPhone] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [smsCode, setSmsCode] = useState("");
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [completed, setCompleted] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -57,7 +63,7 @@ function JoinForm() {
     };
   }, [token]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleStart(e: React.FormEvent) {
     e.preventDefault();
     setSubmitError(null);
     if (password !== confirm) {
@@ -69,32 +75,64 @@ function JoinForm() {
       const res = await fetch("/api/users/invite/accept", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({ step: "start", token, password, phoneE164 }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        pendingToken?: string;
+        maskedEmail?: string;
+        maskedPhone?: string;
+      };
       if (!res.ok) {
         setSubmitError(data.error ?? "Could not accept invitation");
         setSubmitting(false);
         return;
       }
-      if (email) {
-        const signInRes = await signIn("credentials", {
-          email,
-          password,
-          redirect: false,
-          callbackUrl: "/",
-        });
-        if (signInRes?.ok) {
-          router.replace("/");
-          router.refresh();
-          return;
-        }
+      if (!data.pendingToken) {
+        setSubmitError("Could not start verification. Try again.");
+        setSubmitting(false);
+        return;
       }
-      router.replace("/login");
+      setPendingToken(data.pendingToken);
+      setMaskedEmail(data.maskedEmail ?? "");
+      setMaskedPhone(data.maskedPhone ?? "");
     } catch {
       setSubmitError("Something went wrong");
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
+  }
+
+  async function handleComplete(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pendingToken) return;
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/users/invite/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "complete",
+          pendingToken,
+          emailCode,
+          smsCode,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setSubmitError(data.error ?? "Could not complete verification");
+        setSubmitting(false);
+        return;
+      }
+      setCompleted(true);
+      router.replace("/login");
+      router.refresh();
+    } catch {
+      setSubmitError("Something went wrong");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (!token) {
@@ -153,7 +191,52 @@ function JoinForm() {
           ) : null}
         </p>
         <p className="mt-2 text-sm text-zinc-600">Choose a password to finish setting up your account.</p>
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        {completed ? (
+          <p className="mt-6 text-sm text-green-700">Account created. Redirecting to sign in…</p>
+        ) : pendingToken ? (
+          <form onSubmit={handleComplete} className="mt-6 space-y-4">
+            <p className="text-sm text-zinc-600">
+              Enter both verification codes sent to <span className="font-medium">{maskedEmail}</span> and{" "}
+              <span className="font-medium">{maskedPhone}</span>.
+            </p>
+            <div>
+              <label htmlFor="emailCode" className="block text-sm font-medium" style={{ color: "#0B1F33" }}>
+                Email code
+              </label>
+              <input
+                id="emailCode"
+                type="text"
+                value={emailCode}
+                onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, ""))}
+                required
+                className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+              />
+            </div>
+            <div>
+              <label htmlFor="smsCode" className="block text-sm font-medium" style={{ color: "#0B1F33" }}>
+                SMS code
+              </label>
+              <input
+                id="smsCode"
+                type="text"
+                value={smsCode}
+                onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, ""))}
+                required
+                className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+              />
+            </div>
+            {submitError && <p className="text-sm text-red-600 dark:text-red-400">{submitError}</p>}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: "#0B1F33" }}
+            >
+              {submitting ? "Verifying…" : "Verify and join"}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleStart} className="mt-6 space-y-4">
           <div>
             <label htmlFor="password" className="block text-sm font-medium" style={{ color: "#0B1F33" }}>
               Password
@@ -184,6 +267,20 @@ function JoinForm() {
               className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
             />
           </div>
+          <div>
+            <label htmlFor="phoneE164" className="block text-sm font-medium" style={{ color: "#0B1F33" }}>
+              Mobile number (E.164)
+            </label>
+            <input
+              id="phoneE164"
+              type="tel"
+              value={phoneE164}
+              onChange={(e) => setPhoneE164(e.target.value)}
+              required
+              placeholder="+15551234567"
+              className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+          </div>
           {submitError && <p className="text-sm text-red-600 dark:text-red-400">{submitError}</p>}
           <button
             type="submit"
@@ -191,9 +288,10 @@ function JoinForm() {
             className="w-full rounded px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: "#0B1F33" }}
           >
-            {submitting ? "Creating account…" : "Join organization"}
+            {submitting ? "Sending verification codes…" : "Continue"}
           </button>
         </form>
+        )}
         <p className="mt-4 text-center text-sm opacity-80" style={{ color: "#0B1F33" }}>
           <Link href="/login" className="font-medium underline hover:opacity-80" style={{ color: "#0B1F33" }}>
             Already have an account? Sign in

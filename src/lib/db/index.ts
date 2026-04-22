@@ -410,6 +410,12 @@ export async function initSchema(): Promise<void> {
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='phone_e164') THEN
         ALTER TABLE users ADD COLUMN phone_e164 TEXT;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='two_factor_sms_verified') THEN
+        ALTER TABLE users ADD COLUMN two_factor_sms_verified BOOLEAN NOT NULL DEFAULT false;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='users' AND column_name='two_factor_email_verified') THEN
+        ALTER TABLE users ADD COLUMN two_factor_email_verified BOOLEAN NOT NULL DEFAULT false;
+      END IF;
     END $$
   `;
   await sql`

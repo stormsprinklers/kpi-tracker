@@ -444,6 +444,15 @@ export interface WebAttributionRangeTotals {
   webBookings: number;
 }
 
+export interface WebAttributionDailySeriesRow {
+  metric_date: string;
+  unique_visitors: number;
+  page_loads: number;
+  tel_clicks: number;
+  form_submits: number;
+  web_bookings: number;
+}
+
 export async function getWebAttributionRangeTotals(params: {
   organizationId: string;
   startDate: string;
@@ -495,6 +504,47 @@ export async function getWebAttributionRangeTotals(params: {
     formSubmits: row?.form_submits ?? 0,
     webBookings: row?.web_bookings ?? 0,
   };
+}
+
+export async function getWebAttributionDailySeries(params: {
+  organizationId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<WebAttributionDailySeriesRow[]> {
+  const start = params.startDate.slice(0, 10);
+  const end = params.endDate.slice(0, 10);
+  const result = await sql`
+    SELECT
+      occurred_at::date::text AS metric_date,
+      COUNT(DISTINCT visitor_id)::int AS unique_visitors,
+      COUNT(*) FILTER (
+        WHERE event_type IN ('landing', 'page_view')
+      )::int AS page_loads,
+      COUNT(*) FILTER (WHERE event_type = 'tel_click')::int AS tel_clicks,
+      COUNT(*) FILTER (WHERE event_type = 'form_submit')::int AS form_submits,
+      COUNT(*) FILTER (
+        WHERE event_type = 'booking'
+        OR (
+          event_type IN ('landing', 'page_view')
+          AND page_url IS NOT NULL
+          AND (
+            LOWER(page_url) LIKE '%/schedule/success%'
+            OR LOWER(page_url) LIKE '%/booking/success%'
+            OR LOWER(page_url) LIKE '%/appointment/confirmed%'
+            OR LOWER(page_url) LIKE '%thank-you%'
+            OR LOWER(page_url) LIKE '%thank_you%'
+            OR LOWER(page_url) LIKE '%/thankyou%'
+          )
+        )
+      )::int AS web_bookings
+    FROM web_attribution_events
+    WHERE organization_id = ${params.organizationId}::uuid
+      AND occurred_at::date >= ${start}::date
+      AND occurred_at::date <= ${end}::date
+    GROUP BY occurred_at::date
+    ORDER BY occurred_at::date ASC
+  `;
+  return (result.rows ?? []) as WebAttributionDailySeriesRow[];
 }
 
 export interface WebSourceRangeMetricsRow {

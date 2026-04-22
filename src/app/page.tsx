@@ -2,7 +2,6 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getOrganizationById } from "@/lib/db/queries";
 import { DashboardHomeClient } from "@/components/DashboardHomeClient";
-import { EmployeeDashboardBanner } from "@/components/EmployeeDashboardBanner";
 import { DashboardAutoSync } from "@/components/DashboardAutoSync";
 import { LandingPage } from "@/components/LandingPage";
 
@@ -16,15 +15,10 @@ export default async function Home() {
   }
   const org = await getOrganizationById(session.user.organizationId);
   const connected = !!org?.hcp_access_token;
-  const isEmployee = session.user.role === "employee";
-
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 font-sans dark:bg-black">
       <main className="flex flex-1 flex-col gap-6 p-6">
         <DashboardAutoSync enabled={connected} />
-        {isEmployee && (
-          <EmployeeDashboardBanner />
-        )}
         <DashboardHomeClient connected={connected} />
       </main>
     </div>

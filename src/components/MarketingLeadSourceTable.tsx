@@ -41,9 +41,8 @@ export function MarketingLeadSourceTable({
         Performance by lead source
       </h2>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        HCP jobs are attributed from lead source text and UTMs. Paid spend/CPL need LSA sync
-        (or temporary manual LSA upload in Attribution setup, or future Ads integrations). Free channels show N/A for spend
-        and substitute GBP / Search Console metrics where available.
+        HCP jobs are attributed from lead source text and UTMs. Paid spend/CPL require ad integrations (LSA now, PPC/Meta
+        coming next). Free channels show N/A for spend.
       </p>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
@@ -51,36 +50,51 @@ export function MarketingLeadSourceTable({
             <tr className="border-b border-zinc-200 dark:border-zinc-700">
               <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Lead source</th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
-                <MetricTooltip label="Total spend" tooltip="Paid channels only; from synced platform data." />
+                <MetricTooltip
+                  label="Total spend"
+                  tooltip="Definition: paid channel ad spend in selected range. Source/config: synced from connected ad integrations."
+                />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
-                <MetricTooltip label="Cost / lead" tooltip={defs.costPerLead ?? ""} />
+                <MetricTooltip
+                  label="Cost / lead"
+                  tooltip={
+                    defs.costPerLead
+                      ? `Definition: ${defs.costPerLead} Source/config: requires spend + lead sync for the channel.`
+                      : "Definition: spend divided by leads. Source/config: requires spend + lead sync for the channel."
+                  }
+                />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
                   label="Booking rate"
-                  tooltip="Booked jobs ÷ attributed jobs in period for this channel."
+                  tooltip="Definition: booked jobs divided by attributed jobs for this source. Source/config: Housecall Pro jobs + attribution mapping."
                 />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
                   label="Conversion rate"
-                  tooltip="Paid jobs ÷ attributed jobs in period for this channel."
+                  tooltip="Definition: paid jobs divided by attributed jobs for this source. Source/config: synced paid amounts from Housecall Pro."
                 />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
-                <MetricTooltip label="Avg revenue" tooltip="Attributed paid revenue ÷ paid jobs." />
+                <MetricTooltip
+                  label="Avg revenue"
+                  tooltip="Definition: attributed paid revenue divided by paid jobs. Source/config: Housecall Pro revenue + attribution setup."
+                />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
-                <MetricTooltip label="Total revenue" tooltip="Attributed paid job revenue (HCP)." />
+                <MetricTooltip
+                  label="Total revenue"
+                  tooltip="Definition: total attributed paid revenue. Source/config: Housecall Pro jobs mapped by attribution rules."
+                />
               </th>
-              <th className="pb-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Signals</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={8} className="py-4 text-zinc-500 dark:text-zinc-400">
+                <td colSpan={7} className="py-4 text-zinc-500 dark:text-zinc-400">
                   Loading…
                 </td>
               </tr>
@@ -116,26 +130,6 @@ export function MarketingLeadSourceTable({
                   </td>
                   <td className="py-2 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-50">
                     {formatMoney(c.totalRevenue)}
-                  </td>
-                  <td className="max-w-[200px] py-2 text-xs text-zinc-500 dark:text-zinc-400">
-                    {c.slug === "google_business_profile" && (
-                      <>
-                        Calls {c.substituteMetrics.gbpCallClicks ?? 0}, directions{" "}
-                        {c.substituteMetrics.gbpDirectionRequests ?? 0}, web{" "}
-                        {c.substituteMetrics.gbpWebsiteClicks ?? 0}, impr.{" "}
-                        {c.substituteMetrics.gbpImpressionsSum ?? 0}, reviews{" "}
-                        {c.substituteMetrics.reviewCount ?? 0}
-                      </>
-                    )}
-                    {c.slug === "organic_search" && (
-                      <>
-                        GSC clicks {c.substituteMetrics.searchConsoleClicks ?? 0}, impr.{" "}
-                        {c.substituteMetrics.searchConsoleImpressions ?? 0} (organic rankings below)
-                      </>
-                    )}
-                    {c.slug !== "google_business_profile" && c.slug !== "organic_search" && (
-                      <span>Jobs: {c.attributedJobs}</span>
-                    )}
                   </td>
                 </tr>
               ))}

@@ -22,7 +22,7 @@ const E164 = /^\+[1-9]\d{6,14}$/;
 
 export async function POST(request: Request) {
   await initSchema();
-  let body: { email?: string; password?: string };
+  let body: { email?: string; password?: string; channel?: "sms" | "email" };
   try {
     body = (await request.json()) as { email?: string; password?: string };
   } catch {
@@ -43,32 +43,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
 
-  if (!user.two_factor_enabled) {
-    return NextResponse.json({ twoFactorRequired: false });
-  }
-
-  const ch = user.two_factor_channel;
-  if (ch !== "sms" && ch !== "email") {
+  const requestedChannel = body.channel === "sms" || body.channel === "email" ? body.channel : null;
+  const phone = user.phone_e164?.trim() ?? "";
+  const email = user.email.trim();
+  const smsAvailable =
+    E164.test(phone) && (user.two_factor_sms_verified || user.two_factor_enabled);
+  const emailAvailable = Boolean(email);
+  const availableChannels = [smsAvailable ? "sms" : null, emailAvailable ? "email" : null].filter(
+    (x): x is "sms" | "email" => x === "sms" || x === "email"
+  );
+  if (availableChannels.length === 0) {
     return NextResponse.json(
       {
         error:
-          "Two-factor is on but delivery method is missing. An admin can fix this in Settings → Security.",
+          "Two-factor is required, but your SMS and email channels are not verified. Contact your admin.",
       },
       { status: 400 }
     );
   }
-
-  const verifyTo = ch === "sms" ? (user.phone_e164?.trim() ?? "") : user.email.trim();
-  if (ch === "sms" && !E164.test(verifyTo)) {
-    return NextResponse.json(
-      {
-        error:
-          "Add a valid mobile number in international format (e.g. +15551234567) under Settings → Security.",
-      },
-      { status: 400 }
-    );
-  }
-
+  const ch =
+    requestedChannel && availableChannels.includes(requestedChannel)
+      ? requestedChannel
+      : availableChannels.includes("sms")
+        ? "sms"
+        : "email";
+  const verifyTo = ch === "sms" ? phone : email;
   const started = await startVerify(verifyTo, ch);
   if (!started.ok) {
     return NextResponse.json({ error: started.error }, { status: 503 });
@@ -86,6 +85,7 @@ export async function POST(request: Request) {
     twoFactorRequired: true,
     pendingToken,
     channel: ch,
+    availableChannels,
     maskedDestination: ch === "email" ? maskEmail(user.email) : maskPhone(verifyTo),
   });
 }

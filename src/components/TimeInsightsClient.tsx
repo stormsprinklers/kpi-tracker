@@ -23,12 +23,19 @@ interface TimeInsightsResult {
   laborPercentOfRevenue: number | null;
 }
 
+interface CrewApiRow {
+  name: string;
+  foremanHcpEmployeeId: string;
+  members: { hcpEmployeeId: string }[];
+}
+
 export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
   const payCal = usePayPeriodCalendar();
   const [periodOffset, setPeriodOffset] = useState(0);
   const [data, setData] = useState<TimeInsightsResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [crewNameByEmployeeId, setCrewNameByEmployeeId] = useState<Record<string, string>>({});
   const range = useMemo(
     () => getPayPeriodRangeForOffsetN(periodOffset, payCal),
     [periodOffset, payCal]
@@ -56,6 +63,37 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setCrewNameByEmployeeId({});
+      return;
+    }
+    void (async () => {
+      try {
+        const res = await fetch("/api/crews");
+        if (!res.ok) {
+          setCrewNameByEmployeeId({});
+          return;
+        }
+        const payload = (await res.json()) as { crews?: CrewApiRow[] };
+        const next: Record<string, string> = {};
+        for (const crew of payload.crews ?? []) {
+          const name = crew.name?.trim();
+          if (!name) continue;
+          const foreman = crew.foremanHcpEmployeeId?.trim();
+          if (foreman && !next[foreman]) next[foreman] = name;
+          for (const member of crew.members ?? []) {
+            const hid = member.hcpEmployeeId?.trim();
+            if (hid && !next[hid]) next[hid] = name;
+          }
+        }
+        setCrewNameByEmployeeId(next);
+      } catch {
+        setCrewNameByEmployeeId({});
+      }
+    })();
+  }, [isAdmin]);
 
   const dateSelector = (
     <div className="flex flex-wrap items-center gap-2">
@@ -195,8 +233,11 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
             syncedStartDate={range.startDate}
             syncedEndDate={range.endDate}
             excludeZeroHours={false}
+            excludeZeroExpectedPay
             includeTimesheetEmployees
             splitRegularOvertimeHours
+            splitTechniciansAndCrews
+            crewNameByEmployeeId={crewNameByEmployeeId}
             avgJobsPerDayByEmployee={Object.fromEntries(
               data.averageJobsPerDayPerTechnician.map((t) => [t.technicianId, t.avgJobsPerDay])
             )}

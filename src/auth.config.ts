@@ -69,8 +69,8 @@ export default {
         if (!user?.password_hash) return null;
         const valid = await compare(password, user.password_hash);
         if (!valid) return null;
-        if (user.two_factor_enabled) return null;
-        return sessionUserFromRow(user);
+        // Always require a second factor after password.
+        return null;
       },
     }),
     Google({ allowDangerousEmailAccountLinking: true }),
@@ -80,14 +80,12 @@ export default {
     signIn: "/login",
   },
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ account }) {
       if (account?.provider === "credentials") return true;
-      if (!user.email) return false;
-      const existing = await getUserByEmail(user.email);
-      if (existing?.organization_id) return true;
-      return "/signup";
+      // OAuth providers bypass the password+OTP flow; require credentials sign-in so 2FA always applies.
+      return "/login?error=Use%20email%20and%20password%20to%20complete%202FA";
     },
-    async jwt({ token, user, account }) {
+    async jwt({ token, user }) {
       if (user) {
         const u = user as { id: string; role?: string; organization_id?: string; organizationId?: string; organizationName?: string; organizationLogoUrl?: string | null; hcp_employee_id?: string | null; hcpEmployeeId?: string | null };
         token.id = u.id;

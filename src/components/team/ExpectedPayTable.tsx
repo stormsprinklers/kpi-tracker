@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { ExpectedPayResult } from "@/lib/performancePay";
 import { MetricTooltip } from "../MetricTooltip";
 
@@ -24,6 +24,12 @@ type ExpectedPayTableProps = {
    * Admin API only; no effect for non-admin sessions.
    */
   includeTimesheetEmployees?: boolean;
+  /** Omit rows where expected pay is effectively zero. */
+  excludeZeroExpectedPay?: boolean;
+  /** Optional map of employee id -> crew name (used for grouped display in Time Insights). */
+  crewNameByEmployeeId?: Record<string, string>;
+  /** Split field section into stand-alone technicians and crews. */
+  splitTechniciansAndCrews?: boolean;
 };
 
 function regOtFromResult(r: ExpectedPayResult): { reg: number; ot: number } {
@@ -100,6 +106,9 @@ export function ExpectedPayTable({
   excludeZeroHours = false,
   splitRegularOvertimeHours = false,
   includeTimesheetEmployees = false,
+  excludeZeroExpectedPay = false,
+  crewNameByEmployeeId,
+  splitTechniciansAndCrews = false,
 }: ExpectedPayTableProps = {}) {
   const isSynced =
     typeof syncedStartDate === "string" &&
@@ -168,9 +177,16 @@ export function ExpectedPayTable({
   }, [fetchExpected]);
 
   const visibleResults = useMemo(() => {
-    if (!excludeZeroHours) return results;
-    return results.filter((r) => (typeof r.hoursWorked === "number" ? r.hoursWorked : 0) > 0);
-  }, [results, excludeZeroHours]);
+    return results.filter((r) => {
+      if (excludeZeroHours && (typeof r.hoursWorked === "number" ? r.hoursWorked : 0) <= 0) {
+        return false;
+      }
+      if (excludeZeroExpectedPay && Math.abs(r.expectedPay ?? 0) < 0.005) {
+        return false;
+      }
+      return true;
+    });
+  }, [results, excludeZeroHours, excludeZeroExpectedPay]);
 
   const { fieldRows, csrRows } = useMemo(() => {
     const field: ExpectedPayResult[] = [];
@@ -181,6 +197,31 @@ export function ExpectedPayTable({
     }
     return { fieldRows: field, csrRows: csr };
   }, [visibleResults]);
+
+  const {
+    nonCrewFieldRows,
+    crewFieldRowsByName,
+    crewFieldNames,
+  } = useMemo(() => {
+    const nonCrew: ExpectedPayResult[] = [];
+    const byCrew = new Map<string, ExpectedPayResult[]>();
+    for (const r of fieldRows) {
+      const crewName = crewNameByEmployeeId?.[r.hcpEmployeeId];
+      if (!crewName) {
+        nonCrew.push(r);
+        continue;
+      }
+      const list = byCrew.get(crewName) ?? [];
+      list.push(r);
+      byCrew.set(crewName, list);
+    }
+    const names = Array.from(byCrew.keys()).sort((a, b) => a.localeCompare(b));
+    return {
+      nonCrewFieldRows: nonCrew,
+      crewFieldRowsByName: byCrew,
+      crewFieldNames: names,
+    };
+  }, [fieldRows, crewNameByEmployeeId]);
 
   const totals = useMemo(() => {
     let totalHours = 0;
@@ -310,14 +351,70 @@ export function ExpectedPayTable({
             </tr>
           </thead>
           <tbody>
-            {fieldRows.map((r) => (
-              <ExpectedPayTableRow
-                key={r.hcpEmployeeId}
-                r={r}
-                avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
-                splitRegularOvertimeHours={splitRegularOvertimeHours}
-              />
-            ))}
+            {!splitTechniciansAndCrews &&
+              fieldRows.map((r) => (
+                <ExpectedPayTableRow
+                  key={r.hcpEmployeeId}
+                  r={r}
+                  avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
+                  splitRegularOvertimeHours={splitRegularOvertimeHours}
+                />
+              ))}
+            {splitTechniciansAndCrews && nonCrewFieldRows.length > 0 && (
+              <>
+                <tr className="border-b border-zinc-200 bg-zinc-100/90 dark:border-zinc-700 dark:bg-zinc-800/80">
+                  <td
+                    colSpan={tableColSpan}
+                    className="py-2 pl-4 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
+                  >
+                    Technicians
+                  </td>
+                </tr>
+                {nonCrewFieldRows.map((r) => (
+                  <ExpectedPayTableRow
+                    key={r.hcpEmployeeId}
+                    r={r}
+                    avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
+                    splitRegularOvertimeHours={splitRegularOvertimeHours}
+                  />
+                ))}
+              </>
+            )}
+            {splitTechniciansAndCrews && crewFieldNames.length > 0 && (
+              <>
+                <tr className="border-b border-zinc-200 bg-zinc-100/90 dark:border-zinc-700 dark:bg-zinc-800/80">
+                  <td
+                    colSpan={tableColSpan}
+                    className="py-2 pl-4 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
+                  >
+                    Crews
+                  </td>
+                </tr>
+                {crewFieldNames.map((crewName) => {
+                  const rows = crewFieldRowsByName.get(crewName) ?? [];
+                  return (
+                    <Fragment key={`crew-group-${crewName}`}>
+                      <tr className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/60">
+                        <td
+                          colSpan={tableColSpan}
+                          className="py-2 pl-6 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
+                        >
+                          {crewName}
+                        </td>
+                      </tr>
+                      {rows.map((r) => (
+                        <ExpectedPayTableRow
+                          key={`${crewName}:${r.hcpEmployeeId}`}
+                          r={r}
+                          avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
+                          splitRegularOvertimeHours={splitRegularOvertimeHours}
+                        />
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </>
+            )}
             {csrRows.length > 0 && (
               <>
                 <tr className="border-b border-zinc-200 bg-zinc-100/90 dark:border-zinc-700 dark:bg-zinc-800/80">
@@ -384,8 +481,8 @@ export function ExpectedPayTable({
       </div>
       {visibleResults.length === 0 && !loading && !error && (
         <p className="px-4 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
-          {excludeZeroHours && results.length > 0
-            ? "No employees with logged hours in this period."
+          {(excludeZeroHours || excludeZeroExpectedPay) && results.length > 0
+            ? "No employees matching the current Time Insights filters."
             : "No expected pay data for this period. Set up Performance Pay first."}
         </p>
       )}

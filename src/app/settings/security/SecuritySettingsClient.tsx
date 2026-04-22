@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 
 export function SecuritySettingsClient() {
   const [hasPassword, setHasPassword] = useState(true);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
   const [channel, setChannel] = useState<"sms" | "email" | "">("");
   const [phone, setPhone] = useState("");
+  const [smsVerified, setSmsVerified] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,11 +26,15 @@ export function SecuritySettingsClient() {
           two_factor_enabled: boolean;
           two_factor_channel: string | null;
           phone_e164: string;
+          two_factor_sms_verified?: boolean;
+          two_factor_email_verified?: boolean;
         };
         setHasPassword(data.hasPassword);
-        setTwoFactorEnabled(data.two_factor_enabled);
+        setTwoFactorEnabled(true);
         setChannel((data.two_factor_channel === "sms" || data.two_factor_channel === "email" ? data.two_factor_channel : "") as "" | "sms" | "email");
         setPhone(data.phone_e164 ?? "");
+        setSmsVerified(Boolean(data.two_factor_sms_verified));
+        setEmailVerified(Boolean(data.two_factor_email_verified));
       } catch {
         setError("Could not load security settings");
       } finally {
@@ -58,7 +64,7 @@ export function SecuritySettingsClient() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          two_factor_enabled: twoFactorEnabled,
+          two_factor_enabled: true,
           two_factor_channel: channel || null,
           phone_e164: phone.trim() || null,
         }),
@@ -68,6 +74,8 @@ export function SecuritySettingsClient() {
         two_factor_enabled?: boolean;
         two_factor_channel?: string | null;
         phone_e164?: string;
+        two_factor_sms_verified?: boolean;
+        two_factor_email_verified?: boolean;
       };
       if (!res.ok) {
         throw new Error(data.error || "Save failed");
@@ -77,6 +85,8 @@ export function SecuritySettingsClient() {
         setChannel((data.two_factor_channel === "sms" || data.two_factor_channel === "email" ? data.two_factor_channel : "") as "" | "sms" | "email");
       }
       if (data.phone_e164 !== undefined) setPhone(data.phone_e164 ?? "");
+      if (data.two_factor_sms_verified !== undefined) setSmsVerified(Boolean(data.two_factor_sms_verified));
+      if (data.two_factor_email_verified !== undefined) setEmailVerified(Boolean(data.two_factor_email_verified));
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -105,21 +115,12 @@ export function SecuritySettingsClient() {
       ) : null}
 
       <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            className="mt-1 h-4 w-4 rounded border-zinc-300"
-            checked={twoFactorEnabled}
-            disabled={!hasPassword}
-            onChange={(e) => setTwoFactorEnabled(e.target.checked)}
-          />
-          <span>
-            <span className="font-medium text-zinc-900 dark:text-zinc-50">Require two-factor at sign-in</span>
-            <span className="mt-0.5 block text-sm text-zinc-600 dark:text-zinc-400">
-              After your password, you will enter a one-time code from Twilio Verify.
-            </span>
+        <div>
+          <span className="font-medium text-zinc-900 dark:text-zinc-50">Two-factor at sign-in</span>
+          <span className="mt-0.5 block text-sm text-zinc-600 dark:text-zinc-400">
+            Required for all users. After your password, you will enter a one-time code from Twilio Verify.
           </span>
-        </label>
+        </div>
 
         <div className="mt-5 space-y-4 border-t border-zinc-100 pt-5 dark:border-zinc-800">
           <div>
@@ -146,6 +147,12 @@ export function SecuritySettingsClient() {
               placeholder="+15551234567"
               className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm dark:border-zinc-700 dark:bg-zinc-900"
             />
+            <p className="mt-1 text-xs text-zinc-500">
+              SMS verification: {smsVerified ? "verified" : "not verified"}
+            </p>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Email verification: {emailVerified ? "verified" : "not verified"}
+            </p>
           </div>
         </div>
       </div>
@@ -167,7 +174,7 @@ export function SecuritySettingsClient() {
       <div className="flex items-center gap-4">
         <button
           type="button"
-          disabled={saving || !hasPassword}
+          disabled={saving || !hasPassword || !twoFactorEnabled}
           onClick={() => void save()}
           className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
         >

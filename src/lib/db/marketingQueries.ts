@@ -386,6 +386,45 @@ export async function sumGbpMetricsForOrgInRange(
   };
 }
 
+export async function getGbpMetricsDailyInRange(
+  organizationId: string,
+  rangeStart: string,
+  rangeEnd: string
+): Promise<
+  Array<{
+    metric_date: string;
+    views_maps: number;
+    views_search: number;
+    actions_website: number;
+    actions_phone: number;
+    actions_directions: number;
+  }>
+> {
+  const result = await sql`
+    SELECT
+      metric_date::text AS metric_date,
+      COALESCE(SUM(COALESCE(business_impressions_desktop_maps, 0) + COALESCE(business_impressions_mobile_maps, 0)), 0)::int AS views_maps,
+      COALESCE(SUM(COALESCE(business_impressions_desktop_search, 0) + COALESCE(business_impressions_mobile_search, 0)), 0)::int AS views_search,
+      COALESCE(SUM(website_clicks), 0)::int AS actions_website,
+      COALESCE(SUM(call_clicks), 0)::int AS actions_phone,
+      COALESCE(SUM(direction_requests), 0)::int AS actions_directions
+    FROM fact_gbp_metrics_daily
+    WHERE organization_id = ${organizationId}::uuid
+      AND metric_date >= ${rangeStart}::date
+      AND metric_date <= ${rangeEnd}::date
+    GROUP BY metric_date
+    ORDER BY metric_date ASC
+  `;
+  return (result.rows ?? []) as Array<{
+    metric_date: string;
+    views_maps: number;
+    views_search: number;
+    actions_website: number;
+    actions_phone: number;
+    actions_directions: number;
+  }>;
+}
+
 export async function sumSearchConsoleForOrgInRange(
   organizationId: string,
   rangeStart: string,

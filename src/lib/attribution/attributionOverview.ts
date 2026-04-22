@@ -2,6 +2,7 @@ import { initSchema } from "@/lib/db";
 import {
   countTwilioCallsBySourceInRange,
   countTwilioTrackingCallsInRange,
+  getWebAttributionDailySeries,
   getRecentWebAttributionSessionEvents,
   getTopLandingPagesInRange,
   getWebAttributionRangeTotals,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/db/webAttributionQueries";
 import type { MarketingOverviewResponse } from "@/lib/marketing/types";
 import { buildMarketingOverviewResponse } from "@/lib/metrics/marketingOverview";
+import { getGbpMetricsDailyInRange } from "@/lib/db/marketingQueries";
 import {
   buildRecentWebAttributionSessions,
   type RecentWebAttributionSession,
@@ -45,6 +47,33 @@ export type AttributionOverviewResponse = {
     avgTimeOnSiteSeconds: null;
     totalSiteVisits: number;
     topLandingPages: Array<{ page_url: string; views: number }>;
+    daily: Array<{
+      date: string;
+      visitors: number;
+      pageViews: number;
+      forms: number;
+      phoneClicks: number;
+      bookings: number;
+    }>;
+  };
+  gbpInsights: {
+    metrics: {
+      queriesDirect: number | null;
+      queriesIndirect: number | null;
+      viewsMaps: number;
+      viewsSearch: number;
+      actionsWebsite: number;
+      actionsPhone: number;
+      actionsDirections: number;
+    };
+    daily: Array<{
+      date: string;
+      viewsMaps: number;
+      viewsSearch: number;
+      actionsWebsite: number;
+      actionsPhone: number;
+      actionsDirections: number;
+    }>;
   };
   recentSessions: RecentWebAttributionSession[];
 };
@@ -63,6 +92,8 @@ export async function buildAttributionOverviewResponse(
     twilioBySource,
     twilioTotal,
     topPages,
+    webDaily,
+    gbpDaily,
     sessionRows,
   ] = await Promise.all([
     buildMarketingOverviewResponse(organizationId, startDate, endDate),
@@ -71,6 +102,8 @@ export async function buildAttributionOverviewResponse(
     countTwilioCallsBySourceInRange({ organizationId, startDate, endDate }),
     countTwilioTrackingCallsInRange({ organizationId, startDate, endDate }),
     getTopLandingPagesInRange({ organizationId, startDate, endDate, limit: 3 }),
+    getWebAttributionDailySeries({ organizationId, startDate, endDate }),
+    getGbpMetricsDailyInRange(organizationId, startDate, endDate),
     getRecentWebAttributionSessionEvents({
       organizationId,
       maxVisitors: 40,
@@ -110,6 +143,23 @@ export async function buildAttributionOverviewResponse(
   }));
 
   const recentSessions = buildRecentWebAttributionSessions(sessionRows);
+  const gbpTotals = gbpDaily.reduce(
+    (acc, row) => {
+      acc.viewsMaps += row.views_maps;
+      acc.viewsSearch += row.views_search;
+      acc.actionsWebsite += row.actions_website;
+      acc.actionsPhone += row.actions_phone;
+      acc.actionsDirections += row.actions_directions;
+      return acc;
+    },
+    {
+      viewsMaps: 0,
+      viewsSearch: 0,
+      actionsWebsite: 0,
+      actionsPhone: 0,
+      actionsDirections: 0,
+    }
+  );
 
   return {
     startDate,
@@ -131,6 +181,34 @@ export async function buildAttributionOverviewResponse(
       /** Same definition as `kpis.siteSessions`: distinct visitors with events in range (not raw page-view count). */
       totalSiteVisits: webTotals.uniqueVisitors,
       topLandingPages: topPages,
+      daily: webDaily.map((row) => ({
+        date: row.metric_date,
+        visitors: row.unique_visitors,
+        pageViews: row.page_loads,
+        forms: row.form_submits,
+        phoneClicks: row.tel_clicks,
+        bookings: row.web_bookings,
+      })),
+    },
+    gbpInsights: {
+      metrics: {
+        // Reserved for future GBP query metrics ingestion.
+        queriesDirect: null,
+        queriesIndirect: null,
+        viewsMaps: gbpTotals.viewsMaps,
+        viewsSearch: gbpTotals.viewsSearch,
+        actionsWebsite: gbpTotals.actionsWebsite,
+        actionsPhone: gbpTotals.actionsPhone,
+        actionsDirections: gbpTotals.actionsDirections,
+      },
+      daily: gbpDaily.map((row) => ({
+        date: row.metric_date,
+        viewsMaps: row.views_maps,
+        viewsSearch: row.views_search,
+        actionsWebsite: row.actions_website,
+        actionsPhone: row.actions_phone,
+        actionsDirections: row.actions_directions,
+      })),
     },
     recentSessions,
   };

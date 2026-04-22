@@ -864,6 +864,8 @@ export type UserAuthRow = {
   two_factor_enabled: boolean;
   two_factor_channel: string | null;
   phone_e164: string | null;
+  two_factor_sms_verified: boolean;
+  two_factor_email_verified: boolean;
 };
 
 export async function getUserByEmail(email: string) {
@@ -871,7 +873,9 @@ export async function getUserByEmail(email: string) {
     SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id, o.logo_url as org_logo_url,
       COALESCE(u.two_factor_enabled, false) AS two_factor_enabled,
       u.two_factor_channel,
-      u.phone_e164
+      u.phone_e164,
+      COALESCE(u.two_factor_sms_verified, false) AS two_factor_sms_verified,
+      COALESCE(u.two_factor_email_verified, false) AS two_factor_email_verified
     FROM users u
     LEFT JOIN organizations o ON o.id = u.organization_id
     WHERE LOWER(u.email) = LOWER(${email})
@@ -884,7 +888,9 @@ export async function getUserById(id: string) {
     SELECT u.id, u.email, u.password_hash, u.organization_id, u.role, u.hcp_employee_id, o.name as org_name, o.hcp_company_id, o.logo_url as org_logo_url,
       COALESCE(u.two_factor_enabled, false) AS two_factor_enabled,
       u.two_factor_channel,
-      u.phone_e164
+      u.phone_e164,
+      COALESCE(u.two_factor_sms_verified, false) AS two_factor_sms_verified,
+      COALESCE(u.two_factor_email_verified, false) AS two_factor_email_verified
     FROM users u
     LEFT JOIN organizations o ON o.id = u.organization_id
     WHERE u.id = ${id}::uuid
@@ -898,6 +904,8 @@ export async function updateUserTwoFactorSettings(
     two_factor_enabled?: boolean;
     two_factor_channel?: "sms" | "email" | null;
     phone_e164?: string | null;
+    two_factor_sms_verified?: boolean;
+    two_factor_email_verified?: boolean;
   }
 ) {
   if (params.two_factor_enabled !== undefined) {
@@ -915,6 +923,16 @@ export async function updateUserTwoFactorSettings(
       UPDATE users SET phone_e164 = ${params.phone_e164} WHERE id = ${userId}::uuid
     `;
   }
+  if (params.two_factor_sms_verified !== undefined) {
+    await sql`
+      UPDATE users SET two_factor_sms_verified = ${params.two_factor_sms_verified} WHERE id = ${userId}::uuid
+    `;
+  }
+  if (params.two_factor_email_verified !== undefined) {
+    await sql`
+      UPDATE users SET two_factor_email_verified = ${params.two_factor_email_verified} WHERE id = ${userId}::uuid
+    `;
+  }
 }
 
 export async function createUser(params: {
@@ -923,10 +941,37 @@ export async function createUser(params: {
   organization_id: string;
   role: "admin" | "employee" | "investor";
   hcp_employee_id?: string | null;
+  two_factor_enabled?: boolean;
+  two_factor_channel?: "sms" | "email" | null;
+  phone_e164?: string | null;
+  two_factor_sms_verified?: boolean;
+  two_factor_email_verified?: boolean;
 }) {
   const result = await sql`
-    INSERT INTO users (email, password_hash, organization_id, role, hcp_employee_id)
-    VALUES (${params.email}, ${params.password_hash}, ${params.organization_id}, ${params.role}, ${params.hcp_employee_id ?? null})
+    INSERT INTO users (
+      email,
+      password_hash,
+      organization_id,
+      role,
+      hcp_employee_id,
+      two_factor_enabled,
+      two_factor_channel,
+      phone_e164,
+      two_factor_sms_verified,
+      two_factor_email_verified
+    )
+    VALUES (
+      ${params.email},
+      ${params.password_hash},
+      ${params.organization_id},
+      ${params.role},
+      ${params.hcp_employee_id ?? null},
+      ${params.two_factor_enabled ?? false},
+      ${params.two_factor_channel ?? null},
+      ${params.phone_e164 ?? null},
+      ${params.two_factor_sms_verified ?? false},
+      ${params.two_factor_email_verified ?? false}
+    )
     RETURNING id, email, organization_id, role, hcp_employee_id
   `;
   return result.rows?.[0] as { id: string; email: string; organization_id: string; role: string; hcp_employee_id: string | null };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   DASHBOARD_PRESET_LABELS,
   DASHBOARD_PRESET_ORDER,
@@ -8,11 +9,13 @@ import {
   getDashboardDateRange,
 } from "@/lib/dashboardDateRange";
 import { usePayPeriodCalendar } from "@/hooks/usePayPeriodCalendar";
+import { EmployeeDashboardBanner } from "./EmployeeDashboardBanner";
 import { KeyMetricsSection } from "./KeyMetricsSection";
 import { TechnicianRevenueSection } from "./TechnicianRevenueSection";
 import { CsrKpisSection } from "./CsrKpisSection";
 
 export function DashboardHomeClient({ connected }: { connected: boolean }) {
+  const { data: session } = useSession();
   const [preset, setPreset] = useState<DashboardDatePreset>("thisPayPeriod");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -66,6 +69,10 @@ export function DashboardHomeClient({ connected }: { connected: boolean }) {
         </div>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
       </div>
+
+      {session?.user?.role === "employee" && (
+        <EmployeeDashboardBanner dateRange={dateRange} payPeriodCalendar={payPeriodCalendar} />
+      )}
 
       <KeyMetricsSection
         connected={connected}

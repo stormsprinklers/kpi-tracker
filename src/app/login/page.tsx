@@ -1,6 +1,5 @@
 "use client";
 
-import { signIn } from "next-auth/react";
 import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -12,10 +11,13 @@ function LoginForm() {
   const [step, setStep] = useState<"password" | "twoFactor">("password");
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [twoFactorChannel, setTwoFactorChannel] = useState<"sms" | "email" | null>(null);
+  const [preferredChannel, setPreferredChannel] = useState<"sms" | "email">("sms");
+  const [availableChannels, setAvailableChannels] = useState<Array<"sms" | "email">>([]);
   const [maskedDestination, setMaskedDestination] = useState("");
   const [otp, setOtp] = useState("");
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+  const oauthError = searchParams.get("error");
 
   async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,13 +27,14 @@ function LoginForm() {
       const r = await fetch("/api/auth/2fa/challenge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), password, channel: preferredChannel }),
       });
       const data = (await r.json().catch(() => ({}))) as {
         error?: string;
         twoFactorRequired?: boolean;
         pendingToken?: string;
         channel?: "sms" | "email";
+        availableChannels?: Array<"sms" | "email">;
         maskedDestination?: string;
       };
       if (!r.ok) {
@@ -42,6 +45,7 @@ function LoginForm() {
       if (data.twoFactorRequired && data.pendingToken) {
         setPendingToken(data.pendingToken);
         setTwoFactorChannel(data.channel ?? null);
+        setAvailableChannels(Array.isArray(data.availableChannels) ? data.availableChannels : []);
         setMaskedDestination(data.maskedDestination ?? "");
         setStep("twoFactor");
         setOtp("");
@@ -133,6 +137,11 @@ function LoginForm() {
             <span className="font-medium text-zinc-800 dark:text-zinc-200">{maskedDestination}</span>
           </p>
         )}
+        {step === "password" && oauthError ? (
+          <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
+            {decodeURIComponent(oauthError.replace(/\+/g, " "))}
+          </p>
+        ) : null}
 
         {step === "password" ? (
           <form onSubmit={handlePasswordSubmit} className="mt-6 space-y-4">
@@ -171,6 +180,20 @@ function LoginForm() {
                 autoComplete="current-password"
                 className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
               />
+            </div>
+            <div>
+              <label htmlFor="channel" className="block text-sm font-medium" style={{ color: "#0B1F33" }}>
+                Verification method
+              </label>
+              <select
+                id="channel"
+                value={preferredChannel}
+                onChange={(e) => setPreferredChannel(e.target.value as "sms" | "email")}
+                className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+              >
+                <option value="sms">SMS</option>
+                <option value="email">Email</option>
+              </select>
             </div>
             {error && (
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -221,11 +244,15 @@ function LoginForm() {
               >
                 Resend code
               </button>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Available methods: {availableChannels.length > 0 ? availableChannels.join(", ") : "current method"}
+              </p>
               <button
                 type="button"
                 onClick={() => {
                   setStep("password");
                   setPendingToken(null);
+                  setAvailableChannels([]);
                   setOtp("");
                   setError(null);
                 }}
@@ -238,32 +265,9 @@ function LoginForm() {
         )}
 
         {step === "password" ? (
-          <>
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-zinc-300" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-white px-2 text-zinc-500">or</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => signIn("google", { callbackUrl })}
-                className="flex w-full items-center justify-center gap-2 rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Sign in with Google
-              </button>
-              <button
-                type="button"
-                onClick={() => signIn("apple", { callbackUrl })}
-                className="flex w-full items-center justify-center gap-2 rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Sign in with Apple
-              </button>
-            </div>
-          </>
+          <p className="mt-4 text-center text-xs text-zinc-500">
+            Use email and password so two-factor verification can be enforced at sign in.
+          </p>
         ) : null}
         {step === "password" ? (
           <p className="mt-4 text-center text-sm opacity-80" style={{ color: "#0B1F33" }}>

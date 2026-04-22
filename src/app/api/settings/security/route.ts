@@ -18,9 +18,11 @@ export async function GET() {
 
   return NextResponse.json({
     hasPassword: Boolean(user.password_hash),
-    two_factor_enabled: user.two_factor_enabled,
+    two_factor_enabled: true,
     two_factor_channel: user.two_factor_channel,
     phone_e164: user.phone_e164 ?? "",
+    two_factor_sms_verified: user.two_factor_sms_verified ?? false,
+    two_factor_email_verified: user.two_factor_email_verified ?? false,
   });
 }
 
@@ -55,6 +57,12 @@ export async function PATCH(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  if (body.two_factor_enabled === false) {
+    return NextResponse.json(
+      { error: "Two-factor is required for all users and cannot be disabled." },
+      { status: 400 }
+    );
+  }
 
   let phoneUpdate: string | null | undefined;
   if (body.phone_e164 !== undefined) {
@@ -65,56 +73,50 @@ export async function PATCH(request: Request) {
     phoneUpdate = p;
   }
 
-  if (body.two_factor_enabled === true) {
-    const ch = body.two_factor_channel ?? user.two_factor_channel;
-    if (ch !== "sms" && ch !== "email") {
+  if (phoneUpdate !== undefined) {
+    await updateUserTwoFactorSettings(session.user.id, {
+      phone_e164: phoneUpdate,
+      two_factor_sms_verified: false,
+    });
+  }
+  if (body.two_factor_channel !== undefined) {
+    const ch = body.two_factor_channel;
+    if (ch !== null && ch !== "sms" && ch !== "email") {
+      return NextResponse.json({ error: "Invalid channel" }, { status: 400 });
+    }
+    const refreshed = await getUserById(session.user.id);
+    if (ch === "sms") {
+      const ph = (refreshed?.phone_e164 ?? "").trim();
+      if (!E164.test(ph)) {
+        return NextResponse.json(
+          { error: "Set a valid E.164 phone before choosing SMS." },
+          { status: 400 }
+        );
+      }
+      if (!refreshed?.two_factor_sms_verified) {
+        return NextResponse.json(
+          { error: "Verify your SMS number before selecting SMS for sign-in." },
+          { status: 400 }
+        );
+      }
+    }
+    if (ch === "email" && !refreshed?.two_factor_email_verified) {
       return NextResponse.json(
-        { error: "Choose delivery method: sms or email when enabling two-factor." },
+        { error: "Verify your email channel before selecting email for sign-in." },
         { status: 400 }
       );
-    }
-    const effectivePhone = phoneUpdate !== undefined ? phoneUpdate : user.phone_e164;
-    if (ch === "sms" && (!effectivePhone || !E164.test(effectivePhone.trim()))) {
-      return NextResponse.json(
-        { error: "SMS two-factor requires a valid E.164 mobile number." },
-        { status: 400 }
-      );
-    }
-    if (phoneUpdate !== undefined) {
-      await updateUserTwoFactorSettings(session.user.id, { phone_e164: phoneUpdate });
     }
     await updateUserTwoFactorSettings(session.user.id, { two_factor_channel: ch });
-    await updateUserTwoFactorSettings(session.user.id, { two_factor_enabled: true });
-  } else if (body.two_factor_enabled === false) {
-    await updateUserTwoFactorSettings(session.user.id, { two_factor_enabled: false });
-  } else {
-    if (phoneUpdate !== undefined) {
-      await updateUserTwoFactorSettings(session.user.id, { phone_e164: phoneUpdate });
-    }
-    if (body.two_factor_channel !== undefined) {
-      const ch = body.two_factor_channel;
-      if (ch !== null && ch !== "sms" && ch !== "email") {
-        return NextResponse.json({ error: "Invalid channel" }, { status: 400 });
-      }
-      const refreshed = await getUserById(session.user.id);
-      if (refreshed?.two_factor_enabled && ch === "sms") {
-        const ph = (refreshed.phone_e164 ?? "").trim();
-        if (!E164.test(ph)) {
-          return NextResponse.json(
-            { error: "Set a valid E.164 phone before choosing SMS." },
-            { status: 400 }
-          );
-        }
-      }
-      await updateUserTwoFactorSettings(session.user.id, { two_factor_channel: ch });
-    }
   }
+  await updateUserTwoFactorSettings(session.user.id, { two_factor_enabled: true });
 
   const updated = await getUserById(session.user.id);
   return NextResponse.json({
     hasPassword: Boolean(updated?.password_hash),
-    two_factor_enabled: updated?.two_factor_enabled ?? false,
+    two_factor_enabled: true,
     two_factor_channel: updated?.two_factor_channel ?? null,
     phone_e164: updated?.phone_e164 ?? "",
+    two_factor_sms_verified: updated?.two_factor_sms_verified ?? false,
+    two_factor_email_verified: updated?.two_factor_email_verified ?? false,
   });
 }

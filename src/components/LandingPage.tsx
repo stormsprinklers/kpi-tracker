@@ -347,7 +347,7 @@ export function LandingPage() {
                   </th>
                   <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: text, borderColor: borderLight }}>
                     <div>Essential</div>
-                    <div className="mt-2 text-2xl" style={{ color: text }}>$99<span className="text-base font-normal opacity-75">/mo</span></div>
+                    <div className="mt-2 text-2xl" style={{ color: text }}>$199<span className="text-base font-normal opacity-75">/mo</span></div>
                   </th>
                   <th className="border-b-2 pb-4 text-center font-semibold" style={{ color: text, borderColor: borderLight }}>
                     <div>Pro</div>
