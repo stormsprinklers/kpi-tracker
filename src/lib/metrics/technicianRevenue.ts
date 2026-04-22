@@ -55,6 +55,23 @@ function isOfficeStaff(role: unknown): boolean {
   return OFFICE_STAFF_ROLES.some((o) => r === o || (r.includes("office") && r.includes("staff")));
 }
 
+function normalizeEmail(value: unknown): string | null {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (!v || !v.includes("@")) return null;
+  return v;
+}
+
+function normalizeFullNameFromRaw(raw: Record<string, unknown>): string | null {
+  const first = String(raw.first_name ?? raw.firstName ?? raw.given_name ?? "").trim();
+  const last = String(raw.last_name ?? raw.lastName ?? raw.family_name ?? "").trim();
+  const combined = [first, last].filter(Boolean).join(" ").trim();
+  if (combined) return combined.toLowerCase().replace(/\s+/g, " ");
+
+  const fallback = String(raw.full_name ?? raw.name ?? raw.display_name ?? "").trim();
+  if (!fallback) return null;
+  return fallback.toLowerCase().replace(/\s+/g, " ");
+}
+
 // HCP API uses assigned_employees (array). Fallback to assigned_pro, pro_id, etc.
 // Excludes office staff (role "office staff" etc.)
 function getTechnicianIds(job: Record<string, unknown>): string[] {
@@ -265,7 +282,7 @@ function resolveTechnicianIdsForEstimate(
   officeStaffIds: Set<string>,
   manualJobAssignmentByJobId: Map<string, string>
 ): string[] {
-  let ids = getTechnicianIds(estimate).filter((id) => !officeStaffIds.has(id));
+  const ids = getTechnicianIds(estimate).filter((id) => !officeStaffIds.has(id));
   if (ids.length > 0) return ids;
 
   const jobHcpId = extractJobHcpId(estimate);
@@ -280,7 +297,7 @@ function resolveTechnicianIdsForEstimate(
   const j = job as Record<string, unknown>;
   const jobIdStr = j.id != null ? String(j.id) : "";
   const manualFromJobId = jobIdStr ? manualJobAssignmentByJobId.get(jobIdStr) : undefined;
-  let fromJob = manualFromJobId ? [manualFromJobId] : getTechnicianIds(j);
+  const fromJob = manualFromJobId ? [manualFromJobId] : getTechnicianIds(j);
   return fromJob.filter((id) => !officeStaffIds.has(id));
 }
 
@@ -382,6 +399,7 @@ export async function getTechnicianRevenue(
   filters?: TechnicianRevenueFilters
 ): Promise<TechnicianRevenueResult> {
   const nameMap = new Map<string, string>();
+  const canonicalTechIdByAlias = new Map<string, string>();
   const officeStaffIds = new Set<string>();
   const org = await getOrganizationById(organizationId);
   const companyId = org?.hcp_company_id?.trim() || "";
@@ -389,9 +407,18 @@ export async function getTechnicianRevenue(
     return { technicians: [], totalRevenue: 0 };
   }
 
+  const mapCanonicalTechId = (techId: string): string => {
+    const t = techId.trim();
+    if (!t) return techId;
+    return canonicalTechIdByAlias.get(t) ?? t;
+  };
+
+  let employeesList: Record<string, unknown>[] = [];
+  let prosList: Record<string, unknown>[] = [];
+
   // Build employee name map and office staff IDs (from DB first, then API)
   try {
-    const employeesList = await getEmployeesFromDb(companyId);
+    employeesList = await getEmployeesFromDb(companyId);
     const empMap = buildNameMap(
       employeesList,
       ["id", "employee_id", "pro_id"],
@@ -408,7 +435,7 @@ export async function getTechnicianRevenue(
 
   // Always merge pros into name map and office staff IDs
   try {
-    const prosList = await getProsFromDb(companyId);
+    prosList = await getProsFromDb(companyId);
     const proMap = buildNameMap(
       prosList,
       ["id", "pro_id"],
@@ -421,6 +448,66 @@ export async function getTechnicianRevenue(
     }
   } catch {
     /* skip */
+  }
+
+  // Unify HCP employee/pro IDs that represent the same person.
+  // This prevents Rev/Hr from dropping to 0 when revenue keys use one ID family and time entries use the other.
+  const employeeIdByEmail = new Map<string, string>();
+  const employeeIdByName = new Map<string, string>();
+  for (const emp of employeesList) {
+    const raw = emp ?? {};
+    const id = String(
+      (raw as Record<string, unknown>).id ??
+        (raw as Record<string, unknown>).employee_id ??
+        (raw as Record<string, unknown>).pro_id ??
+        ""
+    ).trim();
+    if (!id) continue;
+
+    canonicalTechIdByAlias.set(id, id);
+
+    const email = normalizeEmail(
+      (raw as Record<string, unknown>).email ??
+        (raw as Record<string, unknown>).email_address
+    );
+    if (email) employeeIdByEmail.set(email, id);
+
+    const fullName = normalizeFullNameFromRaw(raw as Record<string, unknown>);
+    if (fullName && !employeeIdByName.has(fullName)) {
+      employeeIdByName.set(fullName, id);
+    }
+  }
+
+  for (const pro of prosList) {
+    const raw = pro ?? {};
+    const proId = String(
+      (raw as Record<string, unknown>).id ??
+        (raw as Record<string, unknown>).pro_id ??
+        (raw as Record<string, unknown>).employee_id ??
+        ""
+    ).trim();
+    if (!proId) continue;
+
+    const email = normalizeEmail(
+      (raw as Record<string, unknown>).email ??
+        (raw as Record<string, unknown>).email_address
+    );
+    const fullName = normalizeFullNameFromRaw(raw as Record<string, unknown>);
+
+    const canonicalByEmail = email ? employeeIdByEmail.get(email) : undefined;
+    const canonicalByName =
+      !canonicalByEmail && fullName ? employeeIdByName.get(fullName) : undefined;
+    const canonicalId = canonicalByEmail ?? canonicalByName ?? proId;
+
+    canonicalTechIdByAlias.set(proId, canonicalId);
+    if (!canonicalTechIdByAlias.has(canonicalId)) {
+      canonicalTechIdByAlias.set(canonicalId, canonicalId);
+    }
+
+    const proName = nameMap.get(proId);
+    if (proName && !nameMap.has(canonicalId)) {
+      nameMap.set(canonicalId, proName);
+    }
   }
   const revenueByTech = new Map<string, number>();
   const billableJobsByTech = new Map<string, number>();
@@ -441,7 +528,8 @@ export async function getTechnicianRevenue(
   try {
     const timeEntries = await getTimeEntriesByOrganization(organizationId, startDate, endDate);
     for (const e of timeEntries) {
-      const techId = e.hcp_employee_id ?? "unknown";
+      const rawTechId = (e.hcp_employee_id ?? "unknown").trim();
+      const techId = mapCanonicalTechId(rawTechId);
       const dateStr = e.entry_date;
       const h = typeof e.hours === "number" && !Number.isNaN(e.hours)
         ? e.hours
@@ -499,7 +587,9 @@ export async function getTechnicianRevenue(
     if (manualAssignedTech) {
       techIds = [manualAssignedTech];
     }
-    techIds = techIds.filter((id) => !officeStaffIds.has(id));
+    techIds = techIds
+      .map((id) => mapCanonicalTechId(id))
+      .filter((id) => !officeStaffIds.has(id));
     if (techIds.length === 0) continue;
 
     const jobDate = getJobDate(j);
@@ -547,9 +637,12 @@ export async function getTechnicianRevenue(
       officeStaffIds,
       manualJobAssignmentByJobId
     );
-    if (techIds.length === 0) continue;
+    const canonicalTechIds = techIds
+      .map((id) => mapCanonicalTechId(id))
+      .filter((id) => !officeStaffIds.has(id));
+    if (canonicalTechIds.length === 0) continue;
     const isConverted = hasApprovedOption(e);
-    for (const techId of techIds) {
+    for (const techId of canonicalTechIds) {
       const current = conversionByTech.get(techId) ?? { total: 0, approved: 0 };
       current.total += 1;
       if (isConverted) current.approved += 1;
@@ -576,7 +669,9 @@ export async function getTechnicianRevenue(
       if (manualAssignedTech) {
         techIds = [manualAssignedTech];
       }
-      techIds = techIds.filter((id) => !officeStaffIds.has(id));
+      techIds = techIds
+        .map((id) => mapCanonicalTechId(id))
+        .filter((id) => !officeStaffIds.has(id));
       for (const id of techIds) activeInCurrentYear.add(id);
     }
   }
