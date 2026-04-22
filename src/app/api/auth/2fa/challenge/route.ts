@@ -45,10 +45,10 @@ export async function POST(request: Request) {
 
   const requestedChannel = body.channel === "sms" || body.channel === "email" ? body.channel : null;
   const phone = user.phone_e164?.trim() ?? "";
-  const email = user.email.trim();
+  const userEmail = user.email.trim();
   const smsAvailable =
     E164.test(phone) && (user.two_factor_sms_verified || user.two_factor_enabled);
-  const emailAvailable = Boolean(email);
+  const emailAvailable = Boolean(userEmail);
   const availableChannels = [smsAvailable ? "sms" : null, emailAvailable ? "email" : null].filter(
     (x): x is "sms" | "email" => x === "sms" || x === "email"
   );
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       : availableChannels.includes("sms")
         ? "sms"
         : "email";
-  const verifyTo = ch === "sms" ? phone : email;
+  const verifyTo = ch === "sms" ? phone : userEmail;
   const started = await startVerify(verifyTo, ch);
   if (!started.ok) {
     return NextResponse.json({ error: started.error }, { status: 503 });
