@@ -318,7 +318,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                       <MetricTooltip label="Conversion Rate %" tooltip="Share of estimates with an approved option. Calculated as (approved estimates / total estimates) × 100 for this technician." />
                     </th>
                     <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                      <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. Total job revenue on days with time entries, divided by hours logged." />
+                      <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. When revenue lines up with logged hours by date, that day-matched revenue is used; otherwise period total revenue divided by hours in range (avoids UTC vs local date mismatches)." />
                     </th>
                     <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
                       <MetricTooltip label="Avg Ticket" tooltip="Average paid ticket for this technician. Calculated as total paid revenue divided by number of billable jobs." />
@@ -496,7 +496,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                 <dl className="mt-4 space-y-2 text-sm">
                   <div className="flex justify-between">
                     <dt className="text-zinc-500 dark:text-zinc-400">
-                      <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. Total job revenue on days with time entries, divided by hours logged." />
+                      <MetricTooltip label="Rev/Hr" tooltip="Revenue per billable hour. When revenue lines up with logged hours by date, that day-matched revenue is used; otherwise period total revenue divided by hours in range (avoids UTC vs local date mismatches)." />
                     </dt>
                     <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                       {card.revenuePerHour != null ? `${formatCurrency(card.revenuePerHour)}/hr` : "—"}

@@ -706,7 +706,14 @@ export async function getTechnicianRevenue(
           totalHours += hours;
           totalRevenueOnDaysWithHours += revenueByDate?.get(dateStr) ?? 0;
         }
-        revenuePerHour = totalHours > 0 ? totalRevenueOnDaysWithHours / totalHours : null;
+        if (totalHours > 0) {
+          // Prefer revenue on the same calendar day as logged hours. Job dates often use
+          // `toISOString()` (UTC) while timesheet `entry_date` is a local YYYY-MM-DD, so keys
+          // can miss and yield $0 matched revenue despite non-zero period totals.
+          const matched = totalRevenueOnDaysWithHours;
+          const numerator = matched > 0.005 ? matched : totalRevenue;
+          revenuePerHour = numerator / totalHours;
+        }
       }
       const billableJobs = billableJobsByTech.get(id) ?? 0;
       const avgTicket = billableJobs > 0 ? totalRevenue / billableJobs : null;
