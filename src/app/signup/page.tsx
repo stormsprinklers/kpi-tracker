@@ -89,9 +89,6 @@ export default function SignupPage() {
         <h1 className="text-xl font-semibold" style={{ color: "#0B1F33" }}>
           Create your account
         </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Create an organization and admin account with required 2FA setup
-        </p>
         {success ? (
           <div className="mt-6 space-y-3">
             <p className="text-sm text-green-600">Account created. Sign in to continue.</p>
@@ -102,8 +99,7 @@ export default function SignupPage() {
         ) : pendingToken ? (
           <form onSubmit={handleComplete} className="mt-6 space-y-4">
             <p className="text-sm text-zinc-600">
-              Enter both verification codes sent to <span className="font-medium">{maskedEmail}</span> and{" "}
-              <span className="font-medium">{maskedPhone}</span>.
+              <span className="font-medium">{maskedEmail}</span> · <span className="font-medium">{maskedPhone}</span>
             </p>
             <div>
               <label htmlFor="emailCode" className="block text-sm font-medium" style={{ color: "#0B1F33" }}>
@@ -197,7 +193,6 @@ export default function SignupPage() {
                 autoComplete="new-password"
                 className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
               />
-              <p className="mt-1 text-xs text-zinc-500">At least 8 characters</p>
             </div>
             <div>
               <label htmlFor="phoneE164" className="block text-sm font-medium" style={{ color: "#0B1F33" }}>
@@ -212,7 +207,6 @@ export default function SignupPage() {
                 placeholder="+15551234567"
                 className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
               />
-              <p className="mt-1 text-xs text-zinc-500">Required for SMS verification.</p>
             </div>
             {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
             <button

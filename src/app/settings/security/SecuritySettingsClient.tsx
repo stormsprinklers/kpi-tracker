@@ -117,9 +117,6 @@ export function SecuritySettingsClient() {
       <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
         <div>
           <span className="font-medium text-zinc-900 dark:text-zinc-50">Two-factor at sign-in</span>
-          <span className="mt-0.5 block text-sm text-zinc-600 dark:text-zinc-400">
-            Required for all users. After your password, you will enter a one-time code from Twilio Verify.
-          </span>
         </div>
 
         <div className="mt-5 space-y-4 border-t border-zinc-100 pt-5 dark:border-zinc-800">
@@ -138,7 +135,6 @@ export function SecuritySettingsClient() {
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50">Mobile (E.164)</label>
-            <p className="mt-0.5 text-xs text-zinc-500">Required for SMS. Example: +15551234567</p>
             <input
               type="tel"
               value={phone}
@@ -156,20 +152,6 @@ export function SecuritySettingsClient() {
           </div>
         </div>
       </div>
-
-      <p className="text-xs text-zinc-500">
-        Configure a{" "}
-        <a
-          href="https://www.twilio.com/docs/verify/api"
-          className="underline hover:text-zinc-700"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Twilio Verify
-        </a>{" "}
-        service and set <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">TWILIO_VERIFY_SERVICE_SID</code> in the
-        environment. Email codes require enabling the email channel for Verify in the Twilio console (often with SendGrid).
-      </p>
 
       <div className="flex items-center gap-4">
         <button

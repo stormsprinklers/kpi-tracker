@@ -10,5 +10,6 @@ const pool = new Pool({
 export const { auth, handlers, signIn, signOut } = NextAuth({
   adapter: createAuthAdapter(pool),
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
+  trustHost: true,
   ...authConfig,
 });

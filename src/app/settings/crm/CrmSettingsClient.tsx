@@ -42,9 +42,6 @@ export function CrmSettingsClient() {
       <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
         Housecall Pro
       </h2>
-      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        Update access token and webhook signing secret. Leave blank to keep current.
-      </p>
       <form onSubmit={handleSaveHcp} className="mt-4 space-y-3">
         <div>
           <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
@@ -62,9 +59,6 @@ export function CrmSettingsClient() {
           <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
             Webhook signing secret
           </label>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            <strong>Do this first:</strong> In Housecall Pro → My Apps → Webhooks, the signing secret is shown before you add a URL. Copy it, paste here, and Save. Then copy the webhook URL from Integrations and add it in HCP.
-          </p>
           <input
             type="password"
             placeholder="••••••••"

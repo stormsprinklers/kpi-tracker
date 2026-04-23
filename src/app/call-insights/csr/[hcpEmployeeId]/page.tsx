@@ -37,9 +37,6 @@ export default async function CsrCallDetailPage({
           <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
             CSR Call Detail
           </h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Time, date, customer, city, transcript, booking value, duration
-          </p>
           <CsrCallDetailClient hcpEmployeeId={hcpEmployeeId} csrName={csrName} />
         </section>
       </main>

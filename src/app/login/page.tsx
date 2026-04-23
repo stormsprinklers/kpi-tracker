@@ -12,7 +12,6 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<"password" | "twoFactor">("password");
   const [pendingToken, setPendingToken] = useState<string | null>(null);
-  const [twoFactorChannel, setTwoFactorChannel] = useState<"sms" | "email" | null>(null);
   const [maskedDestination, setMaskedDestination] = useState("");
   const [otp, setOtp] = useState("");
   const searchParams = useSearchParams();
@@ -32,7 +31,6 @@ function LoginForm() {
         error?: string;
         twoFactorRequired?: boolean;
         pendingToken?: string;
-        channel?: "sms" | "email";
         maskedDestination?: string;
       };
       if (!r.ok) {
@@ -42,7 +40,6 @@ function LoginForm() {
       }
       if (data.twoFactorRequired && data.pendingToken) {
         setPendingToken(data.pendingToken);
-        setTwoFactorChannel(data.channel ?? null);
         setMaskedDestination(data.maskedDestination ?? "");
         setStep("twoFactor");
         setOtp("");
@@ -123,17 +120,11 @@ function LoginForm() {
         <h1 className="text-xl font-semibold" style={{ color: "#0B1F33" }}>
           Sign in to Home Services Analytics
         </h1>
-        {step === "password" ? (
+        {step === "twoFactor" ? (
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Enter your email and password
-          </p>
-        ) : (
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Enter the verification code sent to{" "}
-            {twoFactorChannel === "sms" ? "your phone " : ""}
             <span className="font-medium text-zinc-800 dark:text-zinc-200">{maskedDestination}</span>
           </p>
-        )}
+        ) : null}
         {step === "password" ? (
           <form onSubmit={handlePasswordSubmit} className="mt-6 space-y-4">
             <div>
@@ -245,11 +236,6 @@ function LoginForm() {
           </form>
         )}
 
-        {step === "password" ? (
-          <p className="mt-4 text-center text-xs text-zinc-500">
-            Two-factor code delivery is automatic (SMS first, then email fallback).
-          </p>
-        ) : null}
         {step === "password" ? (
           <p className="mt-4 text-center text-sm opacity-80" style={{ color: "#0B1F33" }}>
             <Link href="/forgot-password" className="font-medium underline hover:opacity-80" style={{ color: "#0B1F33" }}>

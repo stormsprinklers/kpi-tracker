@@ -113,9 +113,6 @@ export default function SetupForm({ envToken }: { envToken: string }) {
           autoComplete="off"
           className="mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
         />
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          You can add or update this in Settings after setup
-        </p>
       </div>
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>

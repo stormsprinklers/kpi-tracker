@@ -190,14 +190,12 @@ function JoinForm() {
             </>
           ) : null}
         </p>
-        <p className="mt-2 text-sm text-zinc-600">Choose a password to finish setting up your account.</p>
         {completed ? (
           <p className="mt-6 text-sm text-green-700">Account created. Redirecting to sign in…</p>
         ) : pendingToken ? (
           <form onSubmit={handleComplete} className="mt-6 space-y-4">
             <p className="text-sm text-zinc-600">
-              Enter both verification codes sent to <span className="font-medium">{maskedEmail}</span> and{" "}
-              <span className="font-medium">{maskedPhone}</span>.
+              <span className="font-medium">{maskedEmail}</span> · <span className="font-medium">{maskedPhone}</span>
             </p>
             <div>
               <label htmlFor="emailCode" className="block text-sm font-medium" style={{ color: "#0B1F33" }}>

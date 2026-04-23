@@ -24,9 +24,6 @@ export default async function AwaitingAssignmentPage() {
           <h2 className="text-sm font-medium text-amber-800 dark:text-amber-200">
             Awaiting Assignment
           </h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Calls where the CSR was not clear (N/A). Assign these in GHL or update your workflow to capture the CSR.
-          </p>
           <CsrCallDetailClient
             hcpEmployeeId="awaiting-assignment"
             csrName="Awaiting Assignment"

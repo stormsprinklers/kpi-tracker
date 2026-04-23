@@ -54,9 +54,6 @@ export function UsersSettingsClient() {
       <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
         CSR Selection
       </h2>
-      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        Select which employees appear in CSR KPIs and attribution call tracking. GHL webhooks match by first name. If empty, office staff role is used.
-      </p>
       <div className="mt-4 max-h-64 overflow-y-auto rounded border border-zinc-200 p-2 dark:border-zinc-700">
         {csrCandidates.length === 0 ? (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
