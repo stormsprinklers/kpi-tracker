@@ -112,7 +112,11 @@ export function CsrKpisSection({ dateRange }: { dateRange: DashboardDateRange })
 
   const canUploadPhoto = (csrId: string) => {
     if (!session?.user) return false;
-    return session.user.role === "admin" || (session.user.role === "employee" && session.user.hcpEmployeeId === csrId);
+    return (
+      session.user.role === "admin" ||
+      ((session.user.role === "employee" || session.user.role === "salesman") &&
+        session.user.hcpEmployeeId === csrId)
+    );
   };
 
   return (

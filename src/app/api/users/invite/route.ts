@@ -18,6 +18,7 @@ import { sendTransactionalEmail } from "@/lib/email/sendGrid";
 
 function roleLabel(role: string): string {
   if (role === "admin") return "Admin";
+  if (role === "salesman") return "Salesman";
   if (role === "investor") return "Investor";
   return "Employee";
 }
@@ -31,14 +32,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 
-  const body = (await request.json()) as { email?: string; role?: "admin" | "employee" | "investor" };
+  const body = (await request.json()) as { email?: string; role?: "admin" | "employee" | "salesman" | "investor" };
   const email = body.email?.trim().toLowerCase();
   const role = body.role ?? "employee";
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "A valid email is required" }, { status: 400 });
   }
-  if (role !== "admin" && role !== "employee" && role !== "investor") {
+  if (role !== "admin" && role !== "employee" && role !== "salesman" && role !== "investor") {
     return NextResponse.json({ error: "Invalid role" }, { status: 400 });
   }
 

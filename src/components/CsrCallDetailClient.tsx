@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { MetricTooltip } from "./MetricTooltip";
-import Link from "next/link";
 import { useSession } from "next-auth/react";
 
 interface CallRecord {
@@ -16,8 +15,6 @@ interface CallRecord {
   booking_value: string;
   customer_phone: string | null;
   job_hcp_id?: string | null;
-  job_debug?: Record<string, unknown> | null;
-  call_debug?: Record<string, unknown> | null;
 }
 
 type BookingValue = "won" | "lost" | "non-opportunity";
@@ -114,8 +111,6 @@ export function CsrCallDetailClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
-  const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [csrCandidates, setCsrCandidates] = useState<CsrCandidate[]>([]);
   const [csrPhotos, setCsrPhotos] = useState<Record<string, string>>({});
@@ -204,7 +199,7 @@ export function CsrCallDetailClient({
           </h3>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             {isAwaitingAssignment
-              ? "Date, time, customer, duration, booking value, transcript. Edit to reassign missed calls."
+              ? "Date, time, customer, duration, booking value, transcript."
               : "Date, time, customer, city, duration, booking value, transcript"}
           </p>
         </div>
@@ -271,14 +266,13 @@ export function CsrCallDetailClient({
                 {isAwaitingAssignment && (
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Transcript</th>
                 )}
-                {(isAdmin || !isAwaitingAssignment) && (
+                {isAdmin && (
                   <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Edit</th>
                 )}
                 {!isAwaitingAssignment && (
                   <>
                     <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job</th>
-                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Job (debug)</th>
-                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Call (debug)</th>
+                    <th className="pb-2 font-medium text-zinc-700 dark:text-zinc-300">Transcript</th>
                   </>
                 )}
               </tr>
@@ -332,7 +326,7 @@ export function CsrCallDetailClient({
                         )}
                       </td>
                     )}
-                    {(isAdmin || !isAwaitingAssignment) && (
+                    {isAdmin && (
                       <td className="py-2">
                         <button
                           type="button"
@@ -350,32 +344,6 @@ export function CsrCallDetailClient({
                             <span className="font-mono text-xs" title="Linked to HCP job for revenue tracking">
                               ✓ {r.job_hcp_id.slice(0, 8)}
                             </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="py-2">
-                          {r.job_debug ? (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedJobId(expandedJobId === r.id ? null : r.id)}
-                              className="text-xs text-amber-600 hover:underline dark:text-amber-400"
-                            >
-                              {expandedJobId === r.id ? "Hide" : "Show"}
-                            </button>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="py-2">
-                          {r.call_debug ? (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedCallId(expandedCallId === r.id ? null : r.id)}
-                              className="text-xs text-amber-600 hover:underline dark:text-amber-400"
-                            >
-                              {expandedCallId === r.id ? "Hide" : "Show"}
-                            </button>
                           ) : (
                             "—"
                           )}
@@ -400,7 +368,7 @@ export function CsrCallDetailClient({
                         key={`${r.id}-edit`}
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
-                        <td colSpan={isAwaitingAssignment ? 7 : isAdmin ? 11 : 10} className="bg-sky-50/50 py-3 pl-4 pr-4 dark:bg-sky-950/20">
+                        <td colSpan={isAwaitingAssignment ? 7 : 9} className="bg-sky-50/50 py-3 pl-4 pr-4 dark:bg-sky-950/20">
                           {isAwaitingAssignment && (
                             <div className="mb-3 rounded border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">
                               <div className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">Transcript</div>
@@ -483,42 +451,10 @@ export function CsrCallDetailClient({
                         key={`${r.id}-transcript`}
                         className="border-b border-zinc-100 dark:border-zinc-800"
                       >
-                        <td colSpan={isAdmin ? 11 : 10} className="bg-zinc-50 py-2 pl-4 dark:bg-zinc-900/50">
+                        <td colSpan={isAdmin ? 9 : 8} className="bg-zinc-50 py-2 pl-4 dark:bg-zinc-900/50">
                           <p className="whitespace-pre-wrap text-xs text-zinc-600 dark:text-zinc-400">
                             {r.transcript}
                           </p>
-                        </td>
-                      </tr>,
-                    ]
-                  : []),
-                ...(expandedJobId === r.id && r.job_debug
-                  && !isAwaitingAssignment
-                  ? [
-                      <tr
-                        key={`${r.id}-job-debug`}
-                        className="border-b border-zinc-100 dark:border-zinc-800"
-                      >
-                        <td colSpan={isAdmin ? 11 : 10} className="bg-amber-50/50 py-2 pl-4 dark:bg-amber-950/20">
-                          <div className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-400">Job (from jobs table / HCP webhook)</div>
-                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                            {JSON.stringify(r.job_debug, null, 2)}
-                          </pre>
-                        </td>
-                      </tr>,
-                    ]
-                  : []),
-                ...(expandedCallId === r.id && r.call_debug
-                  && !isAwaitingAssignment
-                  ? [
-                      <tr
-                        key={`${r.id}-call-debug`}
-                        className="border-b border-zinc-100 dark:border-zinc-800"
-                      >
-                        <td colSpan={isAdmin ? 11 : 10} className="bg-sky-50/50 py-2 pl-4 dark:bg-sky-950/20">
-                          <div className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">Call headers (from GHL webhook)</div>
-                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                            {JSON.stringify(r.call_debug, null, 2)}
-                          </pre>
                         </td>
                       </tr>,
                     ]

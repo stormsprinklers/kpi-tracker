@@ -11,6 +11,7 @@ import {
 import { usePayPeriodCalendar } from "@/hooks/usePayPeriodCalendar";
 import { EmployeeDashboardBanner } from "./EmployeeDashboardBanner";
 import { KeyMetricsSection } from "./KeyMetricsSection";
+import { SalesmanMetricsSection } from "./SalesmanMetricsSection";
 import { TechnicianRevenueSection } from "./TechnicianRevenueSection";
 import { CsrKpisSection } from "./CsrKpisSection";
 
@@ -25,6 +26,9 @@ export function DashboardHomeClient({ connected }: { connected: boolean }) {
     () => getDashboardDateRange(preset, customStart, customEnd, payPeriodCalendar),
     [preset, customStart, customEnd, payPeriodCalendar]
   );
+  const role = session?.user?.role;
+  const isSalesman = role === "salesman";
+  const isEmployeeLike = role === "employee" || role === "salesman";
 
   return (
     <>
@@ -70,17 +74,21 @@ export function DashboardHomeClient({ connected }: { connected: boolean }) {
         <p className="text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
       </div>
 
-      {session?.user?.role === "employee" && (
+      {isEmployeeLike && (
         <EmployeeDashboardBanner dateRange={dateRange} payPeriodCalendar={payPeriodCalendar} />
       )}
 
-      <KeyMetricsSection
-        connected={connected}
-        dateRange={dateRange}
-        payPeriodCalendar={payPeriodCalendar}
-      />
-      {connected && <TechnicianRevenueSection dateRange={dateRange} />}
-      {connected && <CsrKpisSection dateRange={dateRange} />}
+      {isSalesman ? (
+        <SalesmanMetricsSection dateRange={dateRange} />
+      ) : (
+        <KeyMetricsSection
+          connected={connected}
+          dateRange={dateRange}
+          payPeriodCalendar={payPeriodCalendar}
+        />
+      )}
+      {connected && !isSalesman && <TechnicianRevenueSection dateRange={dateRange} />}
+      {connected && !isSalesman && <CsrKpisSection dateRange={dateRange} />}
     </>
   );
 }

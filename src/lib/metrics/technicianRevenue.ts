@@ -48,6 +48,7 @@ export interface TechnicianRevenueFilters {
   activeInCurrentYearOnly?: boolean;
 }
 
+const MIN_BILLABLE_REVENUE = 0.005;
 const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
 
 function isOfficeStaff(role: unknown): boolean {
@@ -368,17 +369,14 @@ function collectHcpIdsForCrew(def: {
 }
 
 function aggregateCrewMetrics(
+  crewId: string,
   hcpIds: string[],
-  revenueByTech: Map<string, number>,
-  billableJobsByTech: Map<string, number>,
+  crewRevenueById: Map<string, number>,
+  crewBillableJobsById: Map<string, number>,
   hoursByTechAndDate: Map<string, Map<string, number>>
 ): Pick<CrewRevenue, "totalRevenue" | "totalManHours" | "jobsCompleted" | "avgTicket"> {
-  let totalRevenue = 0;
-  let jobsCompleted = 0;
-  for (const id of hcpIds) {
-    totalRevenue += revenueByTech.get(id) ?? 0;
-    jobsCompleted += billableJobsByTech.get(id) ?? 0;
-  }
+  const totalRevenue = crewRevenueById.get(crewId) ?? 0;
+  const jobsCompleted = crewBillableJobsById.get(crewId) ?? 0;
 
   let totalManHours = 0;
   for (const id of hcpIds) {
@@ -405,6 +403,21 @@ export async function getTechnicianRevenue(
   const companyId = org?.hcp_company_id?.trim() || "";
   if (!companyId) {
     return { technicians: [], totalRevenue: 0 };
+  }
+
+  let crewDefs: Awaited<ReturnType<typeof listCrewsWithMembers>> = [];
+  try {
+    crewDefs = await listCrewsWithMembers(organizationId);
+  } catch {
+    crewDefs = [];
+  }
+  const crewIdsByTechId = new Map<string, string[]>();
+  for (const def of crewDefs) {
+    for (const id of collectHcpIdsForCrew(def)) {
+      const existing = crewIdsByTechId.get(id) ?? [];
+      if (!existing.includes(def.id)) existing.push(def.id);
+      crewIdsByTechId.set(id, existing);
+    }
   }
 
   const mapCanonicalTechId = (techId: string): string => {
@@ -511,6 +524,8 @@ export async function getTechnicianRevenue(
   }
   const revenueByTech = new Map<string, number>();
   const billableJobsByTech = new Map<string, number>();
+  const crewRevenueById = new Map<string, number>();
+  const crewBillableJobsById = new Map<string, number>();
   const revenueByTechAndDate = new Map<string, Map<string, number>>();
   let totalRevenueAllJobs = 0;
 
@@ -611,6 +626,24 @@ export async function getTechnicianRevenue(
         byDate.set(jobDay, (byDate.get(jobDay) ?? 0) + amountPerTech);
       }
     }
+
+    // Crew-level metrics should only count non-zero-value jobs.
+    if (paidAmount > MIN_BILLABLE_REVENUE) {
+      const crewMemberCountByCrew = new Map<string, number>();
+      for (const techId of techIds) {
+        const crewIds = crewIdsByTechId.get(techId) ?? [];
+        for (const crewId of crewIds) {
+          crewMemberCountByCrew.set(crewId, (crewMemberCountByCrew.get(crewId) ?? 0) + 1);
+        }
+      }
+      for (const [crewId, membersOnJob] of crewMemberCountByCrew) {
+        if (membersOnJob <= 0) continue;
+        const crewRevenueShare = paidAmount * (membersOnJob / techIds.length);
+        if (crewRevenueShare <= MIN_BILLABLE_REVENUE) continue;
+        crewRevenueById.set(crewId, (crewRevenueById.get(crewId) ?? 0) + crewRevenueShare);
+        crewBillableJobsById.set(crewId, (crewBillableJobsById.get(crewId) ?? 0) + 1);
+      }
+    }
   }
 
   // Estimate conversion: DB-only KPI mode.
@@ -676,12 +709,6 @@ export async function getTechnicianRevenue(
     }
   }
 
-  let crewDefs: Awaited<ReturnType<typeof listCrewsWithMembers>> = [];
-  try {
-    crewDefs = await listCrewsWithMembers(organizationId);
-  } catch {
-    crewDefs = [];
-  }
   const crewMemberIds = new Set<string>();
   for (const def of crewDefs) {
     for (const id of collectHcpIdsForCrew(def)) {
@@ -735,9 +762,10 @@ export async function getTechnicianRevenue(
     crews = crewDefs.map((def) => {
       const technicianIds = collectHcpIdsForCrew(def);
       const agg = aggregateCrewMetrics(
+        def.id,
         technicianIds,
-        revenueByTech,
-        billableJobsByTech,
+        crewRevenueById,
+        crewBillableJobsById,
         hoursByTechAndDate
       );
       return {

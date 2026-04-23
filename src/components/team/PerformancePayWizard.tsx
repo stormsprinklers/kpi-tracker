@@ -12,6 +12,7 @@ interface SetupData {
   assignments: { hcp_employee_id: string; role_id: string | null; overridden: boolean }[];
   configs: { scope_type: string; scope_id: string; structure_type: string; config_json: Record<string, unknown>; bonuses_json: Record<string, unknown>[] }[];
   employees: { id: string; name: string; hcpRole: "technician" | "office_staff" }[];
+  salesmanEmployeeIds: string[];
   hcpRoleIds: { technician: string | null; officeStaff: string | null };
 }
 
@@ -79,6 +80,26 @@ export function PerformancePayWizard({
   useEffect(() => {
     fetchSetup();
   }, [fetchSetup]);
+
+  const salesmanIdSet = new Set(setup?.salesmanEmployeeIds ?? []);
+  const selectedAreAllSalesmen =
+    scopeType === "employee" &&
+    selectedEmployeeIds.length > 0 &&
+    selectedEmployeeIds.every((id) => salesmanIdSet.has(id));
+  const availableStructures: StructureType[] = selectedAreAllSalesmen
+    ? ["pure_commission"]
+    : (Object.keys(STRUCTURE_LABELS) as StructureType[]);
+  const canUseBonuses = !selectedAreAllSalesmen;
+
+  useEffect(() => {
+    if (selectedAreAllSalesmen && structureType !== "pure_commission") {
+      setStructureType("pure_commission");
+      setConfig((c) => ({ ...c, commission_rate_pct: Number(c.commission_rate_pct ?? 0) }));
+    }
+    if (!canUseBonuses && selectedBonuses.length > 0) {
+      setSelectedBonuses([]);
+    }
+  }, [selectedAreAllSalesmen, structureType, selectedBonuses.length, canUseBonuses]);
 
   if (loading || !setup) {
     return (
@@ -264,7 +285,7 @@ export function PerformancePayWizard({
         <div className="space-y-4">
           <h3 className="font-medium text-zinc-900 dark:text-zinc-50">Choose pay structure</h3>
           <div className="space-y-2">
-            {(Object.keys(STRUCTURE_LABELS) as StructureType[]).map((st) => (
+            {availableStructures.map((st) => (
               <label key={st} className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -273,11 +294,14 @@ export function PerformancePayWizard({
                   onChange={() => setStructureType(st)}
                 />
                 <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                  {STRUCTURE_LABELS[st]}
+                  {st === "pure_commission" && selectedAreAllSalesmen
+                    ? "Commission only (Salesman)"
+                    : STRUCTURE_LABELS[st]}
                 </span>
               </label>
             ))}
           </div>
+          {canUseBonuses && (
           <div>
             <p className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">Add-on bonuses (optional)</p>
             <div className="flex flex-wrap gap-3">
@@ -296,6 +320,7 @@ export function PerformancePayWizard({
               ))}
             </div>
           </div>
+          )}
           <div className="flex gap-2">
             <button
               type="button"

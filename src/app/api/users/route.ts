@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     email?: string;
     password?: string;
-    role?: "admin" | "employee" | "investor";
+    role?: "admin" | "employee" | "salesman" | "investor";
   };
 
   const email = body.email?.trim();
@@ -59,9 +59,9 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (role !== "admin" && role !== "employee" && role !== "investor") {
+  if (role !== "admin" && role !== "employee" && role !== "salesman" && role !== "investor") {
     return NextResponse.json(
-      { error: "Role must be admin, employee, or investor" },
+      { error: "Role must be admin, employee, salesman, or investor" },
       { status: 400 }
     );
   }
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   try {
     const passwordHash = await hash(password, 10);
     let hcpEmployeeId: string | null = null;
-    if (role === "employee") {
+    if (role === "employee" || role === "salesman") {
       const org = await getOrganizationById(session.user.organizationId);
       if (org?.hcp_company_id) {
         hcpEmployeeId = await getEmployeeHcpIdByEmail(org.hcp_company_id, email);

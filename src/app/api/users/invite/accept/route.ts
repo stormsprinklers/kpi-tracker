@@ -145,9 +145,9 @@ export async function POST(request: Request) {
 
     const orgId = invite.organization_id;
     const email = invite.email.trim().toLowerCase();
-    const role = invite.role as "admin" | "employee" | "investor";
+    const role = invite.role as "admin" | "employee" | "salesman" | "investor";
 
-    if (role !== "admin" && role !== "employee" && role !== "investor") {
+    if (role !== "admin" && role !== "employee" && role !== "salesman" && role !== "investor") {
       return NextResponse.json({ error: "Invalid invitation" }, { status: 400 });
     }
 
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
     }
 
     let hcpEmployeeId: string | null = null;
-    if (role === "employee") {
+    if (role === "employee" || role === "salesman") {
       const org = await getOrganizationById(orgId);
       if (org?.hcp_company_id) {
         hcpEmployeeId = await getEmployeeHcpIdByEmail(org.hcp_company_id, email);

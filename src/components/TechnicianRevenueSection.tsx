@@ -195,7 +195,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
     if (!session?.user) return false;
     const role = session.user.role;
     const hcpId = session.user.hcpEmployeeId;
-    return role === "admin" || (role === "employee" && hcpId === technicianId);
+    return role === "admin" || ((role === "employee" || role === "salesman") && hcpId === technicianId);
   };
 
   const unassignedRevenueTotal = unassignedJobs.reduce((sum, j) => sum + j.amount, 0);
@@ -264,10 +264,10 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                         <MetricTooltip label="Man Hours" tooltip="Total logged hours across all crew members in the selected period." />
                       </th>
                       <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                        <MetricTooltip label="Jobs Completed" tooltip="Total paid/completed jobs attributed to crew members in the selected period." />
+                        <MetricTooltip label="Jobs Completed" tooltip="Crew-attributed jobs with revenue above $0.00 in the selected period." />
                       </th>
                       <th className="px-3 py-2 font-medium text-zinc-700 dark:text-zinc-300 text-right">
-                        <MetricTooltip label="Avg Ticket" tooltip="Crew total revenue divided by combined billable jobs for members." />
+                        <MetricTooltip label="Avg Ticket" tooltip="Crew revenue divided by crew jobs with revenue above $0.00." />
                       </th>
                     </tr>
                   </thead>
@@ -414,7 +414,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                       </div>
                       <div className="flex justify-between">
                         <dt className="text-zinc-500 dark:text-zinc-400">
-                          <MetricTooltip label="Jobs Completed" tooltip="Total paid/completed jobs attributed to crew members in the selected period." />
+                          <MetricTooltip label="Jobs Completed" tooltip="Crew-attributed jobs with revenue above $0.00 in the selected period." />
                         </dt>
                         <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                           {crew.jobsCompleted}
@@ -422,7 +422,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
                       </div>
                       <div className="flex justify-between">
                         <dt className="text-zinc-500 dark:text-zinc-400">
-                          <MetricTooltip label="Avg Ticket" tooltip="Crew revenue divided by combined billable jobs." />
+                          <MetricTooltip label="Avg Ticket" tooltip="Crew revenue divided by crew jobs with revenue above $0.00." />
                         </dt>
                         <dd className="font-medium text-zinc-900 dark:text-zinc-50">
                           {crew.avgTicket != null ? formatCurrency(crew.avgTicket) : "—"}

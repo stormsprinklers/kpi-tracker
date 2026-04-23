@@ -4,7 +4,6 @@ import { initSchema } from "@/lib/db";
 import {
   getOrganizationById,
   getPerformancePayOrg,
-  getPerformancePayRoles,
   getPerformancePayAssignments,
   getPerformancePayConfigs,
   ensureHcpPerformancePayRoles,
@@ -36,11 +35,19 @@ export async function GET() {
 
   const roles = await ensureHcpPerformancePayRoles(orgId);
   const ppOrg = await getPerformancePayOrg(orgId);
-  const [assignments, configs, empRows, proRows] = await Promise.all([
+  const [assignments, configs, empRows, proRows, salesmanRows] = await Promise.all([
     getPerformancePayAssignments(orgId),
     getPerformancePayConfigs(orgId),
     sql`SELECT hcp_id, raw FROM employees WHERE company_id = ${companyId}`,
     sql`SELECT hcp_id, raw FROM pros WHERE company_id = ${companyId}`,
+    sql`
+      SELECT hcp_employee_id
+      FROM users
+      WHERE organization_id = ${orgId}::uuid
+        AND role = 'salesman'
+        AND hcp_employee_id IS NOT NULL
+        AND TRIM(hcp_employee_id) <> ''
+    `,
   ]);
 
   const employeesWithHcpRole: { id: string; name: string; hcpRole: "technician" | "office_staff" }[] = [];
@@ -96,6 +103,9 @@ export async function GET() {
   }
 
   const assignmentsUpdated = await getPerformancePayAssignments(orgId);
+  const salesmanEmployeeIds = (salesmanRows.rows ?? [])
+    .map((r) => (r as { hcp_employee_id: string }).hcp_employee_id)
+    .filter(Boolean);
 
   return NextResponse.json({
     org: ppOrg ?? {
@@ -111,6 +121,7 @@ export async function GET() {
     assignments: assignmentsUpdated,
     configs,
     employees: employeesWithHcpRole.sort((a, b) => a.name.localeCompare(b.name)),
+    salesmanEmployeeIds,
     hcpRoleIds: {
       technician: technicianRole?.id ?? null,
       officeStaff: officeStaffRole?.id ?? null,

@@ -187,7 +187,7 @@ export async function initSchema(): Promise<void> {
       email TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'employee', 'investor')),
+      role TEXT NOT NULL CHECK (role IN ('admin', 'employee', 'salesman', 'investor')),
       hcp_employee_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(email, organization_id)
@@ -205,7 +205,7 @@ export async function initSchema(): Promise<void> {
     DO $$
     BEGIN
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-      ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'employee', 'investor'));
+      ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'employee', 'salesman', 'investor'));
     EXCEPTION WHEN OTHERS THEN
       NULL;
     END $$
@@ -486,7 +486,7 @@ export async function initSchema(): Promise<void> {
       organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
       email TEXT NOT NULL,
       token_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'employee', 'investor')),
+      role TEXT NOT NULL CHECK (role IN ('admin', 'employee', 'salesman', 'investor')),
       invited_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
       expires_at TIMESTAMPTZ NOT NULL,
       accepted_at TIMESTAMPTZ,
@@ -502,6 +502,16 @@ export async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_organization_invitations_org_email_pending
     ON organization_invitations (organization_id, email)
     WHERE accepted_at IS NULL
+  `;
+  await sql`
+    DO $$
+    BEGIN
+      ALTER TABLE organization_invitations DROP CONSTRAINT IF EXISTS organization_invitations_role_check;
+      ALTER TABLE organization_invitations ADD CONSTRAINT organization_invitations_role_check
+        CHECK (role IN ('admin', 'employee', 'salesman', 'investor'));
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END $$
   `;
 
   await sql`

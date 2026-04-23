@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState } from "react";
 
 function roleLabel(role: string): string {
   if (role === "admin") return "Admin";
+  if (role === "salesman") return "Salesman";
   if (role === "investor") return "Investor";
   return "Employee";
 }

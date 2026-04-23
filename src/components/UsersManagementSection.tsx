@@ -15,12 +15,12 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
   const [users, setUsers] = useState<User[]>([]);
   const [addEmail, setAddEmail] = useState("");
   const [addPassword, setAddPassword] = useState("");
-  const [addRole, setAddRole] = useState<"admin" | "employee" | "investor">("employee");
+  const [addRole, setAddRole] = useState<"admin" | "employee" | "salesman" | "investor">("employee");
   const [addError, setAddError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
 
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "employee" | "investor">("employee");
+  const [inviteRole, setInviteRole] = useState<"admin" | "employee" | "salesman" | "investor">("employee");
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -240,7 +240,7 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
                   >
                     {u.role}
                   </span>
-                  {u.role === "employee" && u.hcp_employee_id && (
+                  {(u.role === "employee" || u.role === "salesman") && u.hcp_employee_id && (
                     <span className="ml-1.5 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                       Linked to HCP
                     </span>
@@ -360,10 +360,11 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
                 <select
                   id="bulk-invite-role"
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as "admin" | "employee" | "investor")}
+                  onChange={(e) => setInviteRole(e.target.value as "admin" | "employee" | "salesman" | "investor")}
                   className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
                 >
                   <option value="employee">Employee</option>
+                  <option value="salesman">Salesman</option>
                   <option value="admin">Admin</option>
                   <option value="investor">Investor</option>
                 </select>
@@ -410,10 +411,11 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
             <select
               id="invite-role"
               value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as "admin" | "employee" | "investor")}
+              onChange={(e) => setInviteRole(e.target.value as "admin" | "employee" | "salesman" | "investor")}
               className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
             >
               <option value="employee">Employee</option>
+              <option value="salesman">Salesman</option>
               <option value="admin">Admin</option>
               <option value="investor">Investor</option>
             </select>
@@ -458,10 +460,11 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
         />
         <select
           value={addRole}
-          onChange={(e) => setAddRole(e.target.value as "admin" | "employee" | "investor")}
+          onChange={(e) => setAddRole(e.target.value as "admin" | "employee" | "salesman" | "investor")}
           className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
         >
           <option value="employee">Employee</option>
+          <option value="salesman">Salesman</option>
           <option value="admin">Admin</option>
           <option value="investor">Investor</option>
         </select>

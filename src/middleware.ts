@@ -91,7 +91,10 @@ export default auth((req) => {
       ];
       for (const { prefix, perm } of pathPermMap) {
         if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
-          if (prefix === "/timesheets" && session.user.role === "employee") {
+          if (
+            prefix === "/timesheets" &&
+            (session.user.role === "employee" || session.user.role === "salesman")
+          ) {
             return NextResponse.redirect(new URL("/", req.nextUrl));
           }
           if (!perms[perm]) {

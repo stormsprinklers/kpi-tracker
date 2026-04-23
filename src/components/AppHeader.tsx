@@ -52,7 +52,7 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
   }, [session?.user?.organizationId, session?.user?.organizationLogoUrl]);
 
   useEffect(() => {
-    if (session?.user?.role === "employee" && session?.user?.hcpEmployeeId) {
+    if ((session?.user?.role === "employee" || session?.user?.role === "salesman") && session?.user?.hcpEmployeeId) {
       fetch("/api/me")
         .then((r) => (r.ok ? r.json() : null))
         .then((d: { displayName?: string | null; photoUrl?: string | null } | null) => {
@@ -140,14 +140,18 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
     return false;
   };
 
-  const isEmployee = session?.user?.role === "employee";
+  const isEmployee = session?.user?.role === "employee" || session?.user?.role === "salesman";
+  const callInsightsHref = session?.user?.hcpEmployeeId
+    ? `/call-insights/csr/${session.user.hcpEmployeeId}`
+    : "/insights/attribution#call-tracking";
 
-  const insightsItems = isEmployee
-    ? []
-    : [
+  const insightsItems = [
+        ...(can("call_insights") ? [{ label: "Call Insights", href: callInsightsHref }] : []),
+        ...(!isEmployee ? [
         ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
         ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
         ...(can("marketing") ? [{ label: "Attribution", href: "/insights/attribution" }] : []),
+        ] : []),
       ];
 
   const teamItems: { label: string; href: string }[] = [];
@@ -208,15 +212,11 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
             <NotificationBell />
             <HeaderNightShiftToggle />
             <a href="/" className={navLinkClass}>Dashboard</a>
-            {!isEmployee && (
-              <>
-                {insightsItems.length > 0 && (
-                  <NavDropdown label="Insights" items={insightsItems} navLinkClass={navLinkClass} />
-                )}
-                {teamItems.length > 0 && (
-                  <NavDropdown label="Team" items={teamItems} navLinkClass={navLinkClass} />
-                )}
-              </>
+            {insightsItems.length > 0 && (
+              <NavDropdown label="Insights" items={insightsItems} navLinkClass={navLinkClass} />
+            )}
+            {teamItems.length > 0 && (
+              <NavDropdown label="Team" items={teamItems} navLinkClass={navLinkClass} />
             )}
             <NavDropdown
               label={
@@ -344,8 +344,8 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
               >
                 Dashboard
               </a>
-              {/* Insights section - not for employees */}
-              {!isEmployee && (
+              {/* Insights section */}
+              {insightsItems.length > 0 && (
               <div className="mt-1">
                 <button
                   type="button"

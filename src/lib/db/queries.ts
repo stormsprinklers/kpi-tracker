@@ -939,7 +939,7 @@ export async function createUser(params: {
   email: string;
   password_hash: string;
   organization_id: string;
-  role: "admin" | "employee" | "investor";
+  role: "admin" | "employee" | "salesman" | "investor";
   hcp_employee_id?: string | null;
   two_factor_enabled?: boolean;
   two_factor_channel?: "sms" | "email" | null;
@@ -1086,7 +1086,7 @@ export function getDefaultPermissionsForRole(
       can_edit: false,
     };
   }
-  if (role === "employee") {
+  if (role === "employee" || role === "salesman") {
     const base = { ...allFalse, dashboard: true, timesheets: false, can_edit: true };
     if (isCsr) {
       base.call_insights = true;
@@ -1213,7 +1213,7 @@ export async function createOrganizationInvitation(params: {
   organization_id: string;
   email: string;
   token_hash: string;
-  role: "admin" | "employee" | "investor";
+  role: "admin" | "employee" | "salesman" | "investor";
   invited_by_user_id: string;
   expires_at: Date;
 }) {

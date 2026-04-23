@@ -39,7 +39,8 @@ export function NotificationBell() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = session?.user?.role === "admin";
-  const showBell = isAdmin || session?.user?.role === "employee";
+  const showBell =
+    isAdmin || session?.user?.role === "employee" || session?.user?.role === "salesman";
 
   const fetchNotifications = useCallback(async () => {
     if (!session?.user?.id) return;

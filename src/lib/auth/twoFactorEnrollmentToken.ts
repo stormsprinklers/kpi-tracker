@@ -15,7 +15,7 @@ export type TwoFactorEnrollmentPayload =
       inviteId: string;
       organizationId: string;
       email: string;
-      role: "admin" | "employee" | "investor";
+      role: "admin" | "employee" | "salesman" | "investor";
       hcpEmployeeId: string | null;
       phoneE164: string;
       passwordHash: string;
@@ -90,7 +90,7 @@ function isValidPayload(data: unknown): data is TwoFactorEnrollmentPayload {
       typeof r.inviteId === "string" &&
       typeof r.organizationId === "string" &&
       typeof r.email === "string" &&
-      (r.role === "admin" || r.role === "employee" || r.role === "investor") &&
+      (r.role === "admin" || r.role === "employee" || r.role === "salesman" || r.role === "investor") &&
       (typeof r.hcpEmployeeId === "string" || r.hcpEmployeeId === null) &&
       typeof r.phoneE164 === "string" &&
       typeof r.passwordHash === "string" &&
