@@ -82,8 +82,8 @@ export default {
   callbacks: {
     async signIn({ account }) {
       if (account?.provider === "credentials") return true;
-      // OAuth providers bypass the password+OTP flow; require credentials sign-in so 2FA always applies.
-      return "/login?error=Use%20email%20and%20password%20to%20complete%202FA";
+      // Allow OAuth sign-in and account linking (case-insensitive email match in adapter).
+      return true;
     },
     async jwt({ token, user }) {
       if (user) {

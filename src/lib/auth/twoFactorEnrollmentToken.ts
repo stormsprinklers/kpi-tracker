@@ -1,3 +1,5 @@
+import type { EnrollmentEmailChallenge } from "@/lib/auth/enrollmentEmailChallenge";
+
 export type TwoFactorEnrollmentPayload =
   | {
       flow: "signup";
@@ -5,6 +7,7 @@ export type TwoFactorEnrollmentPayload =
       phoneE164: string;
       orgName: string;
       passwordHash: string;
+      emailChallenge?: EnrollmentEmailChallenge;
       exp: number;
     }
   | {
@@ -16,6 +19,7 @@ export type TwoFactorEnrollmentPayload =
       hcpEmployeeId: string | null;
       phoneE164: string;
       passwordHash: string;
+      emailChallenge?: EnrollmentEmailChallenge;
       exp: number;
     };
 
@@ -67,12 +71,18 @@ function isValidPayload(data: unknown): data is TwoFactorEnrollmentPayload {
   if (!data || typeof data !== "object") return false;
   const r = data as Record<string, unknown>;
   if (typeof r.exp !== "number") return false;
+  const challenge = r.emailChallenge as Record<string, unknown> | undefined;
+  const challengeValid =
+    challenge == null ||
+    (challenge.provider === "twilio") ||
+    (challenge.provider === "app_email" && typeof challenge.codeHash === "string");
   if (r.flow === "signup") {
     return (
       typeof r.email === "string" &&
       typeof r.phoneE164 === "string" &&
       typeof r.orgName === "string" &&
-      typeof r.passwordHash === "string"
+      typeof r.passwordHash === "string" &&
+      challengeValid
     );
   }
   if (r.flow === "invite") {
@@ -83,7 +93,8 @@ function isValidPayload(data: unknown): data is TwoFactorEnrollmentPayload {
       (r.role === "admin" || r.role === "employee" || r.role === "investor") &&
       (typeof r.hcpEmployeeId === "string" || r.hcpEmployeeId === null) &&
       typeof r.phoneE164 === "string" &&
-      typeof r.passwordHash === "string"
+      typeof r.passwordHash === "string" &&
+      challengeValid
     );
   }
   return false;

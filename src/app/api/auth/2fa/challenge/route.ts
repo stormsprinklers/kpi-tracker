@@ -22,7 +22,7 @@ const E164 = /^\+[1-9]\d{6,14}$/;
 
 export async function POST(request: Request) {
   await initSchema();
-  let body: { email?: string; password?: string; channel?: "sms" | "email" };
+  let body: { email?: string; password?: string };
   try {
     body = (await request.json()) as { email?: string; password?: string };
   } catch {
@@ -43,7 +43,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
 
-  const requestedChannel = body.channel === "sms" || body.channel === "email" ? body.channel : null;
   const phone = user.phone_e164?.trim() ?? "";
   const userEmail = user.email.trim();
   const smsAvailable =
@@ -61,14 +60,15 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const ch =
-    requestedChannel && availableChannels.includes(requestedChannel)
-      ? requestedChannel
-      : availableChannels.includes("sms")
-        ? "sms"
-        : "email";
-  const verifyTo = ch === "sms" ? phone : userEmail;
-  const started = await startVerify(verifyTo, ch);
+  let ch: "sms" | "email" = availableChannels.includes("sms") ? "sms" : "email";
+  let verifyTo = ch === "sms" ? phone : userEmail;
+  let started = await startVerify(verifyTo, ch);
+  // If preferred SMS delivery fails, automatically fall back to email when available.
+  if (!started.ok && ch === "sms" && availableChannels.includes("email")) {
+    ch = "email";
+    verifyTo = userEmail;
+    started = await startVerify(verifyTo, ch);
+  }
   if (!started.ok) {
     return NextResponse.json({ error: started.error }, { status: 503 });
   }

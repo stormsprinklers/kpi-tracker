@@ -16,6 +16,10 @@ import {
   TWO_FACTOR_ENROLLMENT_TTL_MS,
   verifyTwoFactorEnrollmentToken,
 } from "@/lib/auth/twoFactorEnrollmentToken";
+import {
+  startEnrollmentEmailChallenge,
+  verifyEnrollmentEmailCode,
+} from "@/lib/auth/enrollmentEmailChallenge";
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 
@@ -68,9 +72,16 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      const emailCheck = await checkVerifyCode(payload.email, emailCode);
-      if (!emailCheck.ok) {
-        return NextResponse.json({ error: "Email verification code is invalid or expired." }, { status: 400 });
+      if (payload.emailChallenge?.provider === "twilio" || !payload.emailChallenge) {
+        const emailCheck = await checkVerifyCode(payload.email, emailCode);
+        if (!emailCheck.ok) {
+          return NextResponse.json({ error: "Email verification code is invalid or expired." }, { status: 400 });
+        }
+      } else {
+        const fallback = await verifyEnrollmentEmailCode(payload.emailChallenge, emailCode);
+        if (!fallback.ok) {
+          return NextResponse.json({ error: fallback.error }, { status: 400 });
+        }
       }
       const smsCheck = await checkVerifyCode(payload.phoneE164, smsCode);
       if (!smsCheck.ok) {
@@ -157,9 +168,9 @@ export async function POST(request: Request) {
       }
     }
 
-    const emailStart = await startVerify(email, "email");
-    if (!emailStart.ok) {
-      return NextResponse.json({ error: emailStart.error }, { status: 503 });
+    const emailChallenge = await startEnrollmentEmailChallenge(email);
+    if (!emailChallenge.ok) {
+      return NextResponse.json({ error: emailChallenge.error }, { status: 503 });
     }
     const smsStart = await startVerify(phoneE164, "sms");
     if (!smsStart.ok) {
@@ -175,6 +186,7 @@ export async function POST(request: Request) {
       hcpEmployeeId,
       phoneE164,
       passwordHash,
+      emailChallenge: emailChallenge.challenge,
       exp: Date.now() + TWO_FACTOR_ENROLLMENT_TTL_MS,
     });
     return NextResponse.json({
