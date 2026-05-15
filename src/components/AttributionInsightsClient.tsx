@@ -348,11 +348,23 @@ export function AttributionInsightsClient() {
     [preset, customStart, customEnd, payPeriodCalendar]
   );
   const todayStr = new Date().toISOString().slice(0, 10);
-  const apiStart = dr.isAllTime ? "2000-01-01" : dr.startDate ?? todayStr;
-  const apiEnd = dr.isAllTime ? todayStr : dr.endDate ?? todayStr;
-  const rangeDescription = `${apiStart} → ${apiEnd}`;
+  const apiStart = dr.isCustomRangeIncomplete
+    ? null
+    : dr.isAllTime
+      ? "2000-01-01"
+      : dr.startDate ?? todayStr;
+  const apiEnd = dr.isCustomRangeIncomplete ? null : dr.isAllTime ? todayStr : dr.endDate ?? todayStr;
+  const rangeDescription =
+    dr.isCustomRangeIncomplete || apiStart == null || apiEnd == null ? dr.rangeLabel : `${apiStart} → ${apiEnd}`;
 
   const load = useCallback(async () => {
+    if (apiStart == null || apiEnd == null) {
+      setData(null);
+      setPreviousData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -416,6 +428,7 @@ export function AttributionInsightsClient() {
 
   const gbpByDay = data?.gbpInsights.daily ?? [];
   const shouldFillDailySeries = useMemo(() => {
+    if (apiStart == null || apiEnd == null) return false;
     const s = new Date(`${apiStart}T00:00:00Z`);
     const e = new Date(`${apiEnd}T00:00:00Z`);
     if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return false;
@@ -423,7 +436,10 @@ export function AttributionInsightsClient() {
     return days > 0 && days <= 120;
   }, [apiStart, apiEnd]);
   const fullRangeDates = useMemo(
-    () => (shouldFillDailySeries ? enumerateYmdRange(apiStart, apiEnd) : []),
+    () =>
+      shouldFillDailySeries && apiStart != null && apiEnd != null
+        ? enumerateYmdRange(apiStart, apiEnd)
+        : [],
     [shouldFillDailySeries, apiStart, apiEnd]
   );
   const websiteChartSeries = useMemo(() => {
@@ -893,7 +909,17 @@ export function AttributionInsightsClient() {
             GHL opportunity calls, booking rates by CSR, and waiting window for this reporting period.
           </p>
           <div className="mt-3">
-            <CallInsightsClient startDate={apiStart} endDate={apiEnd} syncedRangeDescription={rangeDescription} />
+            {apiStart && apiEnd ? (
+              <CallInsightsClient
+                startDate={apiStart}
+                endDate={apiEnd}
+                syncedRangeDescription={rangeDescription}
+              />
+            ) : (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                Select start and end dates for custom range to load call tracking metrics.
+              </p>
+            )}
           </div>
         </div>
       </section>

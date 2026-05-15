@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clampDashboardRangeEndToTodayInOrgTz,
   type DashboardDateRange,
@@ -27,6 +27,7 @@ function formatCurrency(value: number): string {
 }
 
 function keyMetricsUrl(dateRange: DashboardDateRange): string {
+  if (dateRange.isCustomRangeIncomplete) return "";
   if (dateRange.isAllTime) {
     return "/api/metrics/key-metrics?range=all";
   }
@@ -46,7 +47,8 @@ function ymdFromUtcDate(d: Date): string {
 }
 
 function previousDateRange(dateRange: DashboardDateRange): DashboardDateRange | null {
-  if (dateRange.isAllTime || !dateRange.startDate || !dateRange.endDate) return null;
+  if (dateRange.isCustomRangeIncomplete || dateRange.isAllTime || !dateRange.startDate || !dateRange.endDate)
+    return null;
   const start = toUtcDate(dateRange.startDate);
   const end = toUtcDate(dateRange.endDate);
   const dayMs = 24 * 60 * 60 * 1000;
@@ -95,17 +97,37 @@ export function KeyMetricsSection({
   const [previousMetrics, setPreviousMetrics] = useState<KeyMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   const fetchMetrics = useCallback(async () => {
     if (!connected) return;
+    if (dateRange.isCustomRangeIncomplete) {
+      fetchAbortRef.current?.abort();
+      fetchAbortRef.current = null;
+      setMetrics(null);
+      setPreviousMetrics(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    fetchAbortRef.current?.abort();
+    const ac = new AbortController();
+    fetchAbortRef.current = ac;
     setLoading(true);
     setError(null);
     try {
       const metricsRange = clampDashboardRangeEndToTodayInOrgTz(dateRange, payPeriodCalendar);
       const prevRange = previousDateRange(metricsRange);
+      const currentUrl = keyMetricsUrl(metricsRange);
+      if (!currentUrl) {
+        setMetrics(null);
+        setPreviousMetrics(null);
+        return;
+      }
       const [currentRes, previousRes] = await Promise.all([
-        fetch(keyMetricsUrl(metricsRange)),
-        prevRange ? fetch(keyMetricsUrl(prevRange)) : Promise.resolve(null),
+        fetch(currentUrl, { signal: ac.signal }),
+        prevRange ? fetch(keyMetricsUrl(prevRange), { signal: ac.signal }) : Promise.resolve(null),
       ]);
 
       if (!currentRes.ok) throw new Error("Failed to load metrics");
@@ -119,14 +141,21 @@ export function KeyMetricsSection({
         setPreviousMetrics(null);
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (fetchAbortRef.current === ac) {
+        setLoading(false);
+        fetchAbortRef.current = null;
+      }
     }
   }, [connected, dateRange, payPeriodCalendar]);
 
   useEffect(() => {
-    fetchMetrics();
+    void fetchMetrics();
+    return () => {
+      fetchAbortRef.current?.abort();
+    };
   }, [fetchMetrics]);
 
   if (!connected) {

@@ -68,6 +68,7 @@ function getInitials(name: string): string {
 
 function technicianRevenueQueryParams(dateRange: DashboardDateRange): URLSearchParams {
   const params = new URLSearchParams();
+  if (dateRange.isCustomRangeIncomplete) return params;
   if (!dateRange.isAllTime && dateRange.startDate && dateRange.endDate) {
     params.set("startDate", dateRange.startDate);
     params.set("endDate", dateRange.endDate);
@@ -88,14 +89,30 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
   const [unassignedJobs, setUnassignedJobs] = useState<UnassignedRevenueJob[]>([]);
   const [loadingUnassigned, setLoadingUnassigned] = useState(false);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const fetchDataAbortRef = useRef<AbortController | null>(null);
+  const fetchUnassignedAbortRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (dateRange.isCustomRangeIncomplete) {
+      fetchDataAbortRef.current?.abort();
+      fetchDataAbortRef.current = null;
+      setData(null);
+      setCards([]);
+      setPhotoByTechId({});
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    fetchDataAbortRef.current?.abort();
+    const ac = new AbortController();
+    fetchDataAbortRef.current = ac;
     setLoading(true);
     setError(null);
     const params = technicianRevenueQueryParams(dateRange);
     const url = `/api/metrics/technician-revenue${params.toString() ? `?${params}` : ""}`;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: ac.signal });
       if (!res.ok) throw new Error("Failed to load metrics");
       const result: TechnicianRevenueResult = await res.json();
       setData(result);
@@ -107,7 +124,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
       const photoIds = Array.from(new Set([...technicianIds, ...foremanIds]));
       const photosRes =
         photoIds.length > 0
-          ? await fetch(`/api/technicians/photos?ids=${photoIds.join(",")}`)
+          ? await fetch(`/api/technicians/photos?ids=${photoIds.join(",")}`, { signal: ac.signal })
           : null;
       const photosData = photosRes?.ok ? await photosRes.json() : {};
       const photos: Record<string, string> = photosData.photos ?? {};
@@ -122,7 +139,7 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
       }
       const reviewsRes =
         technicianIds.length > 0
-          ? await fetch(`/api/team/reviews/counts?${reviewParams.toString()}`)
+          ? await fetch(`/api/team/reviews/counts?${reviewParams.toString()}`, { signal: ac.signal })
           : null;
       const reviewsData = reviewsRes?.ok ? await reviewsRes.json() : {};
       const reviewCounts: Record<string, number> = reviewsData.counts ?? {};
@@ -139,37 +156,63 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
       }));
       setCards(merged);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (fetchDataAbortRef.current === ac) {
+        setLoading(false);
+        fetchDataAbortRef.current = null;
+      }
     }
   }, [dateRange]);
 
   const fetchUnassignedRevenue = useCallback(async () => {
     if (!isAdmin) return;
-    const params = technicianRevenueQueryParams(dateRange);
-    const url = `/api/metrics/technician-revenue/unassigned${params.toString() ? `?${params}` : ""}`;
+    if (dateRange.isCustomRangeIncomplete) {
+      fetchUnassignedAbortRef.current?.abort();
+      fetchUnassignedAbortRef.current = null;
+      setUnassignedJobs([]);
+      setLoadingUnassigned(false);
+      return;
+    }
+
+    fetchUnassignedAbortRef.current?.abort();
+    const ac = new AbortController();
+    fetchUnassignedAbortRef.current = ac;
     setLoadingUnassigned(true);
     try {
-      const res = await fetch(url);
+      const params = technicianRevenueQueryParams(dateRange);
+      const url = `/api/metrics/technician-revenue/unassigned${params.toString() ? `?${params}` : ""}`;
+      const res = await fetch(url, { signal: ac.signal });
       if (!res.ok) throw new Error("Failed to load unassigned revenue");
       const payload = (await res.json()) as {
         jobs?: UnassignedRevenueJob[];
       };
       setUnassignedJobs(payload.jobs ?? []);
     } catch {
-      setUnassignedJobs([]);
+      if (!ac.signal.aborted) {
+        setUnassignedJobs([]);
+      }
     } finally {
-      setLoadingUnassigned(false);
+      if (fetchUnassignedAbortRef.current === ac) {
+        setLoadingUnassigned(false);
+        fetchUnassignedAbortRef.current = null;
+      }
     }
   }, [isAdmin, dateRange]);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
+    return () => {
+      fetchDataAbortRef.current?.abort();
+    };
   }, [fetchData]);
 
   useEffect(() => {
-    fetchUnassignedRevenue();
+    void fetchUnassignedRevenue();
+    return () => {
+      fetchUnassignedAbortRef.current?.abort();
+    };
   }, [fetchUnassignedRevenue]);
 
   const handlePhotoUpload = async (technicianId: string, file: File) => {

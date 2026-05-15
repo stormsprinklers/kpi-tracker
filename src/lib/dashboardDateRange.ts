@@ -56,6 +56,11 @@ export interface DashboardDateRange {
   startDate?: string;
   endDate?: string;
   rangeLabel: string;
+  /**
+   * True when the user chose Custom but has not set both start and end dates yet.
+   * Must not be treated as all-time for API calls (avoids `range=all` and in-flight races).
+   */
+  isCustomRangeIncomplete?: boolean;
 }
 
 /**
@@ -67,6 +72,7 @@ export function clampDashboardRangeEndToTodayInOrgTz(
   dateRange: DashboardDateRange,
   payPeriodCalendar: PayPeriodCalendarSettings
 ): DashboardDateRange {
+  if (dateRange.isCustomRangeIncomplete) return dateRange;
   if (dateRange.isAllTime || !dateRange.startDate || !dateRange.endDate) return dateRange;
   const cal = getCalendarDateInTimeZone(new Date(), payPeriodCalendar.payPeriodTimezone);
   const todayYmd = formatYmd(cal.y, cal.m, cal.d);
@@ -79,7 +85,8 @@ export function clampDashboardRangeEndToTodayInOrgTz(
 
 /**
  * Resolves the selected dashboard preset into API-friendly bounds and a display label.
- * Custom without both dates: all-time behavior (same as technician section previously).
+ * Custom without both dates: {@link DashboardDateRange.isCustomRangeIncomplete} — callers should
+ * not query metrics as all-time until both dates are set.
  */
 export function getDashboardDateRange(
   preset: DashboardDatePreset,
@@ -136,7 +143,8 @@ export function getDashboardDateRange(
       };
     }
     return {
-      isAllTime: true,
+      isAllTime: false,
+      isCustomRangeIncomplete: true,
       rangeLabel: `${DASHBOARD_PRESET_LABELS.custom} (select dates)`,
     };
   }

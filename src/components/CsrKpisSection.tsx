@@ -18,6 +18,7 @@ interface CsrKpiEntry {
 
 function csrKpisQueryParams(dateRange: DashboardDateRange): URLSearchParams {
   const params = new URLSearchParams();
+  if (dateRange.isCustomRangeIncomplete) return params;
   if (!dateRange.isAllTime && dateRange.startDate && dateRange.endDate) {
     params.set("startDate", dateRange.startDate);
     params.set("endDate", dateRange.endDate);
@@ -55,31 +56,54 @@ export function CsrKpisSection({ dateRange }: { dateRange: DashboardDateRange })
   const [error, setError] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async () => {
+    if (dateRange.isCustomRangeIncomplete) {
+      fetchAbortRef.current?.abort();
+      fetchAbortRef.current = null;
+      setCards([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    fetchAbortRef.current?.abort();
+    const ac = new AbortController();
+    fetchAbortRef.current = ac;
     setLoading(true);
     setError(null);
     const params = csrKpisQueryParams(dateRange);
     const qs = params.toString();
     try {
-      const res = await fetch(`/api/metrics/csr-kpis${qs ? `?${qs}` : ""}`);
+      const res = await fetch(`/api/metrics/csr-kpis${qs ? `?${qs}` : ""}`, { signal: ac.signal });
       if (!res.ok) throw new Error("Failed to load CSR KPIs");
       const data: CsrKpiEntry[] = await res.json();
       const csrIds = data.map((c) => c.csrId);
-      const photosRes = csrIds.length > 0 ? await fetch(`/api/technicians/photos?ids=${csrIds.join(",")}`) : null;
+      const photosRes =
+        csrIds.length > 0
+          ? await fetch(`/api/technicians/photos?ids=${csrIds.join(",")}`, { signal: ac.signal })
+          : null;
       const photosData = photosRes?.ok ? await photosRes.json() : {};
       const photos: Record<string, string> = photosData.photos ?? {};
       const merged = data.map((c) => ({ ...c, photoUrl: photos[c.csrId] ?? null }));
       setCards(merged);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (fetchAbortRef.current === ac) {
+        setLoading(false);
+        fetchAbortRef.current = null;
+      }
     }
   }, [dateRange]);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
+    return () => {
+      fetchAbortRef.current?.abort();
+    };
   }, [fetchData]);
 
   const handlePhotoUpload = async (csrId: string, file: File) => {

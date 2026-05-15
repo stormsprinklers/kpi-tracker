@@ -140,6 +140,12 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       setLoading(false);
       return;
     }
+    if (dateRange.isCustomRangeIncomplete) {
+      setEntries([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     const params = new URLSearchParams();
@@ -154,7 +160,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       .then(setEntries)
       .catch((e) => setError(e instanceof Error ? e.message : "Error"))
       .finally(() => setLoading(false));
-  }, [effectiveHcpEmployeeId, isAdmin, queryEnd, queryStart]);
+  }, [dateRange.isCustomRangeIncomplete, effectiveHcpEmployeeId, isAdmin, queryEnd, queryStart]);
 
   useEffect(() => {
     fetchEntries();
@@ -162,6 +168,11 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
 
   useEffect(() => {
     if (!isAdmin) return;
+    if (dateRange.isCustomRangeIncomplete) {
+      setTimeOffRequests([]);
+      setTimeOffLoading(false);
+      return;
+    }
     setTimeOffLoading(true);
     const params = new URLSearchParams();
     if (queryStart) params.set("startDate", queryStart);
@@ -171,7 +182,7 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       .then((data: { requests: TimeOffRequest[] }) => setTimeOffRequests(data.requests ?? []))
       .catch(() => setTimeOffRequests([]))
       .finally(() => setTimeOffLoading(false));
-  }, [isAdmin, queryEnd, queryStart]);
+  }, [dateRange.isCustomRangeIncomplete, isAdmin, queryEnd, queryStart]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

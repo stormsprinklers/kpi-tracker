@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DashboardDateRange } from "@/lib/dashboardDateRange";
 import { MetricTooltip } from "./MetricTooltip";
 
@@ -21,6 +21,7 @@ function formatCurrency(value: number): string {
 }
 
 function metricsUrl(dateRange: DashboardDateRange): string {
+  if (dateRange.isCustomRangeIncomplete) return "";
   if (dateRange.isAllTime) return "/api/metrics/salesman-metrics";
   const params = new URLSearchParams();
   params.set("startDate", dateRange.startDate!);
@@ -40,7 +41,8 @@ function ymdFromUtcDate(d: Date): string {
 }
 
 function previousDateRange(dateRange: DashboardDateRange): DashboardDateRange | null {
-  if (dateRange.isAllTime || !dateRange.startDate || !dateRange.endDate) return null;
+  if (dateRange.isCustomRangeIncomplete || dateRange.isAllTime || !dateRange.startDate || !dateRange.endDate)
+    return null;
   const start = toUtcDate(dateRange.startDate);
   const end = toUtcDate(dateRange.endDate);
   const dayMs = 24 * 60 * 60 * 1000;
@@ -81,15 +83,35 @@ export function SalesmanMetricsSection({ dateRange }: { dateRange: DashboardDate
   const [previousMetrics, setPreviousMetrics] = useState<SalesmanMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   const fetchMetrics = useCallback(async () => {
+    if (dateRange.isCustomRangeIncomplete) {
+      fetchAbortRef.current?.abort();
+      fetchAbortRef.current = null;
+      setMetrics(null);
+      setPreviousMetrics(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    fetchAbortRef.current?.abort();
+    const ac = new AbortController();
+    fetchAbortRef.current = ac;
     setLoading(true);
     setError(null);
     try {
+      const url = metricsUrl(dateRange);
+      if (!url) {
+        setMetrics(null);
+        setPreviousMetrics(null);
+        return;
+      }
       const prev = previousDateRange(dateRange);
       const [res, prevRes] = await Promise.all([
-        fetch(metricsUrl(dateRange)),
-        prev ? fetch(metricsUrl(prev)) : Promise.resolve(null),
+        fetch(url, { signal: ac.signal }),
+        prev ? fetch(metricsUrl(prev), { signal: ac.signal }) : Promise.resolve(null),
       ]);
       if (!res.ok) throw new Error("Failed to load salesman metrics");
       const data = (await res.json()) as SalesmanMetrics;
@@ -100,14 +122,21 @@ export function SalesmanMetricsSection({ dateRange }: { dateRange: DashboardDate
         setPreviousMetrics(null);
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (fetchAbortRef.current === ac) {
+        setLoading(false);
+        fetchAbortRef.current = null;
+      }
     }
   }, [dateRange]);
 
   useEffect(() => {
-    fetchMetrics();
+    void fetchMetrics();
+    return () => {
+      fetchAbortRef.current?.abort();
+    };
   }, [fetchMetrics]);
 
   return (

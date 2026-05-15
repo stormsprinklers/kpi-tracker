@@ -35,6 +35,7 @@ export function EmployeeDashboardBanner({
   );
 
   const expectedUrl = useMemo(() => {
+    if (metricsRange.isCustomRangeIncomplete) return null;
     if (metricsRange.isAllTime || !metricsRange.startDate || !metricsRange.endDate) {
       return "/api/performance-pay/expected";
     }
@@ -46,6 +47,14 @@ export function EmployeeDashboardBanner({
   }, [metricsRange]);
 
   useEffect(() => {
+    if (!expectedUrl) {
+      setExpectedPay(null);
+      setEffectiveHourly(null);
+      setPeriodStart(null);
+      setPeriodEnd(null);
+      return;
+    }
+
     let cancelled = false;
 
     (async () => {
