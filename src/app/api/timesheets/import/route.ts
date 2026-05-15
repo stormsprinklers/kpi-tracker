@@ -6,6 +6,7 @@ import {
   getEmployeesForSelector,
   getTimesheetImportNameMappings,
   upsertImportedTimeEntry,
+  deleteImportedTimeEntriesForEmployeesInDateRange,
 } from "@/lib/db/queries";
 import {
   detectTimesheetCsvFormat,
@@ -18,6 +19,23 @@ import {
 
 function normalizeName(s: string): string {
   return normalizeCsvPersonName(s);
+}
+
+type PendingImportRow = {
+  hcp_employee_id: string;
+  entry_date: string;
+  hours: number;
+};
+
+function minMaxIsoDates(dates: string[]): { min: string; max: string } | null {
+  if (dates.length === 0) return null;
+  let min = dates[0]!;
+  let max = dates[0]!;
+  for (const d of dates) {
+    if (d < min) min = d;
+    if (d > max) max = d;
+  }
+  return { min, max };
 }
 
 /** POST /api/timesheets/import - Admin CSV import from HCP time card export (legacy wide) or time tracking export (row-based). */
@@ -72,9 +90,10 @@ export async function POST(request: Request) {
   }
 
   const importedAt = new Date().toISOString();
-  let importedRows = 0;
+  const note = `[Imported CSV] ${importedAt}`;
   let skippedRows = 0;
   const unmatchedEmployees = new Set<string>();
+  const pending: PendingImportRow[] = [];
 
   const resolveEmployeeId = (displayName: string): string | null => {
     const key = normalizeName(displayName);
@@ -129,17 +148,9 @@ export async function POST(request: Request) {
         continue;
       }
 
-      await upsertImportedTimeEntry({
-        organization_id: session.user.organizationId,
-        hcp_employee_id: employeeId,
-        entry_date: dateIso,
-        hours: parsed,
-        notes: `[Imported CSV] ${importedAt}`,
-      });
-      importedRows++;
+      pending.push({ hcp_employee_id: employeeId, entry_date: dateIso, hours: parsed });
     }
   } else {
-    // legacy_wide: Date, EmpName, EmpName (hours), ...
     for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
       const row = rows[rowIdx];
       const dateIso = parseLegacyExportDate(row[0] ?? "");
@@ -167,23 +178,54 @@ export async function POST(request: Request) {
         const parsed = parseFloat(decimalHoursRaw.replace(/,/g, ""));
         if (Number.isNaN(parsed)) continue;
 
-        await upsertImportedTimeEntry({
-          organization_id: session.user.organizationId,
-          hcp_employee_id: employeeId,
-          entry_date: dateIso,
-          hours: parsed,
-          notes: `[Imported CSV] ${importedAt}`,
-        });
-        importedRows++;
+        pending.push({ hcp_employee_id: employeeId, entry_date: dateIso, hours: parsed });
       }
     }
+  }
+
+  if (pending.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      importedRows: 0,
+      deletedImportedRows: 0,
+      skippedRows,
+      unmatchedEmployees: Array.from(unmatchedEmployees),
+      format: fmt,
+    });
+  }
+
+  const range = minMaxIsoDates(pending.map((p) => p.entry_date));
+  if (!range) {
+    return NextResponse.json({ error: "No valid dates in CSV" }, { status: 400 });
+  }
+
+  const uniqueEmployeeIds = [...new Set(pending.map((p) => p.hcp_employee_id))];
+  const deletedImportedRows = await deleteImportedTimeEntriesForEmployeesInDateRange(
+    session.user.organizationId,
+    range.min,
+    range.max,
+    uniqueEmployeeIds
+  );
+
+  let importedRows = 0;
+  for (const row of pending) {
+    await upsertImportedTimeEntry({
+      organization_id: session.user.organizationId,
+      hcp_employee_id: row.hcp_employee_id,
+      entry_date: row.entry_date,
+      hours: row.hours,
+      notes: note,
+    });
+    importedRows++;
   }
 
   return NextResponse.json({
     ok: true,
     importedRows,
+    deletedImportedRows,
     skippedRows,
     unmatchedEmployees: Array.from(unmatchedEmployees),
     format: fmt,
+    replacedDateRange: { startDate: range.min, endDate: range.max },
   });
 }

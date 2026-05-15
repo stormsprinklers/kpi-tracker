@@ -1546,6 +1546,34 @@ export async function createTimeEntry(params: {
   return result.rows?.[0] as TimeEntry;
 }
 
+/**
+ * Remove prior CSV-imported time rows for the given employees between dates (inclusive).
+ * Used so a re-upload for the same period replaces omitted days, not only upserts rows present in the file.
+ * Only rows with notes starting with "[Imported CSV" are deleted (manual entries unchanged).
+ */
+export async function deleteImportedTimeEntriesForEmployeesInDateRange(
+  organizationId: string,
+  startDate: string,
+  endDate: string,
+  hcpEmployeeIds: string[]
+): Promise<number> {
+  if (hcpEmployeeIds.length === 0) return 0;
+  let deleted = 0;
+  for (const hcpId of hcpEmployeeIds) {
+    const result = await sql`
+      DELETE FROM time_entries
+      WHERE organization_id = ${organizationId}::uuid
+        AND hcp_employee_id = ${hcpId}
+        AND entry_date >= ${startDate}::date
+        AND entry_date <= ${endDate}::date
+        AND notes LIKE '[Imported CSV%'
+      RETURNING id
+    `;
+    deleted += result.rows?.length ?? 0;
+  }
+  return deleted;
+}
+
 /** Upsert imported CSV time entry for exact day+employee. */
 export async function upsertImportedTimeEntry(params: {
   organization_id: string;

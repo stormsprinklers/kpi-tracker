@@ -302,8 +302,10 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
       const data = (await res.json()) as {
         error?: string;
         importedRows?: number;
+        deletedImportedRows?: number;
         unmatchedEmployees?: string[];
         format?: string;
+        replacedDateRange?: { startDate: string; endDate: string };
       };
       if (!res.ok) throw new Error(data.error ?? "Import failed");
 
@@ -315,7 +317,15 @@ export function TimesheetsClient({ isAdmin, hcpEmployeeId: initialHcpEmployeeId 
           : data.format === "legacy_wide"
             ? " (legacy wide export)"
             : "";
-      const msg = `Imported ${data.importedRows ?? 0} day(s)${fmtLabel}${unmatched > 0 ? ` (${unmatched} unmatched employee name${unmatched > 1 ? "s" : ""})` : ""}.`;
+      const cleared = data.deletedImportedRows ?? 0;
+      const range = data.replacedDateRange;
+      const replaceHint =
+        cleared > 0 && range
+          ? ` Cleared ${cleared} prior CSV row${cleared === 1 ? "" : "s"} for ${range.startDate}–${range.endDate} for employees in this file, then applied new hours.`
+          : cleared > 0
+            ? ` Cleared ${cleared} prior CSV row${cleared === 1 ? "" : "s"} for employees in this file, then applied new hours.`
+            : "";
+      const msg = `Imported ${data.importedRows ?? 0} day(s)${fmtLabel}${replaceHint}${unmatched > 0 ? ` (${unmatched} unmatched employee name${unmatched > 1 ? "s" : ""})` : ""}.`;
       setImportResult(msg);
       fetchEntries();
     } catch (err) {
