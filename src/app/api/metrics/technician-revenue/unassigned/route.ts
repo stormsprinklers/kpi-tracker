@@ -8,10 +8,12 @@ import {
   resolveCollectedRevenueForJob,
 } from "@/lib/metrics/jobCollectedRevenue";
 import {
+  getCrewById,
   getEmployeesAndProsForCsrSelector,
   getJobRevenueAssignments,
   getJobsFromDb,
   getOrganizationById,
+  listCrewsWithMembers,
   upsertJobRevenueAssignment,
 } from "@/lib/db/queries";
 
@@ -105,8 +107,17 @@ export async function GET(request: Request) {
     if (unassigned.length >= 200) break;
   }
 
-  const candidates = await getEmployeesAndProsForCsrSelector(companyId);
-  return NextResponse.json({ jobs: unassigned, candidates });
+  const [candidates, crews] = await Promise.all([
+    getEmployeesAndProsForCsrSelector(companyId),
+    listCrewsWithMembers(session.user.organizationId).catch(() => []),
+  ]);
+  const crewOptions = crews.map((c) => ({
+    id: c.id,
+    name: c.name,
+    foremanHcpEmployeeId: c.foremanHcpEmployeeId,
+    foremanDisplayName: c.foremanDisplayName,
+  }));
+  return NextResponse.json({ jobs: unassigned, candidates, crews: crewOptions });
 }
 
 export async function POST(request: Request) {
@@ -118,16 +129,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let body: { jobHcpId?: string; hcpEmployeeId?: string };
+  let body: { jobHcpId?: string; hcpEmployeeId?: string; crewId?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   const jobHcpId = String(body.jobHcpId ?? "").trim();
-  const hcpEmployeeId = String(body.hcpEmployeeId ?? "").trim();
+  const crewIdRaw = String(body.crewId ?? "").trim();
+  let hcpEmployeeId = String(body.hcpEmployeeId ?? "").trim();
+
+  if (crewIdRaw) {
+    await initSchema();
+    const crew = await getCrewById(crewIdRaw, session.user.organizationId);
+    if (!crew) {
+      return NextResponse.json({ error: "Crew not found" }, { status: 404 });
+    }
+    const fh = crew.foremanHcpEmployeeId?.trim();
+    if (!fh) {
+      return NextResponse.json({ error: "Crew has no foreman configured" }, { status: 400 });
+    }
+    hcpEmployeeId = fh;
+  }
+
   if (!jobHcpId || !hcpEmployeeId) {
-    return NextResponse.json({ error: "jobHcpId and hcpEmployeeId are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "jobHcpId is required, and either hcpEmployeeId or crewId" },
+      { status: 400 }
+    );
   }
 
   await initSchema();

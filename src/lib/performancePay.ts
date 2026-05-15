@@ -450,6 +450,38 @@ export async function calculateExpectedPay(
     ])
   );
 
+  /**
+   * `getTechnicianRevenue` omits crew members from `technicians` (crew rollups live on `crews`).
+   * For Performance Pay / Time Insights, attribute each crew's period revenue to the foreman's row.
+   */
+  for (const crew of techResult.crews ?? []) {
+    const fid = crew.foremanHcpEmployeeId?.trim();
+    if (!fid) continue;
+    const addRev = typeof crew.totalRevenue === "number" && !Number.isNaN(crew.totalRevenue) ? crew.totalRevenue : 0;
+    const mh = typeof crew.totalManHours === "number" && !Number.isNaN(crew.totalManHours) ? crew.totalManHours : 0;
+    const prev = techByEmployee.get(fid);
+    if (addRev <= 0.005 && !prev) continue;
+
+    const nextRev = Math.round(((prev?.totalRevenue ?? 0) + addRev) * 100) / 100;
+    const crewRph = mh > 0.005 && addRev > 0.005 ? addRev / mh : null;
+    let nextRph = prev?.revenuePerHour ?? 0;
+    if (crewRph != null) {
+      const prevRev = prev?.totalRevenue ?? 0;
+      const prevRph = prev?.revenuePerHour ?? 0;
+      if (prevRev <= 0.005 || prevRph <= 0.005) {
+        nextRph = Math.round(crewRph * 100) / 100;
+      } else {
+        nextRph =
+          Math.round(((prevRev * prevRph + addRev * crewRph) / (prevRev + addRev)) * 100) / 100;
+      }
+    }
+
+    techByEmployee.set(fid, {
+      totalRevenue: nextRev,
+      revenuePerHour: nextRph,
+    });
+  }
+
   const csrByEmployee = new Map(
     csrKpis.map((c) => [
       c.csrId,

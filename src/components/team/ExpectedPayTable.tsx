@@ -327,7 +327,7 @@ export function ExpectedPayTable({
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
                   label="Total revenue"
-                  tooltip="Total technician revenue attributed in this period from Technician KPI calculations."
+                  tooltip="Total technician revenue attributed in this period from Technician KPI calculations. For a crew foreman, includes revenue attributed to that crew (crew roll-up)."
                 />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">

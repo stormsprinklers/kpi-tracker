@@ -50,6 +50,13 @@ interface UnassignedRevenueJob {
   amount: number;
 }
 
+interface UnassignedCrewOption {
+  id: string;
+  name: string;
+  foremanHcpEmployeeId: string;
+  foremanDisplayName: string;
+}
+
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -64,6 +71,14 @@ function getInitials(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function formatDisplayDateYmd(ymd: string | null): string {
+  if (!ymd) return "—";
+  const parts = ymd.split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return ymd;
+  const [y, m, d] = parts;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(y, m - 1, d));
 }
 
 function technicianRevenueQueryParams(dateRange: DashboardDateRange): URLSearchParams {
@@ -87,6 +102,12 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
   const [error, setError] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [unassignedJobs, setUnassignedJobs] = useState<UnassignedRevenueJob[]>([]);
+  const [unassignedCandidates, setUnassignedCandidates] = useState<{ id: string; name: string }[]>([]);
+  const [unassignedCrews, setUnassignedCrews] = useState<UnassignedCrewOption[]>([]);
+  const [unassignedMoreOpen, setUnassignedMoreOpen] = useState(false);
+  const [assignTargetByJob, setAssignTargetByJob] = useState<Record<string, string>>({});
+  const [assigningJobHcpId, setAssigningJobHcpId] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
   const [loadingUnassigned, setLoadingUnassigned] = useState(false);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const fetchDataAbortRef = useRef<AbortController | null>(null);
@@ -172,6 +193,11 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
       fetchUnassignedAbortRef.current?.abort();
       fetchUnassignedAbortRef.current = null;
       setUnassignedJobs([]);
+      setUnassignedCandidates([]);
+      setUnassignedCrews([]);
+      setUnassignedMoreOpen(false);
+      setAssignTargetByJob({});
+      setAssignError(null);
       setLoadingUnassigned(false);
       return;
     }
@@ -187,11 +213,17 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
       if (!res.ok) throw new Error("Failed to load unassigned revenue");
       const payload = (await res.json()) as {
         jobs?: UnassignedRevenueJob[];
+        candidates?: { id: string; name: string }[];
+        crews?: UnassignedCrewOption[];
       };
       setUnassignedJobs(payload.jobs ?? []);
+      setUnassignedCandidates(payload.candidates ?? []);
+      setUnassignedCrews(payload.crews ?? []);
     } catch {
       if (!ac.signal.aborted) {
         setUnassignedJobs([]);
+        setUnassignedCandidates([]);
+        setUnassignedCrews([]);
       }
     } finally {
       if (fetchUnassignedAbortRef.current === ac) {
@@ -242,6 +274,45 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
   };
 
   const unassignedRevenueTotal = unassignedJobs.reduce((sum, j) => sum + j.amount, 0);
+
+  const sortedUnassignedJobs = [...unassignedJobs].sort((a, b) => {
+    const da = a.date ?? "";
+    const db = b.date ?? "";
+    if (da !== db) return db.localeCompare(da);
+    return a.customerName.localeCompare(b.customerName);
+  });
+
+  const assignJobRevenue = async (jobHcpId: string) => {
+    const raw = assignTargetByJob[jobHcpId]?.trim();
+    if (!raw) return;
+    setAssigningJobHcpId(jobHcpId);
+    setAssignError(null);
+    try {
+      const isCrew = raw.startsWith("c:");
+      const body = isCrew
+        ? { jobHcpId, crewId: raw.slice(2) }
+        : { jobHcpId, hcpEmployeeId: raw.startsWith("t:") ? raw.slice(2) : raw };
+      const res = await fetch("/api/metrics/technician-revenue/unassigned", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const errPayload = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(errPayload.error ?? "Assignment failed");
+      }
+      setAssignTargetByJob((prev) => {
+        const next = { ...prev };
+        delete next[jobHcpId];
+        return next;
+      });
+      await Promise.all([fetchData(), fetchUnassignedRevenue()]);
+    } catch (e) {
+      setAssignError(e instanceof Error ? e.message : "Assignment failed");
+    } finally {
+      setAssigningJobHcpId(null);
+    }
+  };
 
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -593,10 +664,111 @@ export function TechnicianRevenueSection({ dateRange }: { dateRange: DashboardDa
       )}
       {isAdmin && !loading && !error && !loadingUnassigned && unassignedJobs.length > 0 && (
         <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900/60 dark:bg-red-950/20">
-          <p className="text-sm font-medium text-red-700 dark:text-red-300">
-            Unassigned revenue detected: {unassignedJobs.length} paid job
-            {unassignedJobs.length === 1 ? "" : "s"} totaling {formatCurrency(unassignedRevenueTotal)} in this date range.
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="text-sm font-medium text-red-700 dark:text-red-300">
+              Unassigned revenue detected: {unassignedJobs.length} paid job
+              {unassignedJobs.length === 1 ? "" : "s"} totaling {formatCurrency(unassignedRevenueTotal)} in this date range.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setUnassignedMoreOpen((o) => !o);
+                setAssignError(null);
+              }}
+              className="shrink-0 text-sm font-medium text-red-800 underline decoration-red-400 underline-offset-2 hover:text-red-950 dark:text-red-200 dark:hover:text-red-50"
+            >
+              {unassignedMoreOpen ? "Hide details" : "More info"}
+            </button>
+          </div>
+          {unassignedMoreOpen && (
+            <div className="mt-3 border-t border-red-200 pt-3 dark:border-red-900/50">
+              {assignError && (
+                <p className="mb-2 text-sm text-red-800 dark:text-red-200" role="alert">
+                  {assignError}
+                </p>
+              )}
+              <p className="mb-2 text-xs text-red-800/90 dark:text-red-200/90">
+                These jobs have collected revenue in range but no technician on the job in Housecall Pro. Assign revenue to a technician or crew (crew uses the foreman for routing).
+              </p>
+              <div className="overflow-x-auto rounded border border-red-200/80 bg-white dark:border-red-900/40 dark:bg-zinc-950">
+                <table className="w-full min-w-[520px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">Customer</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
+                      <th className="px-3 py-2">Assign to</th>
+                      <th className="w-28 px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedUnassignedJobs.map((job) => (
+                      <tr
+                        key={job.jobHcpId}
+                        className="border-b border-zinc-100 last:border-0 dark:border-zinc-800/80"
+                      >
+                        <td className="whitespace-nowrap px-3 py-2 text-zinc-700 dark:text-zinc-300">
+                          {formatDisplayDateYmd(job.date)}
+                        </td>
+                        <td className="max-w-[200px] truncate px-3 py-2 text-zinc-900 dark:text-zinc-100" title={job.customerName}>
+                          {job.customerName}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">
+                          {formatCurrency(job.amount)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            className="w-full max-w-[220px] rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                            value={assignTargetByJob[job.jobHcpId] ?? ""}
+                            disabled={assigningJobHcpId === job.jobHcpId}
+                            onChange={(e) =>
+                              setAssignTargetByJob((prev) => ({
+                                ...prev,
+                                [job.jobHcpId]: e.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select…</option>
+                            {unassignedCandidates.length > 0 && (
+                              <optgroup label="Technicians">
+                                {unassignedCandidates.map((c) => (
+                                  <option key={c.id} value={`t:${c.id}`}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {unassignedCrews.length > 0 && (
+                              <optgroup label="Crews (foreman)">
+                                {unassignedCrews.map((c) => (
+                                  <option key={c.id} value={`c:${c.id}`}>
+                                    {c.name}
+                                    {c.foremanDisplayName ? ` — ${c.foremanDisplayName}` : ""}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          <button
+                            type="button"
+                            disabled={
+                              assigningJobHcpId === job.jobHcpId || !assignTargetByJob[job.jobHcpId]?.trim()
+                            }
+                            onClick={() => void assignJobRevenue(job.jobHcpId)}
+                            className="rounded bg-red-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-800 dark:hover:bg-red-700"
+                          >
+                            {assigningJobHcpId === job.jobHcpId ? "Saving…" : "Assign"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>
