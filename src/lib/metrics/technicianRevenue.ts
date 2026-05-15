@@ -1,7 +1,6 @@
 import {
   getJobsFromDb,
   getEmployeesFromDb,
-  getInvoicesFromDb,
   getProsFromDb,
   getEstimatesFromDb,
   getTimeEntriesByOrganization,
@@ -10,6 +9,12 @@ import {
   listCrewsWithMembers,
 } from "../db/queries";
 import { extractJobHcpId } from "../sync/extractors";
+import {
+  getCollectedRevenueJobDate,
+  jobIsFutureScheduledBeyond,
+  jobMatchesCollectedRevenueDateRange,
+  resolveCollectedRevenueForJob,
+} from "./jobCollectedRevenue";
 
 export interface TechnicianRevenue {
   technicianId: string;
@@ -97,71 +102,6 @@ function getTechnicianIds(job: Record<string, unknown>): string[] {
   return [];
 }
 
-/** HCP sends amounts in cents. Convert to dollars when value looks like cents (defensive for bad data). */
-function toDollars(value: unknown): number {
-  const n = typeof value === "number" && !Number.isNaN(value) ? value : typeof value === "string" ? parseFloat(value) || 0 : 0;
-  if (n <= 0) return 0;
-  // Defensive: integers > 3k are likely cents (HCP format; $30+ as integer = cents)
-  if (Number.isInteger(n) && n > 3000) return n / 100;
-  return n;
-}
-
-function getPaidAmountFromJob(job: Record<string, unknown>): number {
-  // HCP may use various field names; also check nested totals/financial
-  const totals = job.totals as Record<string, unknown> | undefined;
-  const financial = job.financial as Record<string, unknown> | undefined;
-  const total =
-    job.total_amount ??
-    job.amount_paid ??
-    job.total_paid ??
-    job.total ??
-    job.paid_amount ??
-    job.revenue ??
-    totals?.total_amount ??
-    totals?.total ??
-    financial?.total_amount ??
-    financial?.paid_amount;
-  const outstanding =
-    job.outstanding_balance ??
-    job.balance_due ??
-    job.amount_due ??
-    totals?.outstanding_balance ??
-    financial?.outstanding_balance ??
-    0;
-  let totalNum = toDollars(total);
-  if (totalNum <= 0) {
-    const cents = job.amount_cents ?? job.total_cents ?? totals?.amount_cents;
-    if (typeof cents === "number" && cents > 0) totalNum = cents / 100;
-  }
-  // Last-resort: HCP amounts are cents; values > 10000 are almost certainly cents (no single job is $10k+ in raw units)
-  if (Number.isInteger(totalNum) && totalNum > 3000) totalNum = totalNum / 100;
-  const outNum = toDollars(outstanding);
-  return Math.max(0, totalNum - outNum) || totalNum;
-}
-
-function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
-  const val =
-    inv.paid_amount ??
-    inv.amount_paid ??
-    inv.total ??
-    inv.paid_total ??
-    inv.amount ??
-    (inv as Record<string, unknown>).total_amount;
-  // HCP invoices: prefer amount_cents when present (explicit cents)
-  const cents = (inv as Record<string, unknown>).amount_cents ?? (inv as Record<string, unknown>).paid_cents;
-  if (typeof cents === "number" && cents > 0) return cents / 100;
-  const n = typeof val === "number" && !Number.isNaN(val) ? val : typeof val === "string" ? parseFloat(val) || 0 : 0;
-  if (n <= 0) return 0;
-  // Defensive: large integers likely cents (HCP format)
-  if (Number.isInteger(n) && n > 3000) return n / 100;
-  return n;
-}
-
-function isPaidOrCompleted(job: Record<string, unknown>): boolean {
-  const status = (job.work_status ?? "").toString().trim().toLowerCase();
-  return status === "in_progress" || status === "completed";
-}
-
 /** Format name with last initial only (e.g. "John S" instead of "John Smith"). */
 function formatWithLastInitial(first: unknown, last: unknown): string {
   const f = (first ?? "").toString().trim();
@@ -234,44 +174,6 @@ function mergeNamesFromJob(nameMap: Map<string, string>, job: Record<string, unk
   }
 }
 
-/** Extract job date for filtering. Uses completed_at, then scheduled_start. */
-function getJobDate(job: Record<string, unknown>): Date | null {
-  const wt = job.work_timestamps as Record<string, unknown> | undefined;
-  const sched = job.schedule as Record<string, unknown> | undefined;
-  const completed = wt?.completed_at ?? wt?.completed;
-  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const dateStr = (completed ?? scheduled) as string | undefined;
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function getScheduledJobDate(job: Record<string, unknown>): Date | null {
-  const sched = job.schedule as Record<string, unknown> | undefined;
-  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const dateStr = scheduled as string | undefined;
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): boolean {
-  const scheduled = getScheduledJobDate(job);
-  if (!scheduled) return false;
-  const scheduledDay = scheduled.toISOString().slice(0, 10);
-  return scheduledDay > todayYmd;
-}
-
-function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDate?: string): boolean {
-  if (!startDate && !endDate) return true;
-  const jobDate = getJobDate(job);
-  if (!jobDate) return false;
-  const jobDay = jobDate.toISOString().slice(0, 10);
-  if (startDate && jobDay < startDate) return false;
-  if (endDate && jobDay > endDate) return false;
-  return true;
-}
-
 /**
  * Technician IDs for conversion: same rules as jobs (including pro_id / employee fallbacks).
  * If the estimate has no assignees, use the linked job's technicians (HCP often omits assignees on estimates).
@@ -302,7 +204,7 @@ function resolveTechnicianIdsForEstimate(
   return fromJob.filter((id) => !officeStaffIds.has(id));
 }
 
-/** Extract estimate date for filtering. Same pattern as getJobDate. */
+/** Extract estimate date for filtering. Same pattern as job revenue job date. */
 function getEstimateDate(estimate: Record<string, unknown>): Date | null {
   const wt = estimate.work_timestamps as Record<string, unknown> | undefined;
   const sched = estimate.schedule as Record<string, unknown> | undefined;
@@ -572,26 +474,11 @@ export async function getTechnicianRevenue(
 
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
-    if (!jobInDateRange(j, startDate, endDate)) continue;
-    if (isFutureScheduledJob(j, todayYmd)) continue;
+    if (!jobMatchesCollectedRevenueDateRange(j, startDate, endDate)) continue;
+    if (jobIsFutureScheduledBeyond(j, todayYmd)) continue;
     mergeNamesFromJob(nameMap, j);
 
-    const isPaid = isPaidOrCompleted(j);
-    let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
-    // Fall back to invoices when job amount is 0 (HCP may use different status/amount fields)
-    if (paidAmount <= 0 && j.id) {
-      try {
-        const invoices = await getInvoicesFromDb(companyId, String(j.id));
-        for (const inv of invoices) {
-          paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
-        }
-      } catch {
-        /* skip */
-      }
-      if (paidAmount <= 0) {
-        // DB-only KPI mode: no live API fallback
-      }
-    }
+    const paidAmount = await resolveCollectedRevenueForJob(companyId, j);
     if (paidAmount > 0) {
       totalRevenueAllJobs += paidAmount;
     }
@@ -607,7 +494,7 @@ export async function getTechnicianRevenue(
       .filter((id) => !officeStaffIds.has(id));
     if (techIds.length === 0) continue;
 
-    const jobDate = getJobDate(j);
+    const jobDate = getCollectedRevenueJobDate(j);
     const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
 
     const amountPerTech = paidAmount / techIds.length;
@@ -691,8 +578,8 @@ export async function getTechnicianRevenue(
     const yearEnd = `${currentYear}-12-31`;
     for (const job of jobs) {
       const j = job as Record<string, unknown>;
-      if (isFutureScheduledJob(j, todayYmd)) continue;
-      const jobDate = getJobDate(j);
+      if (jobIsFutureScheduledBeyond(j, todayYmd)) continue;
+      const jobDate = getCollectedRevenueJobDate(j);
       if (!jobDate) continue;
       const jobDay = jobDate.toISOString().slice(0, 10);
       if (jobDay < yearStart || jobDay > yearEnd) continue;

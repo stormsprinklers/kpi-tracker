@@ -3,7 +3,6 @@ import {
   getJobsFromDb,
   getEmployeesFromDb,
   getOrganizationById,
-  getInvoicesFromDb,
   getTimeEntriesByOrganization,
   getCsrSelections,
   type TimeEntry,
@@ -13,6 +12,12 @@ import {
   getTechnicianIdsFromJob,
   isOfficeStaffRole,
 } from "../jobs/hcpJobTechnicians";
+import {
+  getCollectedRevenueJobDate,
+  jobIsFutureScheduledBeyond,
+  jobMatchesCollectedRevenueDateRange,
+  resolveCollectedRevenueForJob,
+} from "./jobCollectedRevenue";
 
 export interface TimeInsightsFilters {
   startDate?: string; // ISO date YYYY-MM-DD
@@ -77,12 +82,6 @@ function isCancelledJob(job: Record<string, unknown>): boolean {
     s === "voided" ||
     s === "declined"
   );
-}
-
-/** Same first hop as technician revenue: only these statuses read job-level paid fields. */
-function isPaidOrCompletedForJobBody(job: Record<string, unknown>): boolean {
-  const s = normalizeJobStatus(job);
-  return s === "in_progress" || s === "inprogress" || s === "completed" || s === "complete";
 }
 
 /**
@@ -158,44 +157,6 @@ function getEmployeeName(emp: Record<string, unknown>): string {
   return name || String(emp.email ?? emp.email_address ?? emp.id ?? "Unknown");
 }
 
-/** Match technician revenue / key metrics: completed → scheduled (no created_at fallback). */
-function getJobDate(job: Record<string, unknown>): Date | null {
-  const wt = job.work_timestamps as Record<string, unknown> | undefined;
-  const sched = job.schedule as Record<string, unknown> | undefined;
-  const completed = wt?.completed_at ?? wt?.completed;
-  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const dateStr = (completed ?? scheduled) as string | undefined;
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function jobInDateRange(job: Record<string, unknown>, startDate?: string, endDate?: string): boolean {
-  if (!startDate && !endDate) return true;
-  const jobDate = getJobDate(job);
-  if (!jobDate) return false;
-  const jobDay = jobDate.toISOString().slice(0, 10);
-  if (startDate && jobDay < startDate) return false;
-  if (endDate && jobDay > endDate) return false;
-  return true;
-}
-
-function getScheduledJobDate(job: Record<string, unknown>): Date | null {
-  const sched = job.schedule as Record<string, unknown> | undefined;
-  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const dateStr = scheduled as string | undefined;
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): boolean {
-  const scheduled = getScheduledJobDate(job);
-  if (!scheduled) return false;
-  const scheduledDay = scheduled.toISOString().slice(0, 10);
-  return scheduledDay > todayYmd;
-}
-
 function parseWorkTimestampFields(wt: Record<string, unknown>): {
   enRouteAt: Date | null;
   startedAt: Date | null;
@@ -269,88 +230,11 @@ function getJobTimeMinutes(job: Record<string, unknown>): number | null {
   return Math.round(ms / 60000);
 }
 
-function toDollars(value: unknown): number {
-  const n =
-    typeof value === "number" && !Number.isNaN(value)
-      ? value
-      : typeof value === "string"
-        ? parseFloat(value) || 0
-        : 0;
-  if (n <= 0) return 0;
-  if (Number.isInteger(n) && n > 3000) return n / 100;
-  return n;
-}
-
-/** Match technician revenue / key metrics (cents fallbacks on job). */
-function getPaidAmountFromJob(job: Record<string, unknown>): number {
-  const totals = job.totals as Record<string, unknown> | undefined;
-  const financial = job.financial as Record<string, unknown> | undefined;
-  const total =
-    job.total_amount ??
-    job.amount_paid ??
-    job.total_paid ??
-    job.total ??
-    job.paid_amount ??
-    job.revenue ??
-    totals?.total_amount ??
-    totals?.total ??
-    financial?.total_amount ??
-    financial?.paid_amount;
-  const outstanding =
-    job.outstanding_balance ??
-    job.balance_due ??
-    job.amount_due ??
-    totals?.outstanding_balance ??
-    financial?.outstanding_balance ??
-    0;
-  let totalNum = toDollars(total);
-  if (totalNum <= 0) {
-    const cents = job.amount_cents ?? job.total_cents ?? totals?.amount_cents;
-    if (typeof cents === "number" && cents > 0) totalNum = cents / 100;
-  }
-  if (Number.isInteger(totalNum) && totalNum > 3000) totalNum = totalNum / 100;
-  const outNum = toDollars(outstanding);
-  return Math.max(0, totalNum - outNum) || totalNum;
-}
-
-function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
-  const val =
-    inv.paid_amount ??
-    inv.amount_paid ??
-    inv.total ??
-    inv.paid_total ??
-    inv.amount ??
-    inv.total_amount;
-  const cents = inv.amount_cents ?? inv.paid_cents;
-  if (typeof cents === "number" && cents > 0) return cents / 100;
-  const n =
-    typeof val === "number" && !Number.isNaN(val)
-      ? val
-      : typeof val === "string"
-        ? parseFloat(val) || 0
-        : 0;
-  if (n <= 0) return 0;
-  if (Number.isInteger(n) && n > 3000) return n / 100;
-  return n;
-}
-
 async function resolvePaidAmountForJob(
   companyId: string,
   job: Record<string, unknown>
 ): Promise<number> {
-  const isPaid = isPaidOrCompletedForJobBody(job);
-  let paidAmount = isPaid ? getPaidAmountFromJob(job) : 0;
-  if (paidAmount <= 0 && job.id) {
-    try {
-      const invoices = await getInvoicesFromDb(companyId, String(job.id));
-      for (const inv of invoices) {
-        paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
-      }
-    } catch {
-      /* skip */
-    }
-  }
-  return paidAmount;
+  return resolveCollectedRevenueForJob(companyId, job);
 }
 
 export async function getTimeInsights(
@@ -386,8 +270,8 @@ export async function getTimeInsights(
   /** Same inclusion idea as technician revenue: date + not future-scheduled + not cancelled + paid or active/done status. */
   const included: { job: Record<string, unknown>; paid: number }[] = [];
   for (const j of jobs) {
-    if (!jobInDateRange(j, startDate, endDate)) continue;
-    if (isFutureScheduledJob(j, todayYmd)) continue;
+    if (!jobMatchesCollectedRevenueDateRange(j, startDate, endDate)) continue;
+    if (jobIsFutureScheduledBeyond(j, todayYmd)) continue;
     if (isCancelledJob(j)) continue;
     const paid = await resolvePaidAmountForJob(companyId, j);
     if (!shouldIncludeJobInTimeInsights(paid, j)) continue;
@@ -398,7 +282,7 @@ export async function getTimeInsights(
   const jobsByTechAndDate = new Map<string, Map<string, number>>();
   for (const { job } of included) {
     const techIds = getTechnicianIdsFromJob(job);
-    const jobDate = getJobDate(job);
+    const jobDate = getCollectedRevenueJobDate(job);
     const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
     if (!jobDay) continue;
     for (const techId of techIds) {

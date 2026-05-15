@@ -144,7 +144,7 @@ export function KeyMetricsSection({
           </div>
           <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
             <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-              <MetricTooltip label="Revenue" tooltip="Total paid amount from jobs and invoices in the period. Uses job paid amount minus outstanding balance." />
+              <MetricTooltip label="Revenue" tooltip="Cash collected on jobs in the period (job totals minus outstanding, plus linked invoices when needed). Same rules as technician KPI totals." />
             </h3>
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">—</p>
           </div>
@@ -197,7 +197,7 @@ export function KeyMetricsSection({
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
           <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            <MetricTooltip label="Revenue" tooltip="Total paid amount from jobs and invoices in the period. Uses job paid amount minus outstanding balance." />
+            <MetricTooltip label="Revenue" tooltip="Cash collected on jobs in the period (job totals minus outstanding, plus linked invoices when needed). Same rules as technician KPI totals." />
           </h3>
           {loading ? (
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>

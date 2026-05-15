@@ -118,7 +118,7 @@ export function SalesmanMetricsSection({ dateRange }: { dateRange: DashboardDate
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
           <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            <MetricTooltip label="Total Sales" tooltip="Total approved estimate value assigned to you in the selected period." />
+            <MetricTooltip label="Total Sales" tooltip="Cash collected on jobs in the selected period where you appear as salesperson (same job $ rules as technician KPIs and key metrics)." />
           </h3>
           {loading ? (
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>
@@ -158,7 +158,7 @@ export function SalesmanMetricsSection({ dateRange }: { dateRange: DashboardDate
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
           <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            <MetricTooltip label="Average Ticket" tooltip="Average approved estimate value." />
+            <MetricTooltip label="Average Ticket" tooltip="Average collected job ticket among jobs attributed to you as salesperson in the period." />
           </h3>
           {loading ? (
             <p className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">…</p>

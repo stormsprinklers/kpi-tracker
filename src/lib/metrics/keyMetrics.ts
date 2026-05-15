@@ -1,12 +1,6 @@
-import {
-  getEstimatesFromDb,
-  getInvoicesFromDb,
-  getJobsFromDb,
-  getOrganizationById,
-  getPerformancePayOrg,
-} from "../db/queries";
+import { getEstimatesFromDb, getOrganizationById, getPerformancePayOrg } from "../db/queries";
 import { getPayPeriodRangeForOffset, payPeriodSettingsFromOrg } from "../payPeriod";
-import { getTechnicianRevenue } from "./technicianRevenue";
+import { aggregateCollectedJobRevenueForCompany } from "./jobCollectedRevenue";
 
 export type KeyMetricsRange =
   | "7d"
@@ -22,84 +16,6 @@ export interface KeyMetrics {
   conversionRate: number | null;
 }
 
-function toDollars(value: unknown): number {
-  const n = typeof value === "number" && !Number.isNaN(value) ? value : typeof value === "string" ? parseFloat(value) || 0 : 0;
-  if (n <= 0) return 0;
-  if (Number.isInteger(n) && n > 3000) return n / 100;
-  return n;
-}
-
-function getPaidAmountFromJob(job: Record<string, unknown>): number {
-  const totals = job.totals as Record<string, unknown> | undefined;
-  const financial = job.financial as Record<string, unknown> | undefined;
-  const total =
-    job.total_amount ??
-    job.amount_paid ??
-    job.total_paid ??
-    job.total ??
-    job.paid_amount ??
-    job.revenue ??
-    totals?.total_amount ??
-    totals?.total ??
-    financial?.total_amount ??
-    financial?.paid_amount;
-  const outstanding =
-    job.outstanding_balance ??
-    job.balance_due ??
-    job.amount_due ??
-    totals?.outstanding_balance ??
-    financial?.outstanding_balance ??
-    0;
-  let totalNum = toDollars(total);
-  if (totalNum <= 0) {
-    const cents = job.amount_cents ?? job.total_cents ?? totals?.amount_cents;
-    if (typeof cents === "number" && cents > 0) totalNum = cents / 100;
-  }
-  if (Number.isInteger(totalNum) && totalNum > 3000) totalNum = totalNum / 100;
-  const outNum = toDollars(outstanding);
-  return Math.max(0, totalNum - outNum) || totalNum;
-}
-
-function getPaidAmountFromInvoice(inv: Record<string, unknown>): number {
-  const val =
-    inv.paid_amount ??
-    inv.amount_paid ??
-    inv.total ??
-    inv.paid_total ??
-    inv.amount ??
-    (inv as Record<string, unknown>).total_amount;
-  const cents = (inv as Record<string, unknown>).amount_cents ?? (inv as Record<string, unknown>).paid_cents;
-  if (typeof cents === "number" && cents > 0) return cents / 100;
-  const n = typeof val === "number" && !Number.isNaN(val) ? val : typeof val === "string" ? parseFloat(val) || 0 : 0;
-  if (n <= 0) return 0;
-  if (Number.isInteger(n) && n > 3000) return n / 100;
-  return n;
-}
-
-function isPaidOrCompleted(job: Record<string, unknown>): boolean {
-  const status = (job.work_status ?? "").toString().trim().toLowerCase();
-  return status === "in_progress" || status === "completed";
-}
-
-function getJobDate(job: Record<string, unknown>): Date | null {
-  const wt = job.work_timestamps as Record<string, unknown> | undefined;
-  const sched = job.schedule as Record<string, unknown> | undefined;
-  const completed = wt?.completed_at ?? wt?.completed;
-  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const dateStr = (completed ?? scheduled) as string | undefined;
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function jobInDateRange(job: Record<string, unknown>, startDate: string | null, endDate: string | null): boolean {
-  if (!startDate || !endDate) return true;
-  const jobDate = getJobDate(job);
-  if (!jobDate) return false;
-  const jobDay = jobDate.toISOString().slice(0, 10);
-  return jobDay >= startDate && jobDay <= endDate;
-}
-
 function getEstimateDate(estimate: Record<string, unknown>): Date | null {
   const wt = estimate.work_timestamps as Record<string, unknown> | undefined;
   const sched = estimate.schedule as Record<string, unknown> | undefined;
@@ -111,22 +27,6 @@ function getEstimateDate(estimate: Record<string, unknown>): Date | null {
   if (!dateStr) return null;
   const d = new Date(dateStr);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function getScheduledJobDate(job: Record<string, unknown>): Date | null {
-  const sched = job.schedule as Record<string, unknown> | undefined;
-  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const dateStr = scheduled as string | undefined;
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function isFutureScheduledJob(job: Record<string, unknown>, todayYmd: string): boolean {
-  const scheduled = getScheduledJobDate(job);
-  if (!scheduled) return false;
-  const scheduledDay = scheduled.toISOString().slice(0, 10);
-  return scheduledDay > todayYmd;
 }
 
 function estimateInDateRange(estimate: Record<string, unknown>, startDate: string | null, endDate: string | null): boolean {
@@ -201,43 +101,10 @@ export async function getKeyMetrics(organizationId: string, input: KeyMetricsInp
 
   const { startDate, endDate } = resolveKeyMetricsWindow(normalizedInput);
 
-  let jobs: unknown[] = [];
-  try {
-    jobs = await getJobsFromDb(companyId);
-  } catch {
-    /* skip */
-  }
-
-  let jobCount = 0;
-  let revenue = 0;
-  const todayYmd = new Date().toISOString().slice(0, 10);
-
-  for (const job of jobs) {
-    const j = job as Record<string, unknown>;
-    if (!jobInDateRange(j, startDate, endDate)) continue;
-    if (isFutureScheduledJob(j, todayYmd)) continue;
-
-    const isPaid = isPaidOrCompleted(j);
-    let paidAmount = isPaid ? getPaidAmountFromJob(j) : 0;
-    if (paidAmount <= 0 && j.id) {
-      try {
-        const invoices = await getInvoicesFromDb(companyId, String(j.id));
-        for (const inv of invoices) {
-          paidAmount += getPaidAmountFromInvoice(inv as Record<string, unknown>);
-        }
-      } catch {
-        /* skip */
-      }
-      if (paidAmount <= 0) {
-        // DB-only KPI mode: no live API fallback
-      }
-    }
-
-    revenue += paidAmount;
-    if (paidAmount > 0) {
-      jobCount += 1;
-    }
-  }
+  const { totalRevenue: revenue, paidJobCount: jobCount } = await aggregateCollectedJobRevenueForCompany(
+    companyId,
+    { startDate, endDate }
+  );
 
   let estimates: unknown[] = [];
   try {
@@ -255,17 +122,7 @@ export async function getKeyMetrics(organizationId: string, input: KeyMetricsInp
     if (hasApprovedOption(e)) approvedEstimates += 1;
   }
 
-  // Keep Key Metrics revenue aligned with Technician KPI revenue calculation.
-  // This avoids drift between the two cards when source filters/logic evolve.
-  const techRevenue = await getTechnicianRevenue(organizationId, {
-    startDate: startDate ?? undefined,
-    endDate: endDate ?? undefined,
-    activeInCurrentYearOnly: true,
-  });
-  revenue = techRevenue.totalRevenue;
-
   const conversionRate = totalEstimates > 0 ? (approvedEstimates / totalEstimates) * 100 : null;
-  // Job count and average ticket exclude $0 jobs (same divisor as revenue alignment below).
   const avgJobValue = jobCount > 0 ? revenue / jobCount : null;
 
   return {

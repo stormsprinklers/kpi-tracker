@@ -2,77 +2,18 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
 import {
+  getCollectedRevenueJobDate,
+  jobIsFutureScheduledBeyond,
+  jobMatchesCollectedRevenueDateRange,
+  resolveCollectedRevenueForJob,
+} from "@/lib/metrics/jobCollectedRevenue";
+import {
   getEmployeesAndProsForCsrSelector,
   getJobRevenueAssignments,
   getJobsFromDb,
   getOrganizationById,
   upsertJobRevenueAssignment,
 } from "@/lib/db/queries";
-
-function toDollars(value: unknown): number {
-  const n =
-    typeof value === "number" && !Number.isNaN(value)
-      ? value
-      : typeof value === "string"
-        ? parseFloat(value) || 0
-        : 0;
-  if (n <= 0) return 0;
-  if (Number.isInteger(n) && n > 3000) return n / 100;
-  return n;
-}
-
-function isPaidOrCompleted(job: Record<string, unknown>): boolean {
-  const status = String(job.work_status ?? "").trim().toLowerCase();
-  return status === "in_progress" || status === "completed";
-}
-
-function getPaidAmountFromJob(job: Record<string, unknown>): number {
-  const totals = job.totals as Record<string, unknown> | undefined;
-  const financial = job.financial as Record<string, unknown> | undefined;
-  const total =
-    job.total_amount ??
-    job.amount_paid ??
-    job.total_paid ??
-    job.total ??
-    job.paid_amount ??
-    job.revenue ??
-    totals?.total_amount ??
-    totals?.total ??
-    financial?.total_amount ??
-    financial?.paid_amount;
-  const outstanding =
-    job.outstanding_balance ??
-    job.balance_due ??
-    job.amount_due ??
-    totals?.outstanding_balance ??
-    financial?.outstanding_balance ??
-    0;
-  const totalNum = toDollars(total);
-  const outNum = toDollars(outstanding);
-  return Math.max(0, totalNum - outNum) || totalNum;
-}
-
-function getJobDate(job: Record<string, unknown>): string | null {
-  const wt = job.work_timestamps as Record<string, unknown> | undefined;
-  const sched = job.schedule as Record<string, unknown> | undefined;
-  const completed = wt?.completed_at ?? wt?.completed;
-  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  const created = job.created_at ?? job.createdAt;
-  const dateStr = (completed ?? scheduled ?? created) as string | undefined;
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
-
-function getScheduledJobDate(job: Record<string, unknown>): string | null {
-  const sched = job.schedule as Record<string, unknown> | undefined;
-  const scheduled = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
-  if (!scheduled) return null;
-  const d = new Date(String(scheduled));
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
 
 function getCustomerName(job: Record<string, unknown>): string {
   const customer = job.customer as Record<string, unknown> | undefined;
@@ -110,6 +51,11 @@ function getTechnicianIds(job: Record<string, unknown>): string[] {
   return [];
 }
 
+function jobDayYmd(job: Record<string, unknown>): string | null {
+  const d = getCollectedRevenueJobDate(job);
+  return d ? d.toISOString().slice(0, 10) : null;
+}
+
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user?.organizationId) {
@@ -131,31 +77,33 @@ export async function GET(request: Request) {
   const endDate = searchParams.get("endDate") ?? undefined;
   const todayYmd = new Date().toISOString().slice(0, 10);
 
-  const unassigned = jobs
-    .map((j) => j as Record<string, unknown>)
-    .filter((job) => {
-      const jobId = job.id != null ? String(job.id) : "";
-      if (!jobId) return false;
-      if (assignmentByJob.has(jobId)) return false;
-      if (!isPaidOrCompleted(job)) return false;
-      const amount = getPaidAmountFromJob(job);
-      if (amount <= 0) return false;
-      const hasTech = getTechnicianIds(job).length > 0;
-      if (hasTech) return false;
-      const day = getJobDate(job);
-      if (startDate && day && day < startDate) return false;
-      if (endDate && day && day > endDate) return false;
-      const scheduledDay = getScheduledJobDate(job);
-      if (scheduledDay && scheduledDay > todayYmd) return false;
-      return true;
-    })
-    .slice(0, 200)
-    .map((job) => ({
-      jobHcpId: String(job.id),
+  const unassigned: {
+    jobHcpId: string;
+    customerName: string;
+    date: string | null;
+    amount: number;
+  }[] = [];
+
+  for (const row of jobs) {
+    const job = row as Record<string, unknown>;
+    const jobId = job.id != null ? String(job.id) : "";
+    if (!jobId) continue;
+    if (assignmentByJob.has(jobId)) continue;
+    if (!jobMatchesCollectedRevenueDateRange(job, startDate, endDate)) continue;
+    if (jobIsFutureScheduledBeyond(job, todayYmd)) continue;
+
+    const amount = await resolveCollectedRevenueForJob(companyId, job);
+    if (amount <= 0) continue;
+    if (getTechnicianIds(job).length > 0) continue;
+
+    unassigned.push({
+      jobHcpId: jobId,
       customerName: getCustomerName(job),
-      date: getJobDate(job),
-      amount: getPaidAmountFromJob(job),
-    }));
+      date: jobDayYmd(job),
+      amount,
+    });
+    if (unassigned.length >= 200) break;
+  }
 
   const candidates = await getEmployeesAndProsForCsrSelector(companyId);
   return NextResponse.json({ jobs: unassigned, candidates });
