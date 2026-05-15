@@ -11,6 +11,7 @@ export { DEFAULT_PAY_PERIOD_CALENDAR };
 export type DashboardDatePreset =
   | "thisPayPeriod"
   | "lastPayPeriod"
+  | "today"
   | "all"
   | "7d"
   | "14d"
@@ -23,6 +24,7 @@ export type DashboardDatePreset =
 export const DASHBOARD_PRESET_LABELS: Record<DashboardDatePreset, string> = {
   thisPayPeriod: "This pay period",
   lastPayPeriod: "Last pay period",
+  today: "Today",
   "7d": "Last 7 days",
   "14d": "Last 14 days",
   "30d": "Last 30 days",
@@ -37,6 +39,7 @@ export const DASHBOARD_PRESET_LABELS: Record<DashboardDatePreset, string> = {
 export const DASHBOARD_PRESET_ORDER: DashboardDatePreset[] = [
   "thisPayPeriod",
   "lastPayPeriod",
+  "today",
   "7d",
   "14d",
   "30d",
@@ -104,6 +107,17 @@ export function getDashboardDateRange(
       startDate: p.startDate,
       endDate: p.endDate,
       rangeLabel: DASHBOARD_PRESET_LABELS.lastPayPeriod,
+    };
+  }
+
+  if (preset === "today") {
+    const cal = getCalendarDateInTimeZone(new Date(), payPeriodCalendar.payPeriodTimezone);
+    const ymd = formatYmd(cal.y, cal.m, cal.d);
+    return {
+      isAllTime: false,
+      startDate: ymd,
+      endDate: ymd,
+      rangeLabel: DASHBOARD_PRESET_LABELS.today,
     };
   }
 
