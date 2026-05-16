@@ -1,6 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DASHBOARD_PRESET_LABELS,
+  DASHBOARD_PRESET_ORDER,
+  type DashboardDatePreset,
+  clampDashboardRangeEndToTodayInOrgTz,
+  getDashboardDateRange,
+  type DashboardDateRange,
+} from "@/lib/dashboardDateRange";
+import { usePayPeriodCalendar } from "@/hooks/usePayPeriodCalendar";
+import type { PayPeriodCalendarSettings } from "@/lib/payPeriod";
 
 interface Candidate {
   id: string;
@@ -37,6 +47,20 @@ interface CatalogAccount {
   locations: { locationId: string; title: string }[];
 }
 
+function reviewsListUrl(
+  dateRange: DashboardDateRange,
+  payPeriodCalendar: PayPeriodCalendarSettings
+): string | null {
+  if (dateRange.isCustomRangeIncomplete) return null;
+  const metricsRange = clampDashboardRangeEndToTodayInOrgTz(dateRange, payPeriodCalendar);
+  if (metricsRange.isAllTime) return "/api/team/reviews?range=all";
+  if (!metricsRange.startDate || !metricsRange.endDate) return null;
+  const p = new URLSearchParams();
+  p.set("startDate", metricsRange.startDate);
+  p.set("endDate", metricsRange.endDate);
+  return `/api/team/reviews?${p.toString()}`;
+}
+
 function formatDate(value: string | null): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -45,6 +69,15 @@ function formatDate(value: string | null): string {
 }
 
 export function TeamReviewsSection() {
+  const payPeriodCalendar = usePayPeriodCalendar();
+  const [preset, setPreset] = useState<DashboardDatePreset>("thisPayPeriod");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const dateRange = useMemo(
+    () => getDashboardDateRange(preset, customStart, customEnd, payPeriodCalendar),
+    [preset, customStart, customEnd, payPeriodCalendar]
+  );
+
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -66,6 +99,8 @@ export function TeamReviewsSection() {
 
   const [selectedByReview, setSelectedByReview] = useState<Record<string, string>>({});
 
+  const fetchAbortRef = useRef<AbortController | null>(null);
+
   const candidateMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of candidates) m.set(c.id, c.name);
@@ -79,10 +114,23 @@ export function TeamReviewsSection() {
   }, [catalog, selectedAccountId]);
 
   const fetchData = useCallback(async () => {
+    const url = reviewsListUrl(dateRange, payPeriodCalendar);
+    if (!url) {
+      fetchAbortRef.current?.abort();
+      fetchAbortRef.current = null;
+      setReviews([]);
+      setSelectedByReview({});
+      setLoading(false);
+      return;
+    }
+
+    fetchAbortRef.current?.abort();
+    const ac = new AbortController();
+    fetchAbortRef.current = ac;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/team/reviews");
+      const res = await fetch(url, { signal: ac.signal });
       if (!res.ok) throw new Error("Failed to load reviews");
       const data = (await res.json()) as Payload;
       setProfile(data.profile);
@@ -105,14 +153,21 @@ export function TeamReviewsSection() {
         )
       );
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (fetchAbortRef.current === ac) {
+        setLoading(false);
+        fetchAbortRef.current = null;
+      }
     }
-  }, []);
+  }, [dateRange, payPeriodCalendar]);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
+    return () => {
+      fetchAbortRef.current?.abort();
+    };
   }, [fetchData]);
 
   useEffect(() => {
@@ -309,6 +364,51 @@ export function TeamReviewsSection() {
   return (
     <div className="flex flex-col gap-4">
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Time period</h2>
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              Only reviews posted in this range are listed for assignment (same presets as the dashboard).
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={preset}
+              onChange={(e) => setPreset(e.target.value as DashboardDatePreset)}
+              className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+              aria-label="Reviews list time period"
+            >
+              {DASHBOARD_PRESET_ORDER.map((key) => (
+                <option key={key} value={key}>
+                  {DASHBOARD_PRESET_LABELS[key]}
+                </option>
+              ))}
+            </select>
+            {preset === "custom" && (
+              <>
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                  aria-label="Custom range start"
+                />
+                <span className="text-sm text-zinc-500">to</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                  aria-label="Custom range end"
+                />
+              </>
+            )}
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">{dateRange.rangeLabel}</p>
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
         <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           Google Business Profile
         </h2>
@@ -430,11 +530,15 @@ export function TeamReviewsSection() {
 
       <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
         <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Reviews</h3>
-        {loading ? (
+        {dateRange.isCustomRangeIncomplete ? (
+          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
+            Select both start and end dates for a custom range to load reviews.
+          </p>
+        ) : loading ? (
           <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
         ) : reviews.length === 0 ? (
           <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
-            No synced reviews yet.
+            No reviews in this time period. Try a different range or sync reviews.
           </p>
         ) : (
           <div className="mt-3 overflow-x-auto">

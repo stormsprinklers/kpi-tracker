@@ -2101,9 +2101,37 @@ export async function upsertGoogleBusinessReview(params: {
 }
 
 export async function getGoogleBusinessReviewsByOrg(
-  organizationId: string
+  organizationId: string,
+  filters?: { startDate?: string | null; endDate?: string | null }
 ): Promise<GoogleBusinessReview[]> {
-  const result = await sql`
+  const start = filters?.startDate?.trim();
+  const end = filters?.endDate?.trim();
+  const hasRange = Boolean(start && end);
+
+  const result = hasRange
+    ? await sql`
+    SELECT
+      gbr.review_id,
+      gbr.reviewer_name,
+      gbr.star_rating,
+      gbr.comment,
+      gbr.create_time::text,
+      gbr.update_time::text,
+      gbr.assigned_hcp_employee_id,
+      COALESCE(
+        (SELECT array_agg(a.hcp_employee_id ORDER BY a.hcp_employee_id)
+         FROM google_business_review_assignments a
+         WHERE a.google_business_review_id = gbr.id),
+        ARRAY[]::text[]
+      ) AS assigned_hcp_employee_ids
+    FROM google_business_reviews gbr
+    WHERE gbr.organization_id = ${organizationId}::uuid
+      AND COALESCE(gbr.create_time, gbr.update_time) IS NOT NULL
+      AND to_char(COALESCE(gbr.create_time, gbr.update_time) AT TIME ZONE 'UTC', 'YYYY-MM-DD') >= ${start}
+      AND to_char(COALESCE(gbr.create_time, gbr.update_time) AT TIME ZONE 'UTC', 'YYYY-MM-DD') <= ${end}
+    ORDER BY COALESCE(gbr.update_time, gbr.create_time) DESC NULLS LAST
+  `
+    : await sql`
     SELECT
       gbr.review_id,
       gbr.reviewer_name,
