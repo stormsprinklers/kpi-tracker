@@ -164,13 +164,25 @@ export function CsrKpisSection({ dateRange }: { dateRange: DashboardDateRange })
       {!loading && !error && cards.length > 0 && (
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {cards.map((card) => (
-            <Link
+            <div
               key={card.csrId}
-              href={`/call-insights/csr/${card.csrId}`}
               className="flex flex-col rounded-xl border border-zinc-200 bg-zinc-50/50 p-4 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900/50"
             >
               <div className="flex items-center gap-3">
                 <div className="relative shrink-0">
+                  <input
+                    ref={(el) => {
+                      fileInputRefs.current[card.csrId] = el;
+                    }}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handlePhotoUpload(card.csrId, file);
+                      e.target.value = "";
+                    }}
+                  />
                   <div
                     className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-zinc-300 text-lg font-semibold text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300"
                     title={toLastInitialOnly(card.csrName)}
@@ -185,37 +197,26 @@ export function CsrKpisSection({ dateRange }: { dateRange: DashboardDateRange })
                   {canUploadPhoto(card.csrId) && (
                     <button
                       type="button"
-                      className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-primary)] text-xs text-white shadow-md transition-colors hover:bg-[var(--color-primary-hover)]"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        fileInputRefs.current[card.csrId]?.click();
-                      }}
+                      className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-primary)] text-xs text-white shadow-md transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+                      onClick={() => fileInputRefs.current[card.csrId]?.click()}
                       aria-label="Upload photo"
-                      disabled={!!uploadingId}
+                      disabled={uploadingId === card.csrId}
                     >
                       {uploadingId === card.csrId ? "..." : "+"}
                     </button>
                   )}
-                  <input
-                    ref={(el) => { fileInputRefs.current[card.csrId] = el; }}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handlePhotoUpload(card.csrId, file);
-                      e.target.value = "";
-                    }}
-                  />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-medium text-zinc-900 dark:text-zinc-50">
+                <Link
+                  href={`/call-insights/csr/${card.csrId}`}
+                  className="min-w-0 flex-1"
+                >
+                  <h3 className="truncate font-medium text-zinc-900 hover:underline dark:text-zinc-50">
                     {toLastInitialOnly(card.csrName)}
                   </h3>
-                </div>
+                </Link>
               </div>
-              <dl className="mt-4 space-y-2 text-sm">
+              <Link href={`/call-insights/csr/${card.csrId}`} className="mt-4 block">
+              <dl className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-zinc-500 dark:text-zinc-400">
                     <MetricTooltip label="Booking Rate" tooltip="Percentage of opportunity calls (won + lost) that resulted in a booking. (Won / Opportunity Calls) × 100." />
@@ -253,7 +254,8 @@ export function CsrKpisSection({ dateRange }: { dateRange: DashboardDateRange })
                   </dd>
                 </div>
               </dl>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}
