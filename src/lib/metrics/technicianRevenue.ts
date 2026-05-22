@@ -10,6 +10,13 @@ import {
 } from "../db/queries";
 import { extractJobHcpId } from "../sync/extractors";
 import {
+  buildJobNumberGroups,
+  computeCrewRevenueDayCredits,
+  getHcpJobNumber,
+  getHcpJobWorkDayYmds,
+  ymdInDateRange,
+} from "./crewMultiDayJobRevenue";
+import {
   getCollectedRevenueJobDate,
   jobIsFutureScheduledBeyond,
   jobMatchesCollectedRevenueDateRange,
@@ -428,6 +435,8 @@ export async function getTechnicianRevenue(
   const billableJobsByTech = new Map<string, number>();
   const crewRevenueById = new Map<string, number>();
   const crewBillableJobsById = new Map<string, number>();
+  const crewBillableJobKeys = new Set<string>();
+  const crewCreditedDayKeys = new Set<string>();
   const revenueByTechAndDate = new Map<string, Map<string, number>>();
   let totalRevenueAllJobs = 0;
 
@@ -472,14 +481,38 @@ export async function getTechnicianRevenue(
     /* skip */
   }
 
+  const paidByJobId = new Map<string, number>();
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
-    if (!jobMatchesCollectedRevenueDateRange(j, startDate, endDate)) continue;
+    const jobId = j.id != null ? String(j.id) : "";
+    if (!jobId) continue;
+    paidByJobId.set(jobId, await resolveCollectedRevenueForJob(companyId, j));
+  }
+  const jobNumberGroups = buildJobNumberGroups(jobs, paidByJobId);
+
+  for (const job of jobs) {
+    const j = job as Record<string, unknown>;
     if (jobIsFutureScheduledBeyond(j, todayYmd)) continue;
+
+    const matchesPrimaryJobDate = jobMatchesCollectedRevenueDateRange(j, startDate, endDate);
+    const jobNumForRange = getHcpJobNumber(j);
+    const groupForRange = jobNumForRange ? jobNumberGroups.get(jobNumForRange) : undefined;
+    const workDaysForRange =
+      groupForRange && groupForRange.workDays.size > 0
+        ? Array.from(groupForRange.workDays)
+        : getHcpJobWorkDayYmds(j);
+    const hasWorkDayInPeriod = workDaysForRange.some((d) =>
+      ymdInDateRange(d, startDate, endDate)
+    );
+    if (!matchesPrimaryJobDate && !hasWorkDayInPeriod) continue;
+
     mergeNamesFromJob(nameMap, j);
 
-    const paidAmount = await resolveCollectedRevenueForJob(companyId, j);
-    if (paidAmount > 0) {
+    const jobIdForPaid = j.id != null ? String(j.id) : "";
+    const paidAmount = jobIdForPaid
+      ? (paidByJobId.get(jobIdForPaid) ?? 0)
+      : await resolveCollectedRevenueForJob(companyId, j);
+    if (paidAmount > 0 && matchesPrimaryJobDate) {
       totalRevenueAllJobs += paidAmount;
     }
 
@@ -497,6 +530,7 @@ export async function getTechnicianRevenue(
     const jobDate = getCollectedRevenueJobDate(j);
     const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
 
+    if (matchesPrimaryJobDate) {
     const amountPerTech = paidAmount / techIds.length;
     for (const techId of techIds) {
       const current = revenueByTech.get(techId) ?? 0;
@@ -513,22 +547,41 @@ export async function getTechnicianRevenue(
         byDate.set(jobDay, (byDate.get(jobDay) ?? 0) + amountPerTech);
       }
     }
+    }
 
-    // Crew-level metrics should only count non-zero-value jobs.
+    // Crew-level metrics: dedupe by job number and split revenue across work days.
     if (paidAmount > MIN_BILLABLE_REVENUE) {
-      const crewMemberCountByCrew = new Map<string, number>();
-      for (const techId of techIds) {
-        const crewIds = crewIdsByTechId.get(techId) ?? [];
-        for (const crewId of crewIds) {
-          crewMemberCountByCrew.set(crewId, (crewMemberCountByCrew.get(crewId) ?? 0) + 1);
+      const dayCredits = computeCrewRevenueDayCredits({
+        job: j,
+        paidAmount,
+        jobNumberGroups,
+        creditedDayKeys: crewCreditedDayKeys,
+        startDate,
+        endDate,
+      });
+      const crewAttributedPaid = dayCredits.reduce((sum, c) => sum + c.amount, 0);
+      if (crewAttributedPaid > MIN_BILLABLE_REVENUE) {
+        const crewMemberCountByCrew = new Map<string, number>();
+        for (const techId of techIds) {
+          const crewIds = crewIdsByTechId.get(techId) ?? [];
+          for (const crewId of crewIds) {
+            crewMemberCountByCrew.set(crewId, (crewMemberCountByCrew.get(crewId) ?? 0) + 1);
+          }
         }
-      }
-      for (const [crewId, membersOnJob] of crewMemberCountByCrew) {
-        if (membersOnJob <= 0) continue;
-        const crewRevenueShare = paidAmount * (membersOnJob / techIds.length);
-        if (crewRevenueShare <= MIN_BILLABLE_REVENUE) continue;
-        crewRevenueById.set(crewId, (crewRevenueById.get(crewId) ?? 0) + crewRevenueShare);
-        crewBillableJobsById.set(crewId, (crewBillableJobsById.get(crewId) ?? 0) + 1);
+        const jobNum = getHcpJobNumber(j);
+        const billableJobKey = jobNum ?? (jobId || jobIdForPaid);
+        for (const [crewId, membersOnJob] of crewMemberCountByCrew) {
+          if (membersOnJob <= 0) continue;
+          const crewRevenueShare =
+            crewAttributedPaid * (membersOnJob / techIds.length);
+          if (crewRevenueShare <= MIN_BILLABLE_REVENUE) continue;
+          crewRevenueById.set(crewId, (crewRevenueById.get(crewId) ?? 0) + crewRevenueShare);
+          const crewJobKey = `${crewId}|${billableJobKey}`;
+          if (!crewBillableJobKeys.has(crewJobKey)) {
+            crewBillableJobKeys.add(crewJobKey);
+            crewBillableJobsById.set(crewId, (crewBillableJobsById.get(crewId) ?? 0) + 1);
+          }
+        }
       }
     }
   }
