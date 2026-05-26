@@ -1,3 +1,5 @@
+import { ymdInTimeZone } from "@/lib/email/pulseDateRange";
+import { addDaysToYmd } from "@/lib/payPeriod";
 import { getCollectedRevenueJobDate } from "./jobCollectedRevenue";
 
 /** HCP job number fields (invoice / display number). */
@@ -18,32 +20,39 @@ export function getHcpJobNumber(job: Record<string, unknown>): string | null {
   return null;
 }
 
-function parseToUtcYmd(value: unknown): string | null {
+/**
+ * Calendar YYYY-MM-DD for a job timestamp in the org time zone.
+ * Plain `YYYY-MM-DD` strings are treated as date-only (no TZ shift).
+ */
+function ymdFromJobTimestamp(value: unknown, timeZone: string): string | null {
   if (value == null || value === "") return null;
-  const d = new Date(String(value));
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  return ymdInTimeZone(d, timeZone);
 }
 
-/** Inclusive UTC calendar days from start through end (YYYY-MM-DD). */
-export function calendarDaysInclusiveUtc(startIso: unknown, endIso: unknown): string[] {
-  const startYmd = parseToUtcYmd(startIso);
-  const endYmd = parseToUtcYmd(endIso ?? startIso);
-  if (!startYmd || !endYmd) return startYmd ? [startYmd] : [];
+/** Inclusive calendar days from start through end in org zone (for full ISO instants). */
+function calendarDaysInclusiveInZone(
+  startIso: unknown,
+  endIso: unknown,
+  timeZone: string
+): string[] {
+  const startYmd = ymdFromJobTimestamp(startIso, timeZone);
+  const endYmd = ymdFromJobTimestamp(endIso ?? startIso, timeZone);
+  if (!startYmd) return [];
+  if (!endYmd) return [startYmd];
+  if (startYmd > endYmd) return [startYmd];
 
   const days: string[] = [];
-  const cur = new Date(`${startYmd}T12:00:00.000Z`);
-  const end = new Date(`${endYmd}T12:00:00.000Z`);
-  if (cur.getTime() > end.getTime()) return [startYmd];
-
-  while (cur.getTime() <= end.getTime()) {
-    days.push(cur.toISOString().slice(0, 10));
-    cur.setUTCDate(cur.getUTCDate() + 1);
+  for (let cur = startYmd; cur <= endYmd; cur = addDaysToYmd(cur, 1)) {
+    days.push(cur);
   }
   return days;
 }
 
-function appointmentDayYmds(job: Record<string, unknown>): string[] {
+function appointmentDayYmds(job: Record<string, unknown>, timeZone: string): string[] {
   const appts =
     job.appointments ??
     job.job_appointments ??
@@ -62,25 +71,28 @@ function appointmentDayYmds(job: Record<string, unknown>): string[] {
       r.scheduledStart ??
       sched?.scheduled_start ??
       sched?.scheduledStart;
-    const ymd = parseToUtcYmd(start);
+    const ymd = ymdFromJobTimestamp(start, timeZone);
     if (ymd) days.add(ymd);
   }
   return Array.from(days).sort();
 }
 
 /** Distinct work days for a job (appointments, schedule span, else primary job date). */
-export function getHcpJobWorkDayYmds(job: Record<string, unknown>): string[] {
-  const fromAppts = appointmentDayYmds(job);
+export function getHcpJobWorkDayYmds(
+  job: Record<string, unknown>,
+  timeZone: string
+): string[] {
+  const fromAppts = appointmentDayYmds(job, timeZone);
   if (fromAppts.length > 0) return fromAppts;
 
   const sched = job.schedule as Record<string, unknown> | undefined;
   const start = sched?.scheduled_start ?? sched?.scheduledStart ?? job.scheduled_start;
   const end = sched?.scheduled_end ?? sched?.scheduledEnd ?? job.scheduled_end ?? start;
-  const spanDays = calendarDaysInclusiveUtc(start, end);
+  const spanDays = calendarDaysInclusiveInZone(start, end, timeZone);
   if (spanDays.length > 1) return spanDays;
 
   const primary = getCollectedRevenueJobDate(job);
-  if (primary) return [primary.toISOString().slice(0, 10)];
+  if (primary) return [ymdInTimeZone(primary, timeZone)];
   if (spanDays.length === 1) return spanDays;
   return [];
 }
@@ -103,7 +115,8 @@ export type JobNumberGroup = {
 /** Merge all synced rows sharing a job number (multi-day duplicates in HCP). */
 export function buildJobNumberGroups(
   jobs: unknown[],
-  paidByJobId: Map<string, number>
+  paidByJobId: Map<string, number>,
+  timeZone: string
 ): Map<string, JobNumberGroup> {
   const groups = new Map<string, JobNumberGroup>();
 
@@ -114,7 +127,7 @@ export function buildJobNumberGroups(
 
     const jobId = j.id != null ? String(j.id) : "";
     const paid = jobId ? (paidByJobId.get(jobId) ?? 0) : 0;
-    const days = getHcpJobWorkDayYmds(j);
+    const days = getHcpJobWorkDayYmds(j, timeZone);
 
     let g = groups.get(jobNum);
     if (!g) {
@@ -144,8 +157,10 @@ export function computeCrewRevenueDayCredits(params: {
   creditedDayKeys: Set<string>;
   startDate?: string;
   endDate?: string;
+  timeZone: string;
 }): CrewRevenueDayCredit[] {
-  const { job, paidAmount, jobNumberGroups, creditedDayKeys, startDate, endDate } = params;
+  const { job, paidAmount, jobNumberGroups, creditedDayKeys, startDate, endDate, timeZone } =
+    params;
   const jobNum = getHcpJobNumber(job);
   const jobId = job.id != null ? String(job.id) : "";
 
@@ -153,7 +168,7 @@ export function computeCrewRevenueDayCredits(params: {
   const workDays =
     group && group.workDays.size > 0
       ? Array.from(group.workDays).sort()
-      : getHcpJobWorkDayYmds(job);
+      : getHcpJobWorkDayYmds(job, timeZone);
   const dayCount = Math.max(1, workDays.length);
   const canonicalPaid = group && group.canonicalPaid > 0 ? group.canonicalPaid : paidAmount;
   const slice = canonicalPaid / dayCount;
@@ -170,7 +185,7 @@ export function computeCrewRevenueDayCredits(params: {
 
   if (credits.length === 0) {
     const jobDate = getCollectedRevenueJobDate(job);
-    const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
+    const jobDay = jobDate ? ymdInTimeZone(jobDate, timeZone) : null;
     if (jobDay && ymdInDateRange(jobDay, startDate, endDate)) {
       const dedupeKey = jobNum ? `${jobNum}|${jobDay}` : `${jobId}|${jobDay}`;
       if (!creditedDayKeys.has(dedupeKey)) {

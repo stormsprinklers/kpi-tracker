@@ -16,6 +16,7 @@ import {
   getHcpJobWorkDayYmds,
   ymdInDateRange,
 } from "./crewMultiDayJobRevenue";
+import { ymdInTimeZone } from "@/lib/email/pulseDateRange";
 import {
   getCollectedRevenueJobDate,
   jobIsFutureScheduledBeyond,
@@ -313,6 +314,8 @@ export async function getTechnicianRevenue(
   if (!companyId) {
     return { technicians: [], totalRevenue: 0 };
   }
+  /** Org wall clock for job/appointment calendar days (aligns with pulse + timesheet dates). */
+  const metricsTimeZone = (org?.pulse_timezone ?? "").trim() || "America/Denver";
 
   let crewDefs: Awaited<ReturnType<typeof listCrewsWithMembers>> = [];
   try {
@@ -488,7 +491,7 @@ export async function getTechnicianRevenue(
     if (!jobId) continue;
     paidByJobId.set(jobId, await resolveCollectedRevenueForJob(companyId, j));
   }
-  const jobNumberGroups = buildJobNumberGroups(jobs, paidByJobId);
+  const jobNumberGroups = buildJobNumberGroups(jobs, paidByJobId, metricsTimeZone);
 
   for (const job of jobs) {
     const j = job as Record<string, unknown>;
@@ -500,7 +503,7 @@ export async function getTechnicianRevenue(
     const workDaysForRange =
       groupForRange && groupForRange.workDays.size > 0
         ? Array.from(groupForRange.workDays)
-        : getHcpJobWorkDayYmds(j);
+        : getHcpJobWorkDayYmds(j, metricsTimeZone);
     const hasWorkDayInPeriod = workDaysForRange.some((d) =>
       ymdInDateRange(d, startDate, endDate)
     );
@@ -528,25 +531,25 @@ export async function getTechnicianRevenue(
     if (techIds.length === 0) continue;
 
     const jobDate = getCollectedRevenueJobDate(j);
-    const jobDay = jobDate ? jobDate.toISOString().slice(0, 10) : null;
+    const jobDay = jobDate ? ymdInTimeZone(jobDate, metricsTimeZone) : null;
 
     if (matchesPrimaryJobDate) {
-    const amountPerTech = paidAmount / techIds.length;
-    for (const techId of techIds) {
-      const current = revenueByTech.get(techId) ?? 0;
-      revenueByTech.set(techId, current + amountPerTech);
-      if (paidAmount > 0) {
-        billableJobsByTech.set(techId, (billableJobsByTech.get(techId) ?? 0) + 1);
-      }
-      if (jobDay) {
-        let byDate = revenueByTechAndDate.get(techId);
-        if (!byDate) {
-          byDate = new Map<string, number>();
-          revenueByTechAndDate.set(techId, byDate);
+      const amountPerTech = paidAmount / techIds.length;
+      for (const techId of techIds) {
+        const current = revenueByTech.get(techId) ?? 0;
+        revenueByTech.set(techId, current + amountPerTech);
+        if (paidAmount > 0) {
+          billableJobsByTech.set(techId, (billableJobsByTech.get(techId) ?? 0) + 1);
         }
-        byDate.set(jobDay, (byDate.get(jobDay) ?? 0) + amountPerTech);
+        if (jobDay) {
+          let byDate = revenueByTechAndDate.get(techId);
+          if (!byDate) {
+            byDate = new Map<string, number>();
+            revenueByTechAndDate.set(techId, byDate);
+          }
+          byDate.set(jobDay, (byDate.get(jobDay) ?? 0) + amountPerTech);
+        }
       }
-    }
     }
 
     // Crew-level metrics: dedupe by job number and split revenue across work days.
@@ -558,6 +561,7 @@ export async function getTechnicianRevenue(
         creditedDayKeys: crewCreditedDayKeys,
         startDate,
         endDate,
+        timeZone: metricsTimeZone,
       });
       const crewAttributedPaid = dayCredits.reduce((sum, c) => sum + c.amount, 0);
       if (crewAttributedPaid > MIN_BILLABLE_REVENUE) {
@@ -634,7 +638,7 @@ export async function getTechnicianRevenue(
       if (jobIsFutureScheduledBeyond(j, todayYmd)) continue;
       const jobDate = getCollectedRevenueJobDate(j);
       if (!jobDate) continue;
-      const jobDay = jobDate.toISOString().slice(0, 10);
+      const jobDay = ymdInTimeZone(jobDate, metricsTimeZone);
       if (jobDay < yearStart || jobDay > yearEnd) continue;
       let techIds = getTechnicianIds(j);
       const jobId = j.id != null ? String(j.id) : "";
