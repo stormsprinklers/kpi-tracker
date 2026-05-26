@@ -61,7 +61,7 @@ export async function POST(request: Request) {
   }
   if (role !== "admin" && role !== "employee" && role !== "salesman" && role !== "investor") {
     return NextResponse.json(
-      { error: "Role must be admin, employee, salesman, or investor" },
+      { error: "Role must be admin, employee, salesperson, or investor" },
       { status: 400 }
     );
   }

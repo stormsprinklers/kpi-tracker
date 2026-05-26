@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+export interface PerformancePayConfigEdit {
+  scope_type: "role" | "employee";
+  scope_id: string;
+  structure_type: string;
+  config_json: Record<string, unknown>;
+  bonuses_json: Record<string, unknown>[];
+}
+
 interface SetupData {
   org: {
     setup_completed: boolean;
@@ -13,7 +21,7 @@ interface SetupData {
   configs: { scope_type: string; scope_id: string; structure_type: string; config_json: Record<string, unknown>; bonuses_json: Record<string, unknown>[] }[];
   employees: { id: string; name: string; hcpRole: "technician" | "office_staff" }[];
   salesmanEmployeeIds: string[];
-  hcpRoleIds: { technician: string | null; officeStaff: string | null };
+  hcpRoleIds: { technician: string | null; officeStaff: string | null; salesperson: string | null };
 }
 
 type StructureType =
@@ -44,9 +52,15 @@ const BONUS_TYPES = [
 
 export function PerformancePayWizard({
   onComplete,
+  onCancel,
+  editConfig,
 }: {
   onComplete: () => void;
+  onCancel?: () => void;
+  /** When set, wizard updates this config (scope is fixed). */
+  editConfig?: PerformancePayConfigEdit | null;
 }) {
+  const isEditing = !!editConfig;
   const [setup, setSetup] = useState<SetupData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,25 +95,54 @@ export function PerformancePayWizard({
     fetchSetup();
   }, [fetchSetup]);
 
+  useEffect(() => {
+    if (!editConfig || !setup) return;
+    setScopeType(editConfig.scope_type);
+    if (editConfig.scope_type === "role") {
+      setSelectedRoleId(editConfig.scope_id);
+      setSelectedEmployeeIds([]);
+    } else {
+      setSelectedEmployeeIds([editConfig.scope_id]);
+      setSelectedRoleId(null);
+    }
+    const st = editConfig.structure_type as StructureType;
+    if (Object.keys(STRUCTURE_LABELS).includes(st)) {
+      setStructureType(st);
+    }
+    setConfig(editConfig.config_json ?? {});
+    const bonusTypes = (editConfig.bonuses_json ?? [])
+      .map((b) => {
+        if (!b || typeof b !== "object") return "";
+        return String((b as { type?: string }).type ?? "").trim();
+      })
+      .filter(Boolean);
+    setSelectedBonuses(bonusTypes);
+    setStep(2);
+  }, [editConfig, setup]);
+
   const salesmanIdSet = new Set(setup?.salesmanEmployeeIds ?? []);
+  const salespersonRoleId = setup?.hcpRoleIds?.salesperson ?? null;
+  const selectedIsSalespersonRole =
+    scopeType === "role" && !!salespersonRoleId && selectedRoleId === salespersonRoleId;
   const selectedAreAllSalesmen =
     scopeType === "employee" &&
     selectedEmployeeIds.length > 0 &&
     selectedEmployeeIds.every((id) => salesmanIdSet.has(id));
-  const availableStructures: StructureType[] = selectedAreAllSalesmen
+  const isSalespersonScope = selectedIsSalespersonRole || selectedAreAllSalesmen;
+  const availableStructures: StructureType[] = isSalespersonScope
     ? ["pure_commission"]
     : (Object.keys(STRUCTURE_LABELS) as StructureType[]);
-  const canUseBonuses = !selectedAreAllSalesmen;
+  const canUseBonuses = !isSalespersonScope;
 
   useEffect(() => {
-    if (selectedAreAllSalesmen && structureType !== "pure_commission") {
+    if (isSalespersonScope && structureType !== "pure_commission") {
       setStructureType("pure_commission");
       setConfig((c) => ({ ...c, commission_rate_pct: Number(c.commission_rate_pct ?? 0) }));
     }
     if (!canUseBonuses && selectedBonuses.length > 0) {
       setSelectedBonuses([]);
     }
-  }, [selectedAreAllSalesmen, structureType, selectedBonuses.length, canUseBonuses]);
+  }, [isSalespersonScope, structureType, selectedBonuses.length, canUseBonuses]);
 
   if (loading || !setup) {
     return (
@@ -121,8 +164,14 @@ export function PerformancePayWizard({
   const canProceedStep2 = true;
 
   async function handleSave(addAnother: boolean) {
-    if (scopeType === "role" && !selectedRoleId) return;
-    if (scopeType === "employee" && selectedEmployeeIds.length === 0) return;
+    const effectiveScopeType = editConfig?.scope_type ?? scopeType;
+    const effectiveRoleId = editConfig?.scope_type === "role" ? editConfig.scope_id : selectedRoleId;
+    const effectiveEmployeeIds =
+      editConfig?.scope_type === "employee"
+        ? [editConfig.scope_id]
+        : selectedEmployeeIds;
+    if (effectiveScopeType === "role" && !effectiveRoleId) return;
+    if (effectiveScopeType === "employee" && effectiveEmployeeIds.length === 0) return;
     setSaveError(null);
     setSaveLoading(true);
     try {
@@ -131,9 +180,9 @@ export function PerformancePayWizard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scope_type: scopeType,
-          scope_id: scopeType === "role" ? selectedRoleId : undefined,
-          scope_ids: scopeType === "employee" ? selectedEmployeeIds : undefined,
+          scope_type: effectiveScopeType,
+          scope_id: effectiveScopeType === "role" ? effectiveRoleId : undefined,
+          scope_ids: effectiveScopeType === "employee" ? effectiveEmployeeIds : undefined,
           structure_type: structureType,
           config_json: config,
           bonuses_json: bonusesJson,
@@ -142,7 +191,7 @@ export function PerformancePayWizard({
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to save");
-      if (addAnother) {
+      if (addAnother && !isEditing) {
         setStep(1);
         setScopeType("role");
         setSelectedRoleId(null);
@@ -161,10 +210,34 @@ export function PerformancePayWizard({
     }
   }
 
+  const scopeLabel =
+    editConfig?.scope_type === "role"
+      ? setup.roles.find((r) => r.id === editConfig.scope_id)?.name ?? editConfig.scope_id
+      : setup.employees.find((e) => e.id === editConfig?.scope_id)?.name ?? editConfig?.scope_id;
+
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+          {isEditing ? "Edit pay config" : "Pay config wizard"}
+        </h3>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="text-sm text-zinc-600 hover:underline dark:text-zinc-400"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+      {isEditing && scopeLabel && (
+        <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
+          {editConfig?.scope_type === "role" ? "Role" : "Employee"}: {scopeLabel}
+        </p>
+      )}
       <div className="mb-4 flex gap-2">
-        {[1, 2, 3].map((s) => (
+        {(isEditing ? [2, 3] : [1, 2, 3]).map((s) => (
           <button
             key={s}
             type="button"
@@ -175,12 +248,12 @@ export function PerformancePayWizard({
                 : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
             }`}
           >
-            Step {s}
+            Step {isEditing ? s - 1 : s}
           </button>
         ))}
       </div>
 
-      {step === 1 && (
+      {step === 1 && !isEditing && (
         <div className="space-y-4">
           <h3 className="font-medium text-zinc-900 dark:text-zinc-50">Choose role or employee</h3>
           <div className="space-y-2">
@@ -189,6 +262,7 @@ export function PerformancePayWizard({
                 type="radio"
                 name="scope"
                 checked={scopeType === "role"}
+                disabled={isEditing}
                 onChange={() => {
                   setScopeType("role");
                   setSelectedEmployeeIds([]);
@@ -219,6 +293,7 @@ export function PerformancePayWizard({
                 type="radio"
                 name="scope"
                 checked={scopeType === "employee"}
+                disabled={isEditing}
                 onChange={() => {
                   setScopeType("employee");
                   setSelectedRoleId(null);
@@ -294,8 +369,8 @@ export function PerformancePayWizard({
                   onChange={() => setStructureType(st)}
                 />
                 <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                  {st === "pure_commission" && selectedAreAllSalesmen
-                    ? "Commission only (Salesman)"
+                  {st === "pure_commission" && isSalespersonScope
+                    ? "Commission only (Salesperson)"
                     : STRUCTURE_LABELS[st]}
                 </span>
               </label>
@@ -322,13 +397,15 @@ export function PerformancePayWizard({
           </div>
           )}
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="rounded border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-600 dark:text-zinc-300"
-            >
-              Back
-            </button>
+            {!isEditing && (
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="rounded border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-600 dark:text-zinc-300"
+              >
+                Back
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setStep(3)}
@@ -599,21 +676,23 @@ export function PerformancePayWizard({
             >
               Back
             </button>
-            <button
-              type="button"
-              onClick={() => handleSave(true)}
-              disabled={saveLoading}
-              className="rounded bg-zinc-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-700"
-            >
-              {saveLoading ? "Saving…" : "Save and add another"}
-            </button>
+            {!isEditing && (
+              <button
+                type="button"
+                onClick={() => handleSave(true)}
+                disabled={saveLoading}
+                className="rounded bg-zinc-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-700"
+              >
+                {saveLoading ? "Saving…" : "Save and add another"}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => handleSave(false)}
               disabled={saveLoading}
               className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
             >
-              {saveLoading ? "Saving…" : "Finish setup"}
+              {saveLoading ? "Saving…" : isEditing ? "Save changes" : "Finish setup"}
             </button>
           </div>
         </div>

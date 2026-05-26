@@ -2647,11 +2647,16 @@ export async function getPerformancePayRoles(organizationId: string): Promise<Pe
   return (result.rows ?? []) as PerformancePayRole[];
 }
 
-/** Ensure HCP roles (Technician, Office Staff) exist for the org. Returns all roles. */
+export const PERFORMANCE_PAY_SALESPERSON_ROLE_NAME = "Salesperson";
+
+/** Ensure default performance pay roles exist for the org. Returns all roles. */
 export async function ensureHcpPerformancePayRoles(organizationId: string): Promise<PerformancePayRole[]> {
   const existing = await getPerformancePayRoles(organizationId);
   const hasTechnician = existing.some((r) => r.source === "hcp" && r.name.toLowerCase() === "technician");
   const hasOfficeStaff = existing.some((r) => r.source === "hcp" && r.name.toLowerCase() === "office staff");
+  const hasSalesperson = existing.some(
+    (r) => r.name.toLowerCase() === PERFORMANCE_PAY_SALESPERSON_ROLE_NAME.toLowerCase()
+  );
   if (!hasTechnician) {
     await sql`
       INSERT INTO performance_pay_roles (organization_id, name, source)
@@ -2664,6 +2669,17 @@ export async function ensureHcpPerformancePayRoles(organizationId: string): Prom
       INSERT INTO performance_pay_roles (organization_id, name, source)
       SELECT ${organizationId}::uuid, 'Office Staff', 'hcp'
       WHERE NOT EXISTS (SELECT 1 FROM performance_pay_roles WHERE organization_id = ${organizationId}::uuid AND LOWER(name) = 'office staff' AND source = 'hcp')
+    `;
+  }
+  if (!hasSalesperson) {
+    await sql`
+      INSERT INTO performance_pay_roles (organization_id, name, source)
+      SELECT ${organizationId}::uuid, ${PERFORMANCE_PAY_SALESPERSON_ROLE_NAME}, 'custom'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM performance_pay_roles
+        WHERE organization_id = ${organizationId}::uuid
+          AND LOWER(name) = LOWER(${PERFORMANCE_PAY_SALESPERSON_ROLE_NAME})
+      )
     `;
   }
   return getPerformancePayRoles(organizationId);

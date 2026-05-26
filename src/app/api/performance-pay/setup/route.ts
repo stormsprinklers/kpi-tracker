@@ -92,9 +92,25 @@ export async function GET() {
     (r) => r.source === "hcp" && r.name.toLowerCase() === "office staff"
   );
 
+  const salespersonRole = roles.find(
+    (r) => r.name.toLowerCase() === "salesperson"
+  );
+
+  const salesmanEmployeeIds = (salesmanRows.rows ?? [])
+    .map((r) => (r as { hcp_employee_id: string }).hcp_employee_id)
+    .filter(Boolean);
+  const salesmanIdSet = new Set(salesmanEmployeeIds);
+
   for (const emp of employeesWithHcpRole) {
     const existing = assignments.find((a) => a.hcp_employee_id === emp.id);
     if (existing?.overridden) continue;
+    if (salesmanIdSet.has(emp.id)) {
+      await upsertPerformancePayAssignment(orgId, emp.id, {
+        role_id: salespersonRole?.id ?? null,
+        overridden: false,
+      });
+      continue;
+    }
     const roleId = emp.hcpRole === "technician" ? technicianRole?.id ?? null : officeStaffRole?.id ?? null;
     await upsertPerformancePayAssignment(orgId, emp.id, {
       role_id: roleId,
@@ -103,9 +119,6 @@ export async function GET() {
   }
 
   const assignmentsUpdated = await getPerformancePayAssignments(orgId);
-  const salesmanEmployeeIds = (salesmanRows.rows ?? [])
-    .map((r) => (r as { hcp_employee_id: string }).hcp_employee_id)
-    .filter(Boolean);
 
   return NextResponse.json({
     org: ppOrg ?? {
@@ -125,6 +138,7 @@ export async function GET() {
     hcpRoleIds: {
       technician: technicianRole?.id ?? null,
       officeStaff: officeStaffRole?.id ?? null,
+      salesperson: salespersonRole?.id ?? null,
     },
   });
 }

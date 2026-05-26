@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { EmployeeInviteCandidate } from "@/lib/db/queries";
+import { formatUserRoleLabel } from "@/lib/userRoles";
 
 interface User {
   id: string;
@@ -238,7 +239,7 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
                           : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                     }`}
                   >
-                    {u.role}
+                    {formatUserRoleLabel(u.role)}
                   </span>
                   {(u.role === "employee" || u.role === "salesman") && u.hcp_employee_id && (
                     <span className="ml-1.5 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
@@ -364,7 +365,7 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
                   className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
                 >
                   <option value="employee">Employee</option>
-                  <option value="salesman">Salesman</option>
+                  <option value="salesman">Salesperson</option>
                   <option value="admin">Admin</option>
                   <option value="investor">Investor</option>
                 </select>
@@ -415,7 +416,7 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
               className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
             >
               <option value="employee">Employee</option>
-              <option value="salesman">Salesman</option>
+              <option value="salesman">Salesperson</option>
               <option value="admin">Admin</option>
               <option value="investor">Investor</option>
             </select>
@@ -464,7 +465,7 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
           className="rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
         >
           <option value="employee">Employee</option>
-          <option value="salesman">Salesman</option>
+          <option value="salesman">Salesperson</option>
           <option value="admin">Admin</option>
           <option value="investor">Investor</option>
         </select>

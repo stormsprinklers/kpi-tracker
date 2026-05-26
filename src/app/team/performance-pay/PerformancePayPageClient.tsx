@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PerformancePayWizard } from "@/components/team/PerformancePayWizard";
+import {
+  PerformancePayWizard,
+  type PerformancePayConfigEdit,
+} from "@/components/team/PerformancePayWizard";
 import { PerformancePayConfigList } from "@/components/team/PerformancePayConfigList";
 import { isValidIanaTimeZone, listIanaTimeZones, TIMEZONE_SUGGESTIONS } from "@/lib/payPeriod";
 
@@ -39,6 +42,7 @@ const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
 export function PerformancePayPageClient() {
   const [setup, setSetup] = useState<SetupData | null>(null);
   const [showWizard, setShowWizard] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<PerformancePayConfigEdit | null>(null);
   const [loading, setLoading] = useState(true);
   const [fiveStarBonusInput, setFiveStarBonusInput] = useState("");
   const [fiveStarSaving, setFiveStarSaving] = useState(false);
@@ -370,18 +374,33 @@ export function PerformancePayPageClient() {
         )}
       </section>
 
-      {showWizard || !setupComplete ? (
+      {(showWizard || !setupComplete || editingConfig) && (
         <PerformancePayWizard
+          editConfig={editingConfig}
+          onCancel={
+            editingConfig
+              ? () => {
+                  setEditingConfig(null);
+                  setShowWizard(false);
+                }
+              : undefined
+          }
           onComplete={() => {
             setShowWizard(false);
+            setEditingConfig(null);
             fetchSetup();
           }}
         />
-      ) : (
+      )}
+
+      {setupComplete && !showWizard && !editingConfig && (
         <div>
           <button
             type="button"
-            onClick={() => setShowWizard(true)}
+            onClick={() => {
+              setEditingConfig(null);
+              setShowWizard(true);
+            }}
             className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             Add pay config
@@ -394,6 +413,16 @@ export function PerformancePayPageClient() {
           configs={configs}
           roleNames={roleNames}
           employeeNames={employeeNames}
+          onEdit={(c) => {
+            setEditingConfig({
+              scope_type: c.scope_type as "role" | "employee",
+              scope_id: c.scope_id,
+              structure_type: c.structure_type,
+              config_json: c.config_json,
+              bonuses_json: c.bonuses_json,
+            });
+            setShowWizard(true);
+          }}
           onRefresh={fetchSetup}
         />
       )}

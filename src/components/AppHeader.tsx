@@ -146,13 +146,19 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
     : "/insights/attribution#call-tracking";
 
   const insightsItems = [
-        ...(can("call_insights") ? [{ label: "Call Insights", href: callInsightsHref }] : []),
-        ...(!isEmployee ? [
-        ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
-        ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
-        ...(can("marketing") ? [{ label: "Attribution", href: "/insights/attribution" }] : []),
-        ] : []),
-      ];
+    ...(isEmployee && can("call_insights")
+      ? [{ label: "Call Insights", href: callInsightsHref }]
+      : []),
+    ...(!isEmployee
+      ? [
+          ...(can("time_insights") ? [{ label: "Time", href: "/time-insights" }] : []),
+          ...(can("profit") ? [{ label: "Profit", href: "/insights/profit" }] : []),
+          ...(can("marketing") || can("call_insights")
+            ? [{ label: "Attribution", href: "/insights/attribution" }]
+            : []),
+        ]
+      : []),
+  ];
 
   const teamItems: { label: string; href: string }[] = [];
   if (!isEmployee) {
