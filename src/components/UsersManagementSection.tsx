@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { EmployeeInviteCandidate } from "@/lib/db/queries";
-import { formatUserRoleLabel } from "@/lib/userRoles";
+import {
+  APP_USER_ROLES,
+  formatUserRoleLabel,
+  type AppUserRole,
+} from "@/lib/userRoles";
 
 interface User {
   id: string;
@@ -32,6 +36,8 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
   const [selectedInviteEmails, setSelectedInviteEmails] = useState<Set<string>>(new Set());
   const [bulkInviteLoading, setBulkInviteLoading] = useState(false);
   const [bulkInviteSummary, setBulkInviteSummary] = useState<string | null>(null);
+  const [roleSavingId, setRoleSavingId] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
 
   function fetchUsers() {
     fetch("/api/users")
@@ -194,6 +200,28 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
     }
   }
 
+  async function handleRoleChange(userId: string, role: AppUserRole) {
+    setRoleError(null);
+    setRoleSavingId(userId);
+    try {
+      const res = await fetch(`/api/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setRoleError(data.error ?? "Failed to update role");
+        return;
+      }
+      fetchUsers();
+    } catch {
+      setRoleError("Something went wrong while updating the role");
+    } finally {
+      setRoleSavingId(null);
+    }
+  }
+
   async function handleRemoveUser(id: string) {
     if (!confirm("Remove this user?")) return;
     try {
@@ -213,8 +241,11 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Users</h2>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        Add, remove, and manage users. Change user info here.
+        Add, remove, and manage users. Change roles from the table below (your own role cannot be changed here).
       </p>
+      {roleError && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{roleError}</p>
+      )}
 
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-sm">
@@ -230,17 +261,39 @@ export function UsersManagementSection({ currentUserId }: { currentUserId: strin
               <tr key={u.id} className="border-b border-zinc-100 dark:border-zinc-800">
                 <td className="py-2 text-zinc-900 dark:text-zinc-50">{u.email}</td>
                 <td className="py-2">
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs ${
-                      u.role === "admin"
-                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                        : u.role === "investor"
-                          ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
-                          : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                    }`}
-                  >
-                    {formatUserRoleLabel(u.role)}
-                  </span>
+                  {u.id === currentUserId ? (
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs ${
+                        u.role === "admin"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                          : u.role === "investor"
+                            ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
+                            : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                      }`}
+                    >
+                      {formatUserRoleLabel(u.role)}
+                    </span>
+                  ) : (
+                    <select
+                      value={
+                        APP_USER_ROLES.includes(u.role as AppUserRole)
+                          ? (u.role as AppUserRole)
+                          : "employee"
+                      }
+                      disabled={roleSavingId === u.id}
+                      onChange={(e) =>
+                        void handleRoleChange(u.id, e.target.value as AppUserRole)
+                      }
+                      className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50 disabled:opacity-50"
+                      aria-label={`Role for ${u.email}`}
+                    >
+                      {APP_USER_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {formatUserRoleLabel(r)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {(u.role === "employee" || u.role === "salesman") && u.hcp_employee_id && (
                     <span className="ml-1.5 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
                       Linked to HCP

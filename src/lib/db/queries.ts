@@ -994,6 +994,27 @@ export async function deleteUser(id: string, organizationId: string) {
   `;
 }
 
+/** Update login role; clears custom permission overrides so role defaults apply. */
+export async function updateUserRole(
+  userId: string,
+  organizationId: string,
+  role: "admin" | "employee" | "salesman" | "investor",
+  hcpEmployeeId: string | null
+): Promise<{ id: string; email: string; role: string; hcp_employee_id: string | null } | null> {
+  const result = await sql`
+    UPDATE users
+    SET role = ${role}, hcp_employee_id = ${hcpEmployeeId}
+    WHERE id = ${userId}::uuid AND organization_id = ${organizationId}::uuid
+    RETURNING id, email, role, hcp_employee_id
+  `;
+  const row = result.rows?.[0] as
+    | { id: string; email: string; role: string; hcp_employee_id: string | null }
+    | undefined;
+  if (!row) return null;
+  await sql`DELETE FROM user_permissions WHERE user_id = ${userId}::uuid`;
+  return row;
+}
+
 export type PermissionKey =
   | "dashboard"
   | "timesheets"
