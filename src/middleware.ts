@@ -22,6 +22,7 @@ const publicPagePaths = [
   "/join",
   "/privacy",
   "/terms",
+  "/demo",
 ];
 
 const publicApiPrefixes = [

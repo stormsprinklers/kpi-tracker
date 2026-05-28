@@ -113,17 +113,18 @@ export function LandingPage() {
                 A simple analytics dashboard for home service businesses that turns your CRM data into clear insights on revenue, booking rate, conversion rate, average ticket, lead source ROI, and team performance.
               </p>
               <div className="mt-10 flex flex-wrap gap-4">
-                <CtaPrimary night={night}>Book a demo</CtaPrimary>
+                <CtaPrimary href="/demo" night={night}>Live demo</CtaPrimary>
+                <CtaSecondary night={night}>Book a demo</CtaSecondary>
                 <CtaSecondary night={night}>Join the waitlist</CtaSecondary>
               </div>
               <p className="mt-4 text-sm opacity-90" style={{ color: text }}>
                 Questions?{" "}
                 <a
-                  href="mailto:support@homeservicesanalytics.com"
+                  href="mailto:contact@homeservicesanalytics.com"
                   className="font-medium underline decoration-1 underline-offset-2 hover:opacity-100"
                   style={{ color: text }}
                 >
-                  support@homeservicesanalytics.com
+                  contact@homeservicesanalytics.com
                 </a>
               </p>
               <p className="mt-4 text-sm opacity-75" style={{ color: text }}>
@@ -451,7 +452,8 @@ export function LandingPage() {
             Stop guessing and start managing with better numbers.
           </p>
           <div className="mt-10 flex flex-wrap justify-center gap-4">
-            <CtaPrimary night={night}>Book a demo</CtaPrimary>
+            <CtaPrimary href="/demo" night={night}>Live demo</CtaPrimary>
+            <CtaSecondary night={night}>Book a demo</CtaSecondary>
             <CtaSecondary night={night}>Join the waitlist</CtaSecondary>
           </div>
         </div>
@@ -465,13 +467,23 @@ export function LandingPage() {
             <p className="mt-1 text-sm opacity-70" style={{ color: text }}>
               Analytics and insights for home service businesses.
             </p>
+            <p className="mt-2 text-sm opacity-80" style={{ color: text }}>
+              Contact:{" "}
+              <a
+                href="mailto:contact@homeservicesanalytics.com"
+                className="font-medium underline decoration-1 underline-offset-2 hover:opacity-100"
+              >
+                contact@homeservicesanalytics.com
+              </a>
+            </p>
           </div>
           <nav className="flex flex-wrap justify-center gap-6 text-sm">
             <a href="#features" className="opacity-80 hover:opacity-100" style={{ color: text }}>Features</a>
             <a href="#pricing" className="opacity-80 hover:opacity-100" style={{ color: text }}>Pricing</a>
             <a href="#integrations" className="opacity-80 hover:opacity-100" style={{ color: text }}>Integrations</a>
             <a href="#faq" className="opacity-80 hover:opacity-100" style={{ color: text }}>FAQ</a>
-            <a href="mailto:support@homeservicesanalytics.com" className="opacity-80 hover:opacity-100" style={{ color: text }}>
+            <a href="/demo" className="opacity-80 hover:opacity-100" style={{ color: text }}>Live demo</a>
+            <a href="mailto:contact@homeservicesanalytics.com" className="opacity-80 hover:opacity-100" style={{ color: text }}>
               Contact
             </a>
             <a href="/privacy" className="opacity-80 hover:opacity-100" style={{ color: text }}>
