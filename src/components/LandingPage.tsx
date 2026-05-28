@@ -478,10 +478,10 @@ export function LandingPage() {
             </p>
           </div>
           <nav className="flex flex-wrap justify-center gap-6 text-sm">
-            <a href="#features" className="opacity-80 hover:opacity-100" style={{ color: text }}>Features</a>
-            <a href="#pricing" className="opacity-80 hover:opacity-100" style={{ color: text }}>Pricing</a>
-            <a href="#integrations" className="opacity-80 hover:opacity-100" style={{ color: text }}>Integrations</a>
-            <a href="#faq" className="opacity-80 hover:opacity-100" style={{ color: text }}>FAQ</a>
+            <a href="/#features" className="opacity-80 hover:opacity-100" style={{ color: text }}>Features</a>
+            <a href="/#pricing" className="opacity-80 hover:opacity-100" style={{ color: text }}>Pricing</a>
+            <a href="/#integrations" className="opacity-80 hover:opacity-100" style={{ color: text }}>Integrations</a>
+            <a href="/#faq" className="opacity-80 hover:opacity-100" style={{ color: text }}>FAQ</a>
             <a href="/demo" className="opacity-80 hover:opacity-100" style={{ color: text }}>Live demo</a>
             <a href="/contact" className="opacity-80 hover:opacity-100" style={{ color: text }}>
               Contact

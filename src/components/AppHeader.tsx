@@ -90,10 +90,10 @@ export function AppHeader({ title = "Home Services Analytics", subtitle = "Analy
           </a>
         </div>
         <nav className="flex flex-wrap items-center gap-4 md:gap-6">
-          <a href="#features" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Features</a>
-          <a href="#pricing" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Pricing</a>
-          <a href="#integrations" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Integrations</a>
-          <a href="#faq" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>FAQ</a>
+          <a href="/#features" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Features</a>
+          <a href="/#pricing" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Pricing</a>
+          <a href="/#integrations" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Integrations</a>
+          <a href="/#faq" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>FAQ</a>
           <a href="/privacy" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Privacy</a>
           <a href="/terms" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Terms</a>
           <a href="/contact" className="text-sm font-medium opacity-80 hover:opacity-100" style={{ color: "#0B1F33" }}>Contact</a>
