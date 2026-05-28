@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CONTACT_INBOX_EMAIL } from "@/lib/contact";
+import { CONTACT_INBOX_EMAIL, formatUsPhone, normalizeUsPhone } from "@/lib/contact";
 import {
   buildContactFormEmailHtml,
   buildContactFormEmailPlainText,
@@ -71,9 +71,12 @@ export async function POST(request: Request) {
       name?: string;
       email?: string;
       company?: string;
+      phone?: string;
       topic?: string;
       message?: string;
       website?: string;
+      smsCustomerCareConsent?: boolean;
+      smsMarketingConsent?: boolean;
     };
 
     if (body.website?.trim()) {
@@ -83,8 +86,15 @@ export async function POST(request: Request) {
     const name = trimField(body.name, 120);
     const email = trimField(body.email, 254).toLowerCase();
     const company = trimField(body.company, 200);
+    const phoneRaw = trimField(body.phone, 32);
     const topicKey = trimField(body.topic, 32).toLowerCase() || "general";
     const message = trimField(body.message, 5000);
+    const smsCustomerCareConsent = body.smsCustomerCareConsent === true;
+    const smsMarketingConsent = body.smsMarketingConsent === true;
+    const smsConsentRequested = smsCustomerCareConsent || smsMarketingConsent;
+
+    const phoneDigits = phoneRaw ? normalizeUsPhone(phoneRaw) : null;
+    const phone = phoneDigits ? formatUsPhone(phoneDigits) : undefined;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -98,9 +108,33 @@ export async function POST(request: Request) {
     if (message.length < 10) {
       return NextResponse.json({ error: "Message must be at least 10 characters" }, { status: 400 });
     }
+    if (phoneRaw && !phoneDigits) {
+      return NextResponse.json(
+        { error: "Enter a valid 10-digit US mobile number, or leave phone blank" },
+        { status: 400 }
+      );
+    }
+    if (smsConsentRequested && !phoneDigits) {
+      return NextResponse.json(
+        { error: "A mobile phone number is required when opting in to text messages" },
+        { status: 400 }
+      );
+    }
 
     const topic = TOPIC_LABELS[topicKey] ?? topicKey;
-    const emailInput = { name, email, company: company || undefined, topic, message };
+    const consentRecordedAt =
+      smsConsentRequested ? new Date().toISOString() : undefined;
+    const emailInput = {
+      name,
+      email,
+      company: company || undefined,
+      phone,
+      topic,
+      message,
+      smsCustomerCareConsent,
+      smsMarketingConsent,
+      consentRecordedAt,
+    };
 
     const html = buildContactFormEmailHtml(emailInput);
     const text = buildContactFormEmailPlainText(emailInput);

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CONTACT_INBOX_EMAIL } from "@/lib/contact";
+import { CONTACT_INBOX_EMAIL, SMS_BRAND_NAME, isValidUsPhone } from "@/lib/contact";
 
 const NAV = "#0B1F33";
 
@@ -19,8 +19,11 @@ export function ContactForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
+  const [phone, setPhone] = useState("");
   const [topic, setTopic] = useState<(typeof TOPIC_OPTIONS)[number]["value"]>("general");
   const [message, setMessage] = useState("");
+  const [smsCustomerCareConsent, setSmsCustomerCareConsent] = useState(false);
+  const [smsMarketingConsent, setSmsMarketingConsent] = useState(false);
   const [website, setWebsite] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,12 +32,35 @@ export function ContactForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    const phoneTrimmed = phone.trim();
+    const smsOptIn = smsCustomerCareConsent || smsMarketingConsent;
+
+    if (phoneTrimmed && !isValidUsPhone(phoneTrimmed)) {
+      setError("Enter a valid 10-digit US mobile number, or leave phone blank.");
+      return;
+    }
+    if (smsOptIn && !phoneTrimmed) {
+      setError("A mobile phone number is required when opting in to text messages.");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch("/api/public/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, company, topic, message, website }),
+        body: JSON.stringify({
+          name,
+          email,
+          company,
+          phone: phoneTrimmed || undefined,
+          topic,
+          message,
+          website,
+          smsCustomerCareConsent,
+          smsMarketingConsent,
+        }),
       });
       const data = (await res.json()) as { error?: string; message?: string };
       if (!res.ok) {
@@ -51,6 +77,8 @@ export function ContactForm() {
 
   const inputClass =
     "mt-1 block w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500";
+
+  const checkboxClass = "mt-1 h-4 w-4 shrink-0 rounded border-zinc-300 text-[#0B1F33] focus:ring-[#0B1F33]";
 
   return (
     <div className="w-full max-w-lg rounded-xl border bg-white p-6 shadow-sm md:p-8" style={{ borderColor: "rgba(11,31,51,0.15)" }}>
@@ -134,6 +162,73 @@ export function ContactForm() {
                 className={inputClass}
               />
             </div>
+            <div>
+              <label htmlFor="contact-phone" className="block text-sm font-medium" style={{ color: NAV }}>
+                Mobile phone <span className="font-normal text-slate-500">(optional)</span>
+              </label>
+              <input
+                id="contact-phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                autoComplete="tel"
+                inputMode="tel"
+                placeholder="(555) 555-5555"
+                className={inputClass}
+              />
+            </div>
+            <fieldset
+              className="rounded-lg border border-slate-200 bg-slate-50/80 p-4"
+              aria-describedby="contact-sms-disclosure"
+            >
+              <legend className="px-1 text-sm font-medium" style={{ color: NAV }}>
+                Text message preferences <span className="font-normal text-slate-500">(optional)</span>
+              </legend>
+              <p id="contact-sms-disclosure" className="mt-1 text-xs leading-relaxed text-slate-600">
+                If you provide a mobile number, you may opt in below to receive SMS from {SMS_BRAND_NAME}.
+                Message frequency varies. Message and data rates may apply. Reply{" "}
+                <span className="font-medium">STOP</span> to opt out or{" "}
+                <span className="font-medium">HELP</span> for help. See our{" "}
+                <Link href="/privacy" className="underline" style={{ color: NAV }}>
+                  Privacy Policy
+                </Link>{" "}
+                and{" "}
+                <Link href="/terms" className="underline" style={{ color: NAV }}>
+                  Terms of Service
+                </Link>
+                .
+              </p>
+              <div className="mt-4 space-y-4">
+                <label htmlFor="contact-sms-care" className="flex cursor-pointer gap-3 text-sm leading-relaxed text-slate-700">
+                  <input
+                    id="contact-sms-care"
+                    type="checkbox"
+                    checked={smsCustomerCareConsent}
+                    onChange={(e) => setSmsCustomerCareConsent(e.target.checked)}
+                    className={checkboxClass}
+                  />
+                  <span>
+                    I consent to receive informational and customer care text messages from {SMS_BRAND_NAME} at
+                    the mobile number provided above, including replies to this inquiry, account updates, and
+                    service-related notifications.
+                  </span>
+                </label>
+                <label htmlFor="contact-sms-marketing" className="flex cursor-pointer gap-3 text-sm leading-relaxed text-slate-700">
+                  <input
+                    id="contact-sms-marketing"
+                    type="checkbox"
+                    checked={smsMarketingConsent}
+                    onChange={(e) => setSmsMarketingConsent(e.target.checked)}
+                    className={checkboxClass}
+                  />
+                  <span>
+                    I consent to receive marketing and promotional text messages from {SMS_BRAND_NAME} at the
+                    mobile number provided above, including product updates, demos, and offers. Consent is not a
+                    condition of purchase.
+                  </span>
+                </label>
+              </div>
+            </fieldset>
             <div>
               <label htmlFor="contact-topic" className="block text-sm font-medium" style={{ color: NAV }}>
                 Topic

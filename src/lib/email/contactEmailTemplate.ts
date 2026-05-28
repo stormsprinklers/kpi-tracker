@@ -13,8 +13,12 @@ export type ContactFormEmailInput = {
   name: string;
   email: string;
   company?: string;
+  phone?: string;
   topic: string;
   message: string;
+  smsCustomerCareConsent?: boolean;
+  smsMarketingConsent?: boolean;
+  consentRecordedAt?: string;
 };
 
 export function buildContactFormEmailHtml(input: ContactFormEmailInput): string {
@@ -22,8 +26,21 @@ export function buildContactFormEmailHtml(input: ContactFormEmailInput): string 
     ["Name", input.name],
     ["Email", input.email],
     ["Company", input.company?.trim() || "—"],
+    ["Phone", input.phone?.trim() || "—"],
     ["Topic", input.topic],
+    [
+      "SMS — customer care",
+      input.smsCustomerCareConsent ? "Opted in" : "Not opted in",
+    ],
+    [
+      "SMS — marketing",
+      input.smsMarketingConsent ? "Opted in" : "Not opted in",
+    ],
   ];
+
+  if (input.consentRecordedAt) {
+    rows.push(["Consent recorded (UTC)", input.consentRecordedAt]);
+  }
 
   const tableRows = rows
     .map(
@@ -70,7 +87,11 @@ export function buildContactFormEmailPlainText(input: ContactFormEmailInput): st
     `Name: ${input.name}`,
     `Email: ${input.email}`,
     `Company: ${input.company?.trim() || "—"}`,
+    `Phone: ${input.phone?.trim() || "—"}`,
     `Topic: ${input.topic}`,
+    `SMS customer care consent: ${input.smsCustomerCareConsent ? "Yes" : "No"}`,
+    `SMS marketing consent: ${input.smsMarketingConsent ? "Yes" : "No"}`,
+    ...(input.consentRecordedAt ? [`Consent recorded (UTC): ${input.consentRecordedAt}`] : []),
     "",
     "Message:",
     input.message,
