@@ -8,6 +8,8 @@ export type SendTransactionalEmailParams = {
   subject: string;
   html: string;
   text?: string;
+  /** When set, replies from the recipient go to this address (e.g. contact form submitter). */
+  replyTo?: string;
 };
 
 /**
@@ -36,10 +38,12 @@ export async function sendTransactionalEmail(params: SendTransactionalEmailParam
   }
   content.push({ type: "text/html", value: params.html });
 
+  const replyEmail = params.replyTo?.trim() || DEFAULT_FROM_EMAIL;
+
   const body = {
     personalizations: recipients.map((email) => ({ to: [{ email }] })),
     from: { email: DEFAULT_FROM_EMAIL, name: DEFAULT_FROM_NAME },
-    reply_to: { email: DEFAULT_FROM_EMAIL },
+    reply_to: { email: replyEmail },
     subject: params.subject,
     content,
     mail_settings: sandbox ? { sandbox_mode: { enable: true } } : undefined,

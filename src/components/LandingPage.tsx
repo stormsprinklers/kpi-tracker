@@ -120,11 +120,11 @@ export function LandingPage() {
               <p className="mt-4 text-sm opacity-90" style={{ color: text }}>
                 Questions?{" "}
                 <a
-                  href="mailto:contact@homeservicesanalytics.com"
+                  href="/contact"
                   className="font-medium underline decoration-1 underline-offset-2 hover:opacity-100"
                   style={{ color: text }}
                 >
-                  contact@homeservicesanalytics.com
+                  Get in touch
                 </a>
               </p>
               <p className="mt-4 text-sm opacity-75" style={{ color: text }}>
@@ -470,10 +470,10 @@ export function LandingPage() {
             <p className="mt-2 text-sm opacity-80" style={{ color: text }}>
               Contact:{" "}
               <a
-                href="mailto:contact@homeservicesanalytics.com"
+                href="/contact"
                 className="font-medium underline decoration-1 underline-offset-2 hover:opacity-100"
               >
-                contact@homeservicesanalytics.com
+                Contact form
               </a>
             </p>
           </div>
@@ -483,7 +483,7 @@ export function LandingPage() {
             <a href="#integrations" className="opacity-80 hover:opacity-100" style={{ color: text }}>Integrations</a>
             <a href="#faq" className="opacity-80 hover:opacity-100" style={{ color: text }}>FAQ</a>
             <a href="/demo" className="opacity-80 hover:opacity-100" style={{ color: text }}>Live demo</a>
-            <a href="mailto:contact@homeservicesanalytics.com" className="opacity-80 hover:opacity-100" style={{ color: text }}>
+            <a href="/contact" className="opacity-80 hover:opacity-100" style={{ color: text }}>
               Contact
             </a>
             <a href="/privacy" className="opacity-80 hover:opacity-100" style={{ color: text }}>

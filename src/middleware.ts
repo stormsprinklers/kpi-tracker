@@ -23,6 +23,7 @@ const publicPagePaths = [
   "/privacy",
   "/terms",
   "/demo",
+  "/contact",
 ];
 
 const publicApiPrefixes = [
