@@ -15,7 +15,7 @@ type ExpectedPayTableProps = {
   /** Omit rows with no timesheet hours in the selected range (Time Insights). */
   excludeZeroHours?: boolean;
   /**
-   * When true, replaces a single Hours column with Reg. hrs and OT hrs (40h per 7-day block within the date range).
+   * When true, replaces a single Hours column with Reg. hrs and OT hrs (40h per Mon–Sun workweek).
    * Used by Time Insights.
    */
   splitRegularOvertimeHours?: boolean;
@@ -294,13 +294,13 @@ export function ExpectedPayTable({
                   <th className="pb-2 pr-3 text-right font-medium text-zinc-700 dark:text-zinc-300">
                     <MetricTooltip
                       label="Reg. hrs"
-                      tooltip="Straight-time from timesheets: up to 40 hours in each consecutive 7-day slice of this date range, starting at range start (same rule as payroll export)."
+                      tooltip="Straight-time from timesheets: up to 40 hours per Mon–Sun workweek (hours logged in this date range only)."
                     />
                   </th>
                   <th className="pb-2 pr-6 text-right font-medium text-zinc-700 dark:text-zinc-300">
                     <MetricTooltip
                       label="OT hrs"
-                      tooltip="Hours beyond 40 in each 7-day slice of this range (from timesheets). Overtime *pay* in Performance Pay still uses Mon–Sun workweeks for hourly-or-commission only."
+                      tooltip="Hours beyond 40 per Mon–Sun workweek (timesheet hours in this date range). Matches the workweek rule used for hourly OT pay."
                     />
                   </th>
                 </>
