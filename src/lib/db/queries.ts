@@ -287,14 +287,15 @@ export async function getEmployeesAndProsForCsrSelector(
   `;
   for (const row of empResult.rows ?? []) {
     const r = row as { hcp_id: string; raw: Record<string, unknown> };
-    if (seen.has(r.hcp_id)) continue;
-    seen.add(r.hcp_id);
+    const hcpId = String(r.hcp_id ?? "").trim();
+    if (!hcpId || seen.has(hcpId)) continue;
+    seen.add(hcpId);
     const raw = r.raw ?? {};
     const first = String(raw.first_name ?? raw.firstName ?? "").trim();
     const last = String(raw.last_name ?? raw.lastName ?? "").trim();
     const name = [first, last].filter(Boolean).join(" ").trim()
-      || String(raw.email ?? raw.email_address ?? r.hcp_id ?? "Unknown");
-    list.push({ id: r.hcp_id, name });
+      || String(raw.email ?? raw.email_address ?? hcpId ?? "Unknown");
+    list.push({ id: hcpId, name });
   }
 
   const prosResult = await sql`
@@ -304,14 +305,15 @@ export async function getEmployeesAndProsForCsrSelector(
   `;
   for (const row of prosResult.rows ?? []) {
     const r = row as { hcp_id: string; raw: Record<string, unknown> };
-    if (seen.has(r.hcp_id)) continue;
-    seen.add(r.hcp_id);
+    const hcpId = String(r.hcp_id ?? "").trim();
+    if (!hcpId || seen.has(hcpId)) continue;
+    seen.add(hcpId);
     const raw = r.raw ?? {};
     const first = String(raw.first_name ?? raw.firstName ?? "").trim();
     const last = String(raw.last_name ?? raw.lastName ?? "").trim();
     const name = [first, last].filter(Boolean).join(" ").trim()
-      || String(raw.email ?? raw.email_address ?? r.hcp_id ?? "Unknown");
-    list.push({ id: r.hcp_id, name });
+      || String(raw.email ?? raw.email_address ?? hcpId ?? "Unknown");
+    list.push({ id: hcpId, name });
   }
 
   list.sort((a, b) => a.name.localeCompare(b.name));
@@ -1314,12 +1316,28 @@ export async function assertValidCrewHcpIdsForOrganization(
     throw new Error("Connect Housecall Pro to manage crews");
   }
   const roster = await getEmployeesAndProsForCsrSelector(companyId);
-  const allowed = new Set(roster.map((r) => r.id.trim()).filter(Boolean));
+  const nameById = new Map(roster.map((r) => [r.id, r.name]));
+  const allowed = new Set(roster.map((r) => r.id));
   const unique = [...new Set(hcpEmployeeIds.map((id) => id.trim()).filter(Boolean))];
   for (const id of unique) {
-    if (!allowed.has(id)) {
-      throw new Error(`"${id}" is not a synced employee or pro for this organization`);
-    }
+    if (allowed.has(id)) continue;
+    const synced = await sql`
+      SELECT 1 AS ok
+      FROM employees
+      WHERE company_id = ${companyId} AND TRIM(hcp_id) = ${id}
+      UNION ALL
+      SELECT 1
+      FROM pros
+      WHERE company_id = ${companyId} AND TRIM(hcp_id) = ${id}
+      LIMIT 1
+    `;
+    if ((synced.rows?.length ?? 0) > 0) continue;
+    const label = nameById.get(id);
+    throw new Error(
+      label
+        ? `${label} is not in your synced Housecall Pro roster. Run a sync in Settings, then try again.`
+        : `"${id}" is not a synced employee or pro for this organization. If they were removed from Housecall Pro or the roster changed, remove them from this crew and run a sync.`
+    );
   }
 }
 

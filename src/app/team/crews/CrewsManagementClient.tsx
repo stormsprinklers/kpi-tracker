@@ -8,6 +8,10 @@ interface HcpRosterEntry {
   name: string;
 }
 
+function rosterIdSet(roster: HcpRosterEntry[]): Set<string> {
+  return new Set(roster.map((e) => e.id.trim()).filter(Boolean));
+}
+
 export function CrewsManagementClient() {
   const [crews, setCrews] = useState<CrewWithMembersRow[]>([]);
   const [roster, setRoster] = useState<HcpRosterEntry[]>([]);
@@ -20,6 +24,9 @@ export function CrewsManagementClient() {
   const [name, setName] = useState("");
   const [foremanHcpEmployeeId, setForemanHcpEmployeeId] = useState("");
   const [selectedMemberHcpIds, setSelectedMemberHcpIds] = useState<Set<string>>(new Set());
+  const [rosterNotice, setRosterNotice] = useState<string | null>(null);
+
+  const allowedRosterIds = rosterIdSet(roster);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,20 +52,55 @@ export function CrewsManagementClient() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (mode !== "edit" || roster.length === 0) return;
+    const allowed = rosterIdSet(roster);
+    setSelectedMemberHcpIds((prev) => {
+      const next = new Set([...prev].map((id) => id.trim()).filter((id) => allowed.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    setForemanHcpEmployeeId((foreman) => {
+      const trimmed = foreman.trim();
+      if (!trimmed || allowed.has(trimmed)) return foreman;
+      return "";
+    });
+  }, [mode, roster]);
+
   function resetForm() {
     setMode("create");
     setEditCrewId(null);
     setName("");
     setForemanHcpEmployeeId("");
     setSelectedMemberHcpIds(new Set());
+    setRosterNotice(null);
   }
 
   function startEdit(crew: CrewWithMembersRow) {
     setMode("edit");
     setEditCrewId(crew.id);
     setName(crew.name);
-    setForemanHcpEmployeeId(crew.foremanHcpEmployeeId);
-    setSelectedMemberHcpIds(new Set(crew.members.map((m) => m.hcpEmployeeId)));
+    const allowed = rosterIdSet(roster);
+    const foreman = crew.foremanHcpEmployeeId.trim();
+    const validMembers = crew.members
+      .map((m) => m.hcpEmployeeId.trim())
+      .filter((id) => allowed.has(id));
+    const droppedForeman = foreman.length > 0 && !allowed.has(foreman);
+    const droppedMembers = crew.members.filter(
+      (m) => m.hcpEmployeeId.trim().length > 0 && !allowed.has(m.hcpEmployeeId.trim())
+    );
+    setForemanHcpEmployeeId(droppedForeman ? "" : foreman);
+    setSelectedMemberHcpIds(new Set(validMembers));
+    if (droppedForeman || droppedMembers.length > 0) {
+      const names = [
+        ...(droppedForeman ? [crew.foremanDisplayName] : []),
+        ...droppedMembers.map((m) => m.displayName),
+      ];
+      setRosterNotice(
+        `${names.join(", ")} ${names.length === 1 ? "is" : "are"} no longer in your synced Housecall Pro roster and ${names.length === 1 ? "was" : "were"} removed from this form. Re-select a foreman and members, or run an HCP sync if they should still appear.`
+      );
+    } else {
+      setRosterNotice(null);
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -80,7 +122,9 @@ export function CrewsManagementClient() {
     setSaving(true);
     setError(null);
     try {
-      const memberHcpEmployeeIds = Array.from(selectedMemberHcpIds);
+      const memberHcpEmployeeIds = Array.from(selectedMemberHcpIds).filter((id) =>
+        allowedRosterIds.has(id.trim())
+      );
       if (mode === "create") {
         const res = await fetch("/api/crews", {
           method: "POST",
@@ -148,6 +192,11 @@ export function CrewsManagementClient() {
           avg ticket across the foreman and every selected member (by HCP employee id).
         </p>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          {rosterNotice && (
+            <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+              {rosterNotice}
+            </p>
+          )}
           <div>
             <label htmlFor="crew-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
               Crew name
