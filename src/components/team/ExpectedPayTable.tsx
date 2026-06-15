@@ -39,6 +39,16 @@ function regOtFromResult(r: ExpectedPayResult): { reg: number; ot: number } {
   return { reg: h, ot: 0 };
 }
 
+/** Commission dollars included in this period's expected pay (not hypothetical hourly-or-commission side). */
+function commissionFromResult(r: ExpectedPayResult): number {
+  const p = r.payrollExport;
+  if (p) {
+    return p.commissionCountsTowardGross ? p.commissionDollars : 0;
+  }
+  const c = r.breakdown?.commission;
+  return typeof c === "number" && !Number.isNaN(c) ? c : 0;
+}
+
 function formatMoney(n: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -85,6 +95,9 @@ function ExpectedPayTableRow({
       <td className="py-2 pl-1 text-zinc-700 dark:text-zinc-300">{r.payTypeLabel ?? "—"}</td>
       <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
         {formatMoney(r.totalRevenue ?? 0)}
+      </td>
+      <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
+        {formatMoney(commissionFromResult(r))}
       </td>
       <td className="py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200">
         {typeof r.reviews === "number" ? r.reviews : 0}
@@ -230,19 +243,21 @@ export function ExpectedPayTable({
     let totalReg = 0;
     let totalOt = 0;
     let totalPay = 0;
+    let totalCommission = 0;
     for (const r of visibleResults) {
       totalHours += typeof r.hoursWorked === "number" ? r.hoursWorked : 0;
       const { reg, ot } = regOtFromResult(r);
       totalReg += reg;
       totalOt += ot;
       totalPay += typeof r.expectedPay === "number" ? r.expectedPay : 0;
+      totalCommission += commissionFromResult(r);
     }
     const blendedEffective =
       totalHours > 0 ? Math.round((totalPay / totalHours) * 100) / 100 : null;
-    return { totalHours, totalReg, totalOt, totalPay, blendedEffective };
+    return { totalHours, totalReg, totalOt, totalPay, totalCommission, blendedEffective };
   }, [visibleResults]);
 
-  const tableColSpan = splitRegularOvertimeHours ? 9 : 8;
+  const tableColSpan = splitRegularOvertimeHours ? 10 : 9;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -330,6 +345,12 @@ export function ExpectedPayTable({
                 <MetricTooltip
                   label="Total revenue"
                   tooltip="Total technician revenue attributed in this period from Technician KPI calculations. For a crew foreman, includes revenue attributed to that crew (crew roll-up)."
+                />
+              </th>
+              <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
+                <MetricTooltip
+                  label="Total commission"
+                  tooltip="Commission dollars included in expected pay this period (revenue × rate or tier). For hourly-or-commission plans, shows commission only when it is the paying side; otherwise $0."
                 />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
@@ -466,6 +487,9 @@ export function ExpectedPayTable({
                   {formatMoney(
                     visibleResults.reduce((sum, r) => sum + (typeof r.totalRevenue === "number" ? r.totalRevenue : 0), 0)
                   )}
+                </td>
+                <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {formatMoney(totals.totalCommission)}
                 </td>
                 <td className="py-2.5 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                   {visibleResults.reduce((sum, r) => sum + (typeof r.reviews === "number" ? r.reviews : 0), 0)}
