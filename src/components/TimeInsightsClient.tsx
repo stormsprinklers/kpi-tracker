@@ -327,7 +327,7 @@ export function TimeInsightsClient({ isAdmin = false }: { isAdmin?: boolean }) {
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   <MetricTooltip
                     label="Labor % of revenue"
-                    tooltip="Expected pay from field and technician Performance Pay plans divided by attributed technician revenue in this period. Office staff (CSR booking-rate) pay is excluded from this ratio but still listed in the expected pay table below."
+                    tooltip="Expected pay from field and technician Performance Pay plans divided by attributed technician revenue in this period. Office staff (CSR booking-rate) and salespeople (commission on attributed sales) are excluded from this ratio but still listed in the expected pay table below."
                   />
                 </p>
               </div>

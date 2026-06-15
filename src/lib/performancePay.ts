@@ -11,6 +11,7 @@ import {
 } from "./db/queries";
 import { getTechnicianRevenue } from "./metrics/technicianRevenue";
 import { getCsrKpiList } from "./metrics/csrKpis";
+import { getSalesRevenueByEmployee } from "./metrics/salesmanMetrics";
 import { getOrganizationById } from "./db/queries";
 import {
   DEFAULT_PAY_PERIOD_CALENDAR,
@@ -76,6 +77,8 @@ export interface ExpectedPayResult {
   effectiveHourlyRate: number | null;
   /** Used to exclude office/CSR pay from labor % of revenue while still listing rows in the expected pay table. */
   structureType: StructureType;
+  /** Assigned Performance Pay role is Salesperson (commission on attributed sales, not technician revenue). */
+  isSalesperson?: boolean;
   /** Populated when requested (e.g. payroll export). */
   payrollExport?: PayrollExportDetail;
 }
@@ -327,10 +330,18 @@ export async function calculateExpectedPay(
   ]);
 
   const roleMap = new Map(roles.map((r) => [r.id, r]));
+  const salespersonRoleId =
+    roles.find((r) => r.name.trim().toLowerCase() === "salesperson")?.id ?? null;
 
   const assignmentByEmployee = new Map(
     assignments.map((a) => [a.hcp_employee_id, a])
   );
+
+  function isSalespersonEmployee(empId: string): boolean {
+    if (!salespersonRoleId) return false;
+    const assign = assignmentByEmployee.get(empId);
+    return assign?.role_id === salespersonRoleId;
+  }
 
   const configByRole = new Map(
     configs.filter((c) => c.scope_type === "role").map((c) => [c.scope_id, c])
@@ -369,7 +380,7 @@ export async function calculateExpectedPay(
   const orgEntity = await getOrganizationById(organizationId);
   const companyId = orgEntity?.hcp_company_id ?? "default";
 
-  const [timeEntries, techResult, csrKpis, employeesAndPros] = await Promise.all([
+  const [timeEntries, techResult, csrKpis, employeesAndPros, salesByEmployee] = await Promise.all([
     getTimeEntriesByOrganization(organizationId, startDate, endDate),
     getTechnicianRevenue(organizationId, {
       startDate,
@@ -378,6 +389,7 @@ export async function calculateExpectedPay(
     }),
     getCsrKpiList(organizationId, { startDate, endDate }),
     getEmployeesAndProsForCsrSelector(companyId),
+    getSalesRevenueByEmployee(organizationId, { startDate, endDate }),
   ]);
 
   const employeeNames = new Map<string, string>();
@@ -407,6 +419,9 @@ export async function calculateExpectedPay(
     for (const e of timeEntries) {
       const id = e.hcp_employee_id?.trim();
       if (id) expanded.add(id);
+    }
+    for (const [empId, sales] of salesByEmployee) {
+      if (sales > 0.005 && isSalespersonEmployee(empId)) expanded.add(empId);
     }
     targetIds = Array.from(expanded);
   }
@@ -499,7 +514,9 @@ export async function calculateExpectedPay(
       const byWeekForPayroll = hoursByEmployeeWeek.get(empId) ?? new Map<string, number>();
       const { regularHours, overtimeHours } = regularOvertimeHoursFromWeeklyBuckets(byWeekForPayroll);
       const tech = techByEmployee.get(empId);
-      const revenue = tech?.totalRevenue ?? 0;
+      const revenue = isSalespersonEmployee(empId)
+        ? (salesByEmployee.get(empId) ?? 0)
+        : (tech?.totalRevenue ?? 0);
       const reviews = reviewCounts[empId.trim()] ?? reviewCounts[empId] ?? 0;
       const fiveStarReviews =
         fiveStarReviewCounts[empId.trim()] ?? fiveStarReviewCounts[empId] ?? 0;
@@ -531,6 +548,7 @@ export async function calculateExpectedPay(
         payTypeLabel: "—",
         effectiveHourlyRate: null,
         structureType: "pure_hourly",
+        isSalesperson: isSalespersonEmployee(empId),
         payrollExport,
       });
       continue;
@@ -539,7 +557,9 @@ export async function calculateExpectedPay(
     const hours = hoursByEmployee.get(empId) ?? 0;
     const tech = techByEmployee.get(empId);
     const csr = csrByEmployee.get(empId);
-    const revenue = tech?.totalRevenue ?? 0;
+    const revenue = isSalespersonEmployee(empId)
+      ? (salesByEmployee.get(empId) ?? 0)
+      : (tech?.totalRevenue ?? 0);
     const reviews = reviewCounts[empId.trim()] ?? reviewCounts[empId] ?? 0;
     const fiveStarReviews =
       fiveStarReviewCounts[empId.trim()] ?? fiveStarReviewCounts[empId] ?? 0;
@@ -746,6 +766,7 @@ export async function calculateExpectedPay(
       payTypeLabel,
       effectiveHourlyRate,
       structureType: config.structure_type as StructureType,
+      isSalesperson: isSalespersonEmployee(empId),
       payrollExport,
     });
   }

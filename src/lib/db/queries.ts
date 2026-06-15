@@ -320,6 +320,19 @@ export async function getEmployeesAndProsForCsrSelector(
   return list;
 }
 
+/** CSRs selected in Settings → Users for Call Insights / call assignment (not the full employee roster). */
+export async function getSelectedCsrCandidates(
+  organizationId: string,
+  companyId: string
+): Promise<{ id: string; name: string }[]> {
+  const [selections, roster] = await Promise.all([
+    getCsrSelections(organizationId),
+    getEmployeesAndProsForCsrSelector(companyId),
+  ]);
+  const selected = new Set(selections.map((id) => id.trim()).filter(Boolean));
+  return roster.filter((c) => selected.has(c.id)).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 const SIMPLE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export type EmployeeInviteCandidate = {
@@ -1948,6 +1961,11 @@ export async function getCallRecordsForAwaitingAssignment(
       AND c.hcp_employee_id IS NULL
       AND c.call_date >= ${start}
       AND c.call_date <= ${end}
+      AND NOT (
+        c.booking_value = 'non-opportunity'
+        AND c.duration_seconds IS NOT NULL
+        AND c.duration_seconds < 60
+      )
     ORDER BY c.call_date DESC, c.call_time DESC NULLS LAST
   `;
   return (result.rows ?? []) as CallRecordForCsr[];

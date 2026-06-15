@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
-import { getOrganizationById, getEmployeesAndProsForCsrSelector, getTechnicianPhotos } from "@/lib/db/queries";
+import { getOrganizationById, getSelectedCsrCandidates, getTechnicianPhotos } from "@/lib/db/queries";
 
 /** GET /api/csr-candidates - Admin-only: list CSR candidates + photo urls. */
 export async function GET() {
@@ -16,7 +16,7 @@ export async function GET() {
   await initSchema();
   const org = await getOrganizationById(session.user.organizationId);
   const companyId = org?.hcp_company_id ?? "default";
-  const candidates = await getEmployeesAndProsForCsrSelector(companyId);
+  const candidates = await getSelectedCsrCandidates(session.user.organizationId, companyId);
   const ids = candidates.map((c) => c.id);
   const photos = ids.length > 0 ? await getTechnicianPhotos(session.user.organizationId, ids) : {};
 

@@ -439,6 +439,9 @@ export function CsrCallDetailClient({
                           )}
                           <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
                             Tip: setting CSR to “Unassigned” will move the call into “Awaiting Assignment”.
+                            {csrCandidates.length === 0
+                              ? " Select CSRs under Settings → Users to enable assignment."
+                              : null}
                           </p>
                         </td>
                       </tr>,

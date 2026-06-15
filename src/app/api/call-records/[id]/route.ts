@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { initSchema } from "@/lib/db";
-import { updateCallRecordForAdmin } from "@/lib/db/queries";
+import { updateCallRecordForAdmin, getCsrSelections } from "@/lib/db/queries";
 
 const VALID_BOOKING = new Set(["won", "lost", "non-opportunity"]);
 
@@ -57,6 +57,18 @@ export async function PATCH(
   }
 
   await initSchema();
+
+  if (hcpEmployeeId) {
+    const selections = await getCsrSelections(session.user.organizationId);
+    const allowed = new Set(selections.map((id) => id.trim()).filter(Boolean));
+    if (!allowed.has(hcpEmployeeId)) {
+      return NextResponse.json(
+        { error: "Only employees selected as CSRs in Settings can be assigned to calls" },
+        { status: 400 }
+      );
+    }
+  }
+
   await updateCallRecordForAdmin(session.user.organizationId, id, {
     ...(hcpEmployeeId !== undefined ? { hcp_employee_id: hcpEmployeeId } : {}),
     ...(bookingValue !== undefined ? { booking_value: bookingValue } : {}),

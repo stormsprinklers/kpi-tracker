@@ -58,6 +58,30 @@ function formatMoney(n: number): string {
   }).format(n);
 }
 
+function lastNameSortKey(name: string | undefined, fallbackId: string): string {
+  const s = (name ?? fallbackId).trim();
+  if (!s) return fallbackId.toLowerCase();
+  if (s.includes(",")) {
+    const beforeComma = s.split(",")[0]?.trim();
+    if (beforeComma) return beforeComma.toLowerCase();
+  }
+  const parts = s.split(/\s+/).filter(Boolean);
+  const last = parts.length > 1 ? parts[parts.length - 1]! : parts[0] ?? s;
+  return last.toLowerCase();
+}
+
+function compareExpectedPayByLastName(a: ExpectedPayResult, b: ExpectedPayResult): number {
+  const la = lastNameSortKey(a.employeeName, a.hcpEmployeeId);
+  const lb = lastNameSortKey(b.employeeName, b.hcpEmployeeId);
+  const byLast = la.localeCompare(lb);
+  if (byLast !== 0) return byLast;
+  return (a.employeeName ?? a.hcpEmployeeId).localeCompare(b.employeeName ?? b.hcpEmployeeId);
+}
+
+function sortByLastName(rows: ExpectedPayResult[]): ExpectedPayResult[] {
+  return [...rows].sort(compareExpectedPayByLastName);
+}
+
 function ExpectedPayTableRow({
   r,
   avgJobsPerDayByEmployee,
@@ -197,21 +221,37 @@ export function ExpectedPayTable({
       if (excludeZeroExpectedPay && Math.abs(r.expectedPay ?? 0) < 0.005) {
         const hours = typeof r.hoursWorked === "number" ? r.hoursWorked : 0;
         if (includeTimesheetEmployees && hours > 0) return true;
+        if (
+          includeTimesheetEmployees &&
+          r.isSalesperson &&
+          (typeof r.totalRevenue === "number" ? r.totalRevenue : 0) > 0.005
+        ) {
+          return true;
+        }
         return false;
       }
       return true;
     });
   }, [results, excludeZeroHours, excludeZeroExpectedPay, includeTimesheetEmployees]);
 
-  const { fieldRows, csrRows } = useMemo(() => {
+  const { fieldRows, salespersonRows, csrRows } = useMemo(() => {
     const field: ExpectedPayResult[] = [];
+    const salesperson: ExpectedPayResult[] = [];
     const csr: ExpectedPayResult[] = [];
     for (const r of visibleResults) {
       if (r.structureType === "csr_hourly_booking_rate") csr.push(r);
+      else if (r.isSalesperson) salesperson.push(r);
       else field.push(r);
     }
-    return { fieldRows: field, csrRows: csr };
-  }, [visibleResults]);
+    if (splitTechniciansAndCrews) {
+      return {
+        fieldRows: sortByLastName(field),
+        salespersonRows: sortByLastName(salesperson),
+        csrRows: sortByLastName(csr),
+      };
+    }
+    return { fieldRows: field, salespersonRows: salesperson, csrRows: csr };
+  }, [visibleResults, splitTechniciansAndCrews]);
 
   const {
     nonCrewFieldRows,
@@ -231,12 +271,18 @@ export function ExpectedPayTable({
       byCrew.set(crewName, list);
     }
     const names = Array.from(byCrew.keys()).sort((a, b) => a.localeCompare(b));
+    const sortedNonCrew = splitTechniciansAndCrews ? sortByLastName(nonCrew) : nonCrew;
+    if (splitTechniciansAndCrews) {
+      for (const [crewName, list] of byCrew) {
+        byCrew.set(crewName, sortByLastName(list));
+      }
+    }
     return {
-      nonCrewFieldRows: nonCrew,
+      nonCrewFieldRows: sortedNonCrew,
       crewFieldRowsByName: byCrew,
       crewFieldNames: names,
     };
-  }, [fieldRows, crewNameByEmployeeId]);
+  }, [fieldRows, crewNameByEmployeeId, splitTechniciansAndCrews]);
 
   const totals = useMemo(() => {
     let totalHours = 0;
@@ -344,7 +390,7 @@ export function ExpectedPayTable({
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
                 <MetricTooltip
                   label="Total revenue"
-                  tooltip="Total technician revenue attributed in this period from Technician KPI calculations. For a crew foreman, includes revenue attributed to that crew (crew roll-up)."
+                  tooltip="Technician revenue from KPI calculations for field staff and crew foremen. For salespeople, collected job revenue attributed to them as salesperson in this period."
                 />
               </th>
               <th className="pb-2 text-right font-medium text-zinc-700 dark:text-zinc-300">
@@ -436,6 +482,26 @@ export function ExpectedPayTable({
                     </Fragment>
                   );
                 })}
+              </>
+            )}
+            {splitTechniciansAndCrews && salespersonRows.length > 0 && (
+              <>
+                <tr className="border-b border-zinc-200 bg-zinc-100/90 dark:border-zinc-700 dark:bg-zinc-800/80">
+                  <td
+                    colSpan={tableColSpan}
+                    className="py-2 pl-4 text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
+                  >
+                    Salespeople
+                  </td>
+                </tr>
+                {salespersonRows.map((r) => (
+                  <ExpectedPayTableRow
+                    key={r.hcpEmployeeId}
+                    r={r}
+                    avgJobsPerDayByEmployee={avgJobsPerDayByEmployee}
+                    splitRegularOvertimeHours={splitRegularOvertimeHours}
+                  />
+                ))}
               </>
             )}
             {csrRows.length > 0 && (

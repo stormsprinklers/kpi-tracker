@@ -398,7 +398,7 @@ export async function getTimeInsights(
       let totalExpectedPay = 0;
       let totalAttributedRevenue = 0;
       for (const r of expectedRows) {
-        if (r.structureType === "csr_hourly_booking_rate") continue;
+        if (r.structureType === "csr_hourly_booking_rate" || r.isSalesperson) continue;
         totalExpectedPay += typeof r.expectedPay === "number" ? r.expectedPay : 0;
         totalAttributedRevenue += typeof r.totalRevenue === "number" ? r.totalRevenue : 0;
       }

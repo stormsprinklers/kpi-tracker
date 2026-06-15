@@ -286,3 +286,59 @@ export async function getSalesmanMetrics(
     estimatesGiven,
   };
 }
+
+/** Collected job revenue in range attributed to each salesperson (same rules as salesman dashboard metrics). */
+export async function getSalesRevenueByEmployee(
+  organizationId: string,
+  range: { startDate: string; endDate: string }
+): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  const org = await getOrganizationById(organizationId);
+  const companyId = org?.hcp_company_id?.trim() || "";
+  if (!companyId) return totals;
+
+  let jobs: Record<string, unknown>[] = [];
+  let estimates: Record<string, unknown>[] = [];
+  try {
+    [jobs, estimates] = await Promise.all([
+      getJobsFromDb(companyId),
+      getEstimatesFromDb(companyId),
+    ]);
+  } catch {
+    return totals;
+  }
+
+  const estimatesByJobId = new Map<string, Record<string, unknown>[]>();
+  for (const est of estimates) {
+    const e = est as Record<string, unknown>;
+    const jid = extractJobHcpId(e);
+    if (!jid) continue;
+    const list = estimatesByJobId.get(jid) ?? [];
+    list.push(e);
+    estimatesByJobId.set(jid, list);
+  }
+
+  const todayYmd = new Date().toISOString().slice(0, 10);
+  for (const job of jobs) {
+    const j = job as Record<string, unknown>;
+    if (!jobMatchesCollectedRevenueDateRange(j, range.startDate, range.endDate)) continue;
+    if (jobIsFutureScheduledBeyond(j, todayYmd)) continue;
+
+    const paidAmount = await resolveCollectedRevenueForJob(companyId, j);
+    if (paidAmount <= 0) continue;
+
+    const jobId = j.id != null ? String(j.id) : "";
+    if (!jobId) continue;
+
+    const linked = estimatesByJobId.get(jobId) ?? [];
+    const attributionEst = pickAttributionEstimateForJob(j, linked);
+    const salespersonIds = jobSalespersonIds(j, attributionEst);
+    if (salespersonIds.size === 0) continue;
+
+    for (const empId of salespersonIds) {
+      totals.set(empId, Math.round(((totals.get(empId) ?? 0) + paidAmount) * 100) / 100);
+    }
+  }
+
+  return totals;
+}
