@@ -1,4 +1,5 @@
 import { PerformancePayPageClient } from "@/app/team/performance-pay/PerformancePayPageClient";
+import { PerformancePayRoleAssignmentsSection } from "@/components/team/PerformancePayRoleAssignmentsSection";
 
 export default function PerformancePaySettingsPage() {
   return (
@@ -11,6 +12,7 @@ export default function PerformancePaySettingsPage() {
           Configure pay structures for roles and employees. Expected pay is calculated from timesheets and metrics.
         </p>
       </div>
+      <PerformancePayRoleAssignmentsSection />
       <PerformancePayPageClient />
     </div>
   );

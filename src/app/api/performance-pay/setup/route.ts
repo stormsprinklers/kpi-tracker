@@ -7,9 +7,9 @@ import {
   getPerformancePayAssignments,
   getPerformancePayConfigs,
   ensureHcpPerformancePayRoles,
-  upsertPerformancePayAssignment,
 } from "@/lib/db/queries";
 import { sql } from "@/lib/db";
+import { ensurePerformancePayRoleAssignments } from "@/lib/performancePayRoleAssignments";
 
 const OFFICE_STAFF_ROLES = ["office staff", "office_staff", "officestaff"];
 
@@ -32,6 +32,8 @@ export async function GET() {
   const orgId = session.user.organizationId;
   const org = await getOrganizationById(orgId);
   const companyId = org?.hcp_company_id ?? "default";
+
+  await ensurePerformancePayRoleAssignments(orgId);
 
   const roles = await ensureHcpPerformancePayRoles(orgId);
   const ppOrg = await getPerformancePayOrg(orgId);
@@ -58,14 +60,15 @@ export async function GET() {
     raw: Record<string, unknown>,
     hcpRole: "technician" | "office_staff"
   ) => {
-    if (seen.has(hcpId)) return;
-    seen.add(hcpId);
+    const id = String(hcpId ?? "").trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
     const first = String(raw.first_name ?? raw.firstName ?? "").trim();
     const last = String(raw.last_name ?? raw.lastName ?? "").trim();
     const name =
       [first, last].filter(Boolean).join(" ").trim() ||
-      String(raw.email ?? raw.email_address ?? hcpId);
-    employeesWithHcpRole.push({ id: hcpId, name, hcpRole });
+      String(raw.email ?? raw.email_address ?? id);
+    employeesWithHcpRole.push({ id, name, hcpRole });
   };
 
   for (const row of empRows.rows ?? []) {
@@ -91,34 +94,11 @@ export async function GET() {
   const officeStaffRole = roles.find(
     (r) => r.source === "hcp" && r.name.toLowerCase() === "office staff"
   );
-
-  const salespersonRole = roles.find(
-    (r) => r.name.toLowerCase() === "salesperson"
-  );
+  const salespersonRole = roles.find((r) => r.name.toLowerCase() === "salesperson");
 
   const salesmanEmployeeIds = (salesmanRows.rows ?? [])
-    .map((r) => (r as { hcp_employee_id: string }).hcp_employee_id)
+    .map((r) => String((r as { hcp_employee_id: string }).hcp_employee_id ?? "").trim())
     .filter(Boolean);
-  const salesmanIdSet = new Set(salesmanEmployeeIds);
-
-  for (const emp of employeesWithHcpRole) {
-    const existing = assignments.find((a) => a.hcp_employee_id === emp.id);
-    if (existing?.overridden) continue;
-    if (salesmanIdSet.has(emp.id)) {
-      await upsertPerformancePayAssignment(orgId, emp.id, {
-        role_id: salespersonRole?.id ?? null,
-        overridden: false,
-      });
-      continue;
-    }
-    const roleId = emp.hcpRole === "technician" ? technicianRole?.id ?? null : officeStaffRole?.id ?? null;
-    await upsertPerformancePayAssignment(orgId, emp.id, {
-      role_id: roleId,
-      overridden: false,
-    });
-  }
-
-  const assignmentsUpdated = await getPerformancePayAssignments(orgId);
 
   return NextResponse.json({
     org: ppOrg ?? {
@@ -131,7 +111,7 @@ export async function GET() {
       updated_at: new Date().toISOString(),
     },
     roles,
-    assignments: assignmentsUpdated,
+    assignments,
     configs,
     employees: employeesWithHcpRole.sort((a, b) => a.name.localeCompare(b.name)),
     salesmanEmployeeIds,

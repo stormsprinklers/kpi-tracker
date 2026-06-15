@@ -2,6 +2,7 @@ import { getHcpClient } from "../housecallpro";
 import { sql } from "@/lib/db";
 import { withDeadlockRetry } from "@/lib/db/deadlockRetry";
 import { initSchema } from "../db";
+import { ensurePerformancePayRoleAssignments } from "../performancePayRoleAssignments";
 
 const DELAY_MS = 100;
 
@@ -150,6 +151,11 @@ export async function runEmployeesSync(organizationId: string): Promise<SyncResu
     const client = await getHcpClient(organizationId);
     const companyId = await resolveCompanyId(client);
     await syncEmployeesAndPros(client, companyId, entitiesSynced);
+    try {
+      await ensurePerformancePayRoleAssignments(organizationId);
+    } catch (err) {
+      console.error("[hcpSync] performance pay role assignment", err);
+    }
     return {
       status: "ok",
       companyId,
@@ -253,6 +259,12 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
     }
 
     await syncEmployeesAndPros(client, companyId, entitiesSynced);
+
+    try {
+      await ensurePerformancePayRoleAssignments(organizationId);
+    } catch (err) {
+      console.error("[hcpSync] performance pay role assignment", err);
+    }
 
     for (const entityType of ["jobs", "invoices", "estimates"] as const) {
       await sql`

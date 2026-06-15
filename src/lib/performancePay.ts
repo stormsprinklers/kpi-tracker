@@ -17,6 +17,7 @@ import {
   getBiweeklyPeriodBounds,
   type PayPeriodCalendarSettings,
 } from "./payPeriod";
+import { ensurePerformancePayRoleAssignments } from "./performancePayRoleAssignments";
 
 export type StructureType =
   | "pure_hourly"
@@ -311,6 +312,12 @@ export async function calculateExpectedPay(
     hcpEmployeeId: filterEmployeeId,
     includeTimesheetEmployeesWithoutPayConfig,
   } = options;
+
+  try {
+    await ensurePerformancePayRoleAssignments(organizationId);
+  } catch (err) {
+    console.error("[calculateExpectedPay] role assignment", err);
+  }
 
   const [ppOrg, configs, assignments, roles] = await Promise.all([
     getPerformancePayOrg(organizationId),

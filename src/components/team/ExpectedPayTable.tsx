@@ -182,11 +182,13 @@ export function ExpectedPayTable({
         return false;
       }
       if (excludeZeroExpectedPay && Math.abs(r.expectedPay ?? 0) < 0.005) {
+        const hours = typeof r.hoursWorked === "number" ? r.hoursWorked : 0;
+        if (includeTimesheetEmployees && hours > 0) return true;
         return false;
       }
       return true;
     });
-  }, [results, excludeZeroHours, excludeZeroExpectedPay]);
+  }, [results, excludeZeroHours, excludeZeroExpectedPay, includeTimesheetEmployees]);
 
   const { fieldRows, csrRows } = useMemo(() => {
     const field: ExpectedPayResult[] = [];
