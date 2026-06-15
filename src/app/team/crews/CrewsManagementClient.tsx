@@ -96,7 +96,7 @@ export function CrewsManagementClient() {
         ...droppedMembers.map((m) => m.displayName),
       ];
       setRosterNotice(
-        `${names.join(", ")} ${names.length === 1 ? "is" : "are"} no longer in your synced Housecall Pro roster and ${names.length === 1 ? "was" : "were"} removed from this form. Re-select a foreman and members, or run an HCP sync if they should still appear.`
+        `${names.join(", ")} ${names.length === 1 ? "is" : "are"} no longer in your synced Housecall Pro roster and ${names.length === 1 ? "was" : "were"} removed from this form. Re-select a foreman and members, or run Sync employees in Settings → CRM if they should still appear.`
       );
     } else {
       setRosterNotice(null);

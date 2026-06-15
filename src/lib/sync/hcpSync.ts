@@ -59,6 +59,114 @@ export interface SyncResult {
   error?: string;
 }
 
+async function resolveCompanyId(client: Awaited<ReturnType<typeof getHcpClient>>): Promise<string> {
+  const company = (await client.getCompany()) as { id?: string; company_id?: string };
+  const companyId = company?.id ?? company?.company_id ?? "default";
+  if (!companyId) {
+    throw new Error("Could not get company ID from Housecall Pro");
+  }
+  return companyId;
+}
+
+async function syncEmployeesAndPros(
+  client: Awaited<ReturnType<typeof getHcpClient>>,
+  companyId: string,
+  entitiesSynced: Record<string, number>
+): Promise<void> {
+  const employees = await client.getEmployeesAllPages().catch(() => [] as unknown[]);
+  await delay(DELAY_MS);
+  const employeeIds: string[] = [];
+  for (const emp of employees) {
+    const r = emp as Record<string, unknown>;
+    const hcpId = extractId(r);
+    if (!hcpId) continue;
+    employeeIds.push(hcpId);
+    await sql`
+      INSERT INTO employees (hcp_id, company_id, raw, updated_at)
+      VALUES (${hcpId}, ${companyId}, ${JSON.stringify(r)}::jsonb, NOW())
+      ON CONFLICT (hcp_id, company_id) DO UPDATE SET
+        raw = EXCLUDED.raw,
+        updated_at = NOW()
+    `;
+    entitiesSynced.employees = (entitiesSynced.employees ?? 0) + 1;
+  }
+  if (employeeIds.length > 0) {
+    const existingEmp = await sql`SELECT hcp_id FROM employees WHERE company_id = ${companyId}`;
+    const existingEmpIds = (existingEmp.rows ?? []).map((row) => (row as { hcp_id: string }).hcp_id);
+    const toRemove = existingEmpIds.filter((id) => !employeeIds.includes(id));
+    for (const id of toRemove) {
+      await sql`DELETE FROM employees WHERE company_id = ${companyId} AND hcp_id = ${id}`;
+    }
+  }
+
+  const prosRes = await client.getPros().catch(() => ({ pros: [] as unknown[] }));
+  const prosList = Array.isArray(prosRes)
+    ? prosRes
+    : (prosRes as { pros?: unknown[] }).pros ?? (prosRes as { data?: unknown[] }).data ?? [];
+  await delay(DELAY_MS);
+  const proIds: string[] = [];
+  for (const p of prosList) {
+    const r = p as Record<string, unknown>;
+    const hcpId = extractId(r);
+    if (!hcpId) continue;
+    proIds.push(hcpId);
+    await sql`
+      INSERT INTO pros (hcp_id, company_id, raw, updated_at)
+      VALUES (${hcpId}, ${companyId}, ${JSON.stringify(r)}::jsonb, NOW())
+      ON CONFLICT (hcp_id, company_id) DO UPDATE SET
+        raw = EXCLUDED.raw,
+        updated_at = NOW()
+    `;
+    entitiesSynced.pros = (entitiesSynced.pros ?? 0) + 1;
+  }
+  if (proIds.length > 0) {
+    const existingPros = await sql`SELECT hcp_id FROM pros WHERE company_id = ${companyId}`;
+    const existingProIds = (existingPros.rows ?? []).map((row) => (row as { hcp_id: string }).hcp_id);
+    const toRemove = existingProIds.filter((id) => !proIds.includes(id));
+    for (const id of toRemove) {
+      await sql`DELETE FROM pros WHERE company_id = ${companyId} AND hcp_id = ${id}`;
+    }
+  }
+
+  for (const entityType of ["employees", "pros"] as const) {
+    await sql`
+      INSERT INTO sync_state (company_id, entity_type, last_sync_at)
+      VALUES (${companyId}, ${entityType}, NOW())
+      ON CONFLICT (company_id, entity_type) DO UPDATE SET last_sync_at = NOW()
+    `;
+  }
+}
+
+/** Sync only HCP employees and pros (roster). Fast; use for crews, invites, performance pay. */
+export async function runEmployeesSync(organizationId: string): Promise<SyncResult> {
+  const start = Date.now();
+  const entitiesSynced: Record<string, number> = {
+    employees: 0,
+    pros: 0,
+  };
+
+  try {
+    await initSchema();
+    const client = await getHcpClient(organizationId);
+    const companyId = await resolveCompanyId(client);
+    await syncEmployeesAndPros(client, companyId, entitiesSynced);
+    return {
+      status: "ok",
+      companyId,
+      entitiesSynced,
+      duration: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      companyId: "unknown",
+      entitiesSynced,
+      duration: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function runFullSync(organizationId: string): Promise<SyncResult> {
   const start = Date.now();
   const entitiesSynced: Record<string, number> = {
@@ -73,11 +181,7 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
     await initSchema();
 
     const client = await getHcpClient(organizationId);
-    const company = (await client.getCompany()) as { id?: string; company_id?: string };
-    const companyId = company?.id ?? company?.company_id ?? "default";
-    if (!companyId) {
-      throw new Error("Could not get company ID from Housecall Pro");
-    }
+    const companyId = await resolveCompanyId(client);
 
     // KPI-focused sync: only entities required for KPI reporting.
     const jobs = await client.getJobsAllPages();
@@ -148,61 +252,9 @@ export async function runFullSync(organizationId: string): Promise<SyncResult> {
       entitiesSynced.estimates++;
     }
 
-    const employees = await client.getEmployeesAllPages().catch(() => [] as unknown[]);
-    await delay(DELAY_MS);
-    const employeeIds: string[] = [];
-    for (const emp of employees) {
-      const r = emp as Record<string, unknown>;
-      const hcpId = extractId(r);
-      if (!hcpId) continue;
-      employeeIds.push(hcpId);
-      await sql`
-        INSERT INTO employees (hcp_id, company_id, raw, updated_at)
-        VALUES (${hcpId}, ${companyId}, ${JSON.stringify(r)}::jsonb, NOW())
-        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-          raw = EXCLUDED.raw,
-          updated_at = NOW()
-      `;
-      entitiesSynced.employees++;
-    }
-    if (employeeIds.length > 0) {
-      const existingEmp = await sql`SELECT hcp_id FROM employees WHERE company_id = ${companyId}`;
-      const existingEmpIds = (existingEmp.rows ?? []).map((row) => (row as { hcp_id: string }).hcp_id);
-      const toRemove = existingEmpIds.filter((id) => !employeeIds.includes(id));
-      for (const id of toRemove) {
-        await sql`DELETE FROM employees WHERE company_id = ${companyId} AND hcp_id = ${id}`;
-      }
-    }
+    await syncEmployeesAndPros(client, companyId, entitiesSynced);
 
-    const prosRes = await client.getPros().catch(() => ({ pros: [] as unknown[] }));
-    const prosList = Array.isArray(prosRes) ? prosRes : (prosRes as { pros?: unknown[] }).pros ?? (prosRes as { data?: unknown[] }).data ?? [];
-    await delay(DELAY_MS);
-    const proIds: string[] = [];
-    for (const p of prosList) {
-      const r = p as Record<string, unknown>;
-      const hcpId = extractId(r);
-      if (!hcpId) continue;
-      proIds.push(hcpId);
-      await sql`
-        INSERT INTO pros (hcp_id, company_id, raw, updated_at)
-        VALUES (${hcpId}, ${companyId}, ${JSON.stringify(r)}::jsonb, NOW())
-        ON CONFLICT (hcp_id, company_id) DO UPDATE SET
-          raw = EXCLUDED.raw,
-          updated_at = NOW()
-      `;
-      entitiesSynced.pros++;
-    }
-    if (proIds.length > 0) {
-      const existingPros = await sql`SELECT hcp_id FROM pros WHERE company_id = ${companyId}`;
-      const existingProIds = (existingPros.rows ?? []).map((row) => (row as { hcp_id: string }).hcp_id);
-      const toRemove = existingProIds.filter((id) => !proIds.includes(id));
-      for (const id of toRemove) {
-        await sql`DELETE FROM pros WHERE company_id = ${companyId} AND hcp_id = ${id}`;
-      }
-    }
-
-    const entityTypes = ["jobs", "invoices", "estimates", "employees", "pros"];
-    for (const entityType of entityTypes) {
+    for (const entityType of ["jobs", "invoices", "estimates"] as const) {
       await sql`
         INSERT INTO sync_state (company_id, entity_type, last_sync_at)
         VALUES (${companyId}, ${entityType}, NOW())
